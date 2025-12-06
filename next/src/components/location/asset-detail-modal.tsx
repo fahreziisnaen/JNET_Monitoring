@@ -59,9 +59,9 @@ const AssetDetailModal = ({
             ).catch(() => [])
           : Promise.resolve([])
       ])
-        .then(([connections, clientConnections]) => {
+        .then(([connections, clientConnections]: [any[], Connection[]]) => {
           // Convert connections dari API menjadi format yang konsisten
-          const formattedConnections = (Array.isArray(connections) ? connections : []).map((conn: any) => ({
+          const formattedConnections: Connection[] = (Array.isArray(connections) ? connections : []).map((conn: any) => ({
             name: conn.name,
             type: conn.type || 'user' as const
           }));
@@ -74,14 +74,14 @@ const AssetDetailModal = ({
           const connectionMap = new Map<string, Connection>();
           
           // Tambahkan formattedConnections dulu
-          formattedConnections.forEach(conn => {
+          formattedConnections.forEach((conn: Connection) => {
             if (!connectionMap.has(conn.name)) {
               connectionMap.set(conn.name, conn);
             }
           });
           
           // Tambahkan clientConnections (akan override jika ada duplikat dengan name yang sama)
-          clientConnections.forEach(conn => {
+          clientConnections.forEach((conn: Connection) => {
             connectionMap.set(conn.name, conn);
           });
           

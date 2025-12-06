@@ -203,10 +203,10 @@ const PppoeSecretsTable = ({ refreshTrigger, onActionComplete, initialFilter = '
                 method: 'PUT',
                 body: JSON.stringify({ disabled: 'no' })
             });
-            if(!res.ok) {
-                const errData = await res.json();
-                throw new Error(errData.message || "Aksi gagal");
-            }
+        if(!res.ok) {
+            const errData = await res.json();
+            throw new Error(errData.message || "Aksi gagal");
+        }
         }
         
         onActionComplete();
@@ -248,7 +248,7 @@ const PppoeSecretsTable = ({ refreshTrigger, onActionComplete, initialFilter = '
       <Card>
         <CardHeader>
           <div className="flex justify-between items-center gap-4">
-            <CardTitle>Daftar Secret PPPoE ({loading ? '...' : filteredSecrets.length})</CardTitle>
+          <CardTitle>Daftar Secret PPPoE ({loading ? '...' : filteredSecrets.length})</CardTitle>
             <div className="relative w-full max-w-sm">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input

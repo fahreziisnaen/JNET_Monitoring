@@ -297,19 +297,19 @@ const MapDisplay = ({ assets, clients = [], onMarkerClick, onClientClick, showLi
         const lineKey = `line-${fromId}-${toId}-${line.status}-${index}`;
         
         return (
-          <Polyline
+        <Polyline
             key={lineKey}
-            positions={[
-              [line.from.latitude, line.from.longitude],
-              [line.to.latitude, line.to.longitude]
-            ]}
-            pathOptions={{
-              color: line.color,
-              weight: 4,
-              opacity: 0.8,
-              dashArray: line.status === 'rencana' ? '10, 5' : line.status === 'maintenance' ? '5, 5' : undefined // Dashed untuk rencana dan maintenance
-            }}
-          />
+          positions={[
+            [line.from.latitude, line.from.longitude],
+            [line.to.latitude, line.to.longitude]
+          ]}
+          pathOptions={{
+            color: line.color,
+            weight: 4,
+            opacity: 0.8,
+            dashArray: line.status === 'rencana' ? '10, 5' : line.status === 'maintenance' ? '5, 5' : undefined // Dashed untuk rencana dan maintenance
+          }}
+        />
         );
       })}
       

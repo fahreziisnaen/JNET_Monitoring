@@ -94,7 +94,7 @@ exports.getClients = async (req, res) => {
             res.status(200).json(clientsWithBoolean);
         } catch (fallbackError) {
             console.error("[GET CLIENTS FALLBACK ERROR]:", fallbackError);
-            res.status(500).json({ message: 'Gagal mengambil data clients.' });
+        res.status(500).json({ message: 'Gagal mengambil data clients.' });
         }
     }
 };

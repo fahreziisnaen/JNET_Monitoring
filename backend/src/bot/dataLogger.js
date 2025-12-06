@@ -129,8 +129,8 @@ async function processSlaEvents(workspaceId, currentActiveUsers, deviceId = null
                         const shouldNotify = eventData[0].notification_sent === 1 || eventData[0].duration_seconds >= 120;
                         
                         if (shouldNotify) {
-                            reconnectedUsers.push(user);
-                            reconnectDurations.push(eventData[0].duration_seconds);
+                        reconnectedUsers.push(user);
+                        reconnectDurations.push(eventData[0].duration_seconds);
                         }
                     }
                 }
