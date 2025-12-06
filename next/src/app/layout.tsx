@@ -12,6 +12,11 @@ const inter = Inter({ subsets: ["latin"] });
 export const metadata: Metadata = {
   title: "JNET - Dashboard",
   description: "Mikrotik Monitoring Tools",
+  icons: {
+    icon: '/favicon.ico',
+    shortcut: '/favicon.ico',
+    apple: '/favicon.ico',
+  },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode; }) {
