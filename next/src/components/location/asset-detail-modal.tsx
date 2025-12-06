@@ -28,9 +28,9 @@ interface AssetDetailModalProps {
   isOpen: boolean;
   asset: Asset | null;
   onClose: () => void;
-  onEdit: (asset: Asset) => void;
-  onDelete: (asset: Asset) => void;
-  onAddConnection: (asset: Asset) => void;
+  onEdit: (_asset: Asset) => void;
+  onDelete: (_asset: Asset) => void;
+  onAddConnection: (_asset: Asset) => void;
 }
 
 const AssetDetailModal = ({

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { FileText, Download, Loader2, Calendar, Plus, X, Server, CheckSquare, Square, ChevronDown, ChevronUp } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
@@ -34,7 +34,6 @@ const ReportPage = () => {
   const [isGenerating, setIsGenerating] = useState(false);
   const [devices, setDevices] = useState<Device[]>([]);
   const [deviceSelections, setDeviceSelections] = useState<DeviceSelection[]>([]);
-  const [loadingDevices, setLoadingDevices] = useState(false);
   const [loadingInterfaces, setLoadingInterfaces] = useState<number | null>(null);
   const apiUrl = process.env.NEXT_PUBLIC_API_BASE_URL;
 
@@ -60,12 +59,7 @@ const ReportPage = () => {
   }
 
   // Load devices on mount
-  useEffect(() => {
-    loadDevices();
-  }, []);
-
-  const loadDevices = async () => {
-    setLoadingDevices(true);
+  const loadDevices = useCallback(async () => {
     try {
       const res = await apiFetch(`${apiUrl}/api/devices`);
       if (res.ok) {
@@ -74,10 +68,12 @@ const ReportPage = () => {
       }
     } catch (error) {
       console.error('Error loading devices:', error);
-    } finally {
-      setLoadingDevices(false);
     }
-  };
+  }, [apiUrl]);
+
+  useEffect(() => {
+    loadDevices();
+  }, [loadDevices]);
 
   const handleAddDevice = () => {
     // Add empty device selection
@@ -243,12 +239,6 @@ const ReportPage = () => {
     }
   };
 
-  // Filter devices that are not yet selected
-  // Allow adding multiple MikroTik devices, so we don't filter by deviceId
-  // Only disable if all devices are already added
-  const availableDevices = devices.filter(
-    device => !deviceSelections.some(selection => selection.deviceId === device.id)
-  );
 
   return (
     <div className="p-4 md:p-8 max-w-6xl mx-auto">

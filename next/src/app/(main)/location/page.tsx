@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import dynamic from 'next/dynamic';
-import { Plus, Upload, Loader2, Trash2, RefreshCw, User, Download } from 'lucide-react';
+import { Plus, Upload, Loader2, RefreshCw, User, Download } from 'lucide-react';
 import AssetList, { Asset } from '@/components/location/asset-list';
 import ClientList, { Client } from '@/components/location/client-list';
 import AddAssetModal from '@/components/location/add-asset-modal';

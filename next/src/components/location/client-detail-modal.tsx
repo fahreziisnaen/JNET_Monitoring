@@ -63,11 +63,9 @@ interface ClientDetailModalProps {
   isOpen: boolean;
   client: Client | null;
   onClose: () => void;
-  onEdit: (client: Client) => void;
-  onDelete: (client: Client) => void;
+  onEdit: (_client: Client) => void;
+  onDelete: (_client: Client) => void;
 }
-
-const formatBytes = (bytes: string | number): string => {
   const numBytes = typeof bytes === 'string' ? parseInt(bytes) || 0 : bytes;
   if (numBytes === 0) return '0 B';
   const k = 1024;
