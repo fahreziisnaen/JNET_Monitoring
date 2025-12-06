@@ -2,7 +2,6 @@
 /backend/node_modules
 /backend/whatsapp_auth_info
 /backend/.env
-/backend/public
 
 # frontend
 /next/node_modules

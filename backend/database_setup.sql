@@ -1,8 +1,9 @@
 -- =====================================================
--- JNET MONITORING TOOLS - DATABASE SCHEMA
+-- JNET MONITORING TOOLS - COMPLETE DATABASE SETUP
 -- =====================================================
--- This file contains the complete database schema
--- for the JNET Monitoring application.
+-- This file contains the complete database setup
+-- including schema, migrations, and initial seeder
+-- Run this file for initial deployment
 -- =====================================================
 
 -- Create database if it doesn't exist
@@ -24,6 +25,7 @@ DROP TABLE IF EXISTS `traffic_logs`;
 DROP TABLE IF EXISTS `downtime_events`;
 DROP TABLE IF EXISTS `pppoe_user_status`;
 DROP TABLE IF EXISTS `workspace_invites`;
+DROP TABLE IF EXISTS `clients`;
 DROP TABLE IF EXISTS `odp_user_connections`;
 DROP TABLE IF EXISTS `network_assets`;
 DROP TABLE IF EXISTS `asset_owners`;
@@ -48,8 +50,10 @@ CREATE TABLE `workspaces` (
   `owner_id` int NOT NULL,
   `active_device_id` int DEFAULT NULL,
   `whatsapp_bot_enabled` tinyint(1) DEFAULT '0',
+  `whatsapp_group_id` varchar(255) DEFAULT NULL COMMENT 'WhatsApp Group JID untuk mengirim alert ke group (format: 120363123456789012@g.us)',
   `main_interface` varchar(255) DEFAULT NULL,
-  PRIMARY KEY (`id`)
+  PRIMARY KEY (`id`),
+  KEY `idx_whatsapp_group_id` (`whatsapp_group_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE `users` (
@@ -153,6 +157,29 @@ CREATE TABLE `network_assets` (
   CONSTRAINT `fk_network_assets_parent` FOREIGN KEY (`parent_asset_id`) REFERENCES `network_assets` (`id`) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- =====================================================
+-- Clients Table (Migration: Add clients table)
+-- =====================================================
+-- Description: Tabel untuk menyimpan data client yang diambil dari PPPoE secret
+-- Client dapat dihubungkan ke ODP dan memiliki koordinat untuk ditampilkan di map
+
+CREATE TABLE `clients` (
+  `id` int NOT NULL AUTO_INCREMENT,
+  `workspace_id` int NOT NULL,
+  `pppoe_secret_name` varchar(100) NOT NULL,
+  `latitude` decimal(10,8) NOT NULL,
+  `longitude` decimal(11,8) NOT NULL,
+  `odp_asset_id` int DEFAULT NULL,
+  `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `unique_pppoe_secret_per_workspace` (`workspace_id`, `pppoe_secret_name`),
+  KEY `idx_workspace_id` (`workspace_id`),
+  KEY `idx_odp_asset_id` (`odp_asset_id`),
+  CONSTRAINT `fk_clients_workspace` FOREIGN KEY (`workspace_id`) REFERENCES `workspaces` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_clients_odp_asset` FOREIGN KEY (`odp_asset_id`) REFERENCES `network_assets` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 CREATE TABLE `odp_user_connections` (
   `id` int NOT NULL AUTO_INCREMENT,
   `workspace_id` int NOT NULL,
@@ -172,6 +199,7 @@ CREATE TABLE `downtime_events` (
   `start_time` datetime NOT NULL,
   `end_time` datetime DEFAULT NULL,
   `duration_seconds` int DEFAULT NULL,
+  `notification_sent` BOOLEAN DEFAULT FALSE COMMENT 'Untuk track apakah notifikasi disconnect sudah dikirim setelah 2 menit downtime',
   PRIMARY KEY (`id`),
   KEY `idx_workspace_id` (`workspace_id`),
   KEY `idx_pppoe_user` (`pppoe_user`),
@@ -259,7 +287,7 @@ CREATE TABLE `interface_traffic_logs` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- =====================================================
--- Additional Tables (if needed)
+-- Additional Tables
 -- =====================================================
 
 CREATE TABLE `alarms` (
@@ -288,6 +316,86 @@ CREATE TABLE `dashboard_snapshot` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- =====================================================
--- Schema Creation Complete
+-- Set Database Timezone
+-- =====================================================
+-- Set timezone to Asia/Jakarta (UTC+7)
+-- This ensures OTP expiration and other time-based features work correctly
+
+SET GLOBAL time_zone = '+07:00';
+SET time_zone = '+07:00';
+
+-- =====================================================
+-- Initial Seeder
+-- =====================================================
+-- Creates default admin user and workspace
+-- Default credentials:
+-- Username: admin
+-- Password: admin123
+-- IMPORTANT: Change the password immediately after first login!
+-- =====================================================
+
+-- Check if admin user already exists
+SET @admin_exists = (SELECT COUNT(*) FROM `users` WHERE `username` = 'admin');
+
+-- Only insert if admin doesn't exist
+INSERT INTO `users` (
+    `username`,
+    `display_name`,
+    `password_hash`,
+    `whatsapp_number`,
+    `profile_picture_url`,
+    `created_at`
+)
+SELECT 
+    'admin',
+    'Administrator',
+    '$2b$10$L3bZT40YYqqb4RmADDKkkuvrj9Ok4ZOeEC2MMQyssNM9Ne/JB4cK6',
+    NULL,
+    '/public/uploads/avatars/default.jpg',
+    NOW()
+WHERE @admin_exists = 0;
+
+-- Get admin user ID
+SET @admin_user_id = (SELECT `id` FROM `users` WHERE `username` = 'admin' LIMIT 1);
+
+-- Create default workspace for admin if it doesn't exist
+INSERT INTO `workspaces` (
+    `name`,
+    `owner_id`,
+    `active_device_id`,
+    `whatsapp_bot_enabled`,
+    `whatsapp_group_id`,
+    `main_interface`
+)
+SELECT 
+    'Admin Workspace',
+    @admin_user_id,
+    NULL,
+    0,
+    NULL,
+    NULL
+WHERE NOT EXISTS (
+    SELECT 1 FROM `workspaces` WHERE `owner_id` = @admin_user_id
+);
+
+-- Update admin user to link to workspace
+UPDATE `users` 
+SET `workspace_id` = (
+    SELECT `id` FROM `workspaces` WHERE `owner_id` = @admin_user_id LIMIT 1
+)
+WHERE `id` = @admin_user_id AND `workspace_id` IS NULL;
+
+-- =====================================================
+-- Database Setup Complete
+-- =====================================================
+-- All tables, migrations, and indexes have been created
+-- Timezone has been set to Asia/Jakarta (UTC+7)
+-- 
+-- Next steps:
+-- 1. Configure backend .env file
+-- 2. Configure frontend .env.production file
+-- 3. Start backend server: pm2 start server.js --name "jnet-backend"
+-- 4. Build and start frontend: npm run build && pm2 start npm --name "jnet-monitoring" -- start
+-- 5. Configure Apache2 reverse proxy
 -- =====================================================
 
