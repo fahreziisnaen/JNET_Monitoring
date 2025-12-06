@@ -353,13 +353,13 @@ const ClientDetailModal = ({
                                   ],
                                   borderColor: 'transparent',
                                   hoverOffset: 8,
-                                  cutout: '80%',
                                   borderRadius: 5,
                                 }]
                               }}
                               options={{
                                 responsive: true,
                                 maintainAspectRatio: false,
+                                cutout: '80%',
                                 animation: { animateRotate: true, duration: 1200 },
                                 plugins: { tooltip: { enabled: false } }
                               }}
