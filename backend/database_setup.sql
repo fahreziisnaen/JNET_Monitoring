@@ -386,10 +386,22 @@ SET `workspace_id` = (
 WHERE `id` = @admin_user_id AND `workspace_id` IS NULL;
 
 -- =====================================================
+-- Fix Default Avatar Path (if needed)
+-- =====================================================
+-- Update any existing users with default.png to default.jpg
+-- This is safe to run multiple times
+
+UPDATE `users` 
+SET `profile_picture_url` = '/public/uploads/avatars/default.jpg'
+WHERE `profile_picture_url` = '/public/uploads/avatars/default.png'
+   OR `profile_picture_url` LIKE '%default.png%';
+
+-- =====================================================
 -- Database Setup Complete
 -- =====================================================
 -- All tables, migrations, and indexes have been created
 -- Timezone has been set to Asia/Jakarta (UTC+7)
+-- Default avatar paths have been fixed
 -- 
 -- Next steps:
 -- 1. Configure backend .env file
@@ -397,5 +409,6 @@ WHERE `id` = @admin_user_id AND `workspace_id` IS NULL;
 -- 3. Start backend server: pm2 start server.js --name "jnet-backend"
 -- 4. Build and start frontend: npm run build && pm2 start npm --name "jnet-monitoring" -- start
 -- 5. Configure Apache2 reverse proxy
+-- 6. Create public/uploads/avatars directory and place default.jpg file
 -- =====================================================
 
