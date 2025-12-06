@@ -64,12 +64,13 @@ const HotspotUserList = ({ refreshTrigger, onActionComplete }: HotspotUserListPr
     let options: RequestInit = {};
 
     switch (action) {
-        case 'kick':
+        case 'kick': {
             const activeUser = hotspotActive.find((u: any) => u.user === user.name);
             if(!activeUser || !activeUser['.id']) return alert("User tidak aktif, tidak bisa di-kick.");
             url = `${apiUrl}/api/hotspot/active/${activeUser['.id']}/kick`;
             options.method = 'POST';
             break;
+        }
         case 'enable':
         case 'disable':
             url = `${apiUrl}/api/hotspot/users/${user['.id']}/status`;
