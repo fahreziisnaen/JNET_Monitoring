@@ -1,0 +1,2655 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<kml xmlns="http://www.opengis.net/kml/2.2">
+  <Document>
+    <name>JNET Coverage</name>
+    <description>JNET Monitoring - Network Assets Coverage (Setiap placemark = 1 tipe aset)</description>
+    <Folder>
+      <name>Aldo Site</name>
+      <Placemark>
+        <name>ODP JND 01</name>
+        <description>4:8</description>
+        <Point>
+          <coordinates>113.212867752148,-7.75640224122545,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Aldo Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODP GG7</name>
+        <description>1:16</description>
+        <Point>
+          <coordinates>113.213648049293,-7.76167312041318,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Aldo Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODC SIAM (Coklat)</name>
+        <description>ODC 1:8</description>
+        <Point>
+          <coordinates>113.2165773,-7.7593873,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Aldo Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODP SIAM (Coklat)</name>
+        <description>ODP 3:8</description>
+        <Point>
+          <coordinates>113.2165773,-7.7593873,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Aldo Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODC GGSIRAN (Orange)</name>
+        <description>ODC 2:8</description>
+        <Point>
+          <coordinates>113.2172691,-7.75782,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Aldo Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODP GGSIRAN (Orange)</name>
+        <description>ODP 2:8</description>
+        <Point>
+          <coordinates>113.2172691,-7.75782,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Aldo Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODC ABDHM 01 (Hijau)</name>
+        <description>ODC 6:8</description>
+        <Point>
+          <coordinates>113.2187556,-7.7580847,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Aldo Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODP ABDHM 01 (Hijau)</name>
+        <description>ODP 0:8</description>
+        <Point>
+          <coordinates>113.2187556,-7.7580847,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Aldo Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODP CKNG 01</name>
+        <description>ODP 2:8</description>
+        <Point>
+          <coordinates>113.216418766403,-7.76084814171742,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Aldo Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODC CKNG 02</name>
+        <description>ODC 4:8</description>
+        <Point>
+          <coordinates>113.215935121194,-7.76114549126646,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Aldo Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODP CKNG 02</name>
+        <description>ODP 8:16</description>
+        <Point>
+          <coordinates>113.215935121194,-7.76114549126646,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Aldo Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODP CKNG 03</name>
+        <description>ODP 0:8</description>
+        <Point>
+          <coordinates>113.216294991975,-7.76405634878608,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Aldo Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODP CKNG 04</name>
+        <description>1:8</description>
+        <Point>
+          <coordinates>113.216383520696,-7.7655663338957,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Aldo Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODP CKNG 05</name>
+        <description>0:8</description>
+        <Point>
+          <coordinates>113.216390186592,-7.76828713929231,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Aldo Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODP ANGR 01</name>
+        <description>3:8</description>
+        <Point>
+          <coordinates>113.218051255659,-7.76133513506494,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Aldo Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODC ABDHM 02 (Abu-Abu)</name>
+        <description>ODC 2:8</description>
+        <Point>
+          <coordinates>113.218292518531,-7.76243262412141,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Aldo Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODP ABDHM 02 (Abu-Abu)</name>
+        <description>ODP 1:8</description>
+        <Point>
+          <coordinates>113.218292518531,-7.76243262412141,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Aldo Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODP ANGR 02</name>
+        <description>3:8</description>
+        <Point>
+          <coordinates>113.219894014185,-7.76120353941891,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Aldo Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODP ANGR 03</name>
+        <description>1:8</description>
+        <Point>
+          <coordinates>113.220965770756,-7.758416519681,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Aldo Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODP ANGR 04</name>
+        <description>1:8</description>
+        <Point>
+          <coordinates>113.221078212157,-7.75647123077248,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Aldo Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODP WR 01</name>
+        <description>6:8</description>
+        <Point>
+          <coordinates>113.220004,-7.753406,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Aldo Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODP WR 02</name>
+        <description>3:8</description>
+        <Point>
+          <coordinates>113.2182091,-7.7520757,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Aldo Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODP BRDG</name>
+        <description>6:8</description>
+        <Point>
+          <coordinates>113.2289087,-7.7614196,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Aldo Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODP GRLY 01 (Biru)</name>
+        <description>2:8</description>
+        <Point>
+          <coordinates>113.2284078,-7.7628335,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Aldo Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODP STYA 02</name>
+        <description>1:8</description>
+        <Point>
+          <coordinates>113.2298072902,-7.76112078605011,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Aldo Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODP STYA 01</name>
+        <description>1:8</description>
+        <Point>
+          <coordinates>113.231767553808,-7.76227199202172,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Aldo Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODP STYA 03</name>
+        <description>1:8</description>
+        <Point>
+          <coordinates>113.231539160212,-7.7613058963817,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Aldo Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODP PRKS 01</name>
+        <description>1:8</description>
+        <Point>
+          <coordinates>113.233452270341,-7.76029946984351,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Aldo Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODP YSDS 02</name>
+        <description>2:16</description>
+        <Point>
+          <coordinates>113.235413139832,-7.75845296653618,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Aldo Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODP YSDS 01</name>
+        <description>1:8</description>
+        <Point>
+          <coordinates>113.238332467481,-7.7610743563426,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Aldo Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODP SJS 01</name>
+        <description>1:8</description>
+        <Point>
+          <coordinates>113.235944477469,-7.76581981342655,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Aldo Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODP KDDM 01</name>
+        <description>1:8</description>
+        <Point>
+          <coordinates>113.2414977,-7.763888,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Aldo Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODP KLMS 01</name>
+        <description>0:8</description>
+        <Point>
+          <coordinates>113.241565153996,-7.76685510608215,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Aldo Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODP KLMS 02</name>
+        <description>2:8</description>
+        <Point>
+          <coordinates>113.241781,-7.772816,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Aldo Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODC GTNG (Hijau)</name>
+        <description>ODC 1:8</description>
+        <Point>
+          <coordinates>113.245788559128,-7.7672974827058,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Aldo Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODP GTNG (Hijau)</name>
+        <description>ODP 0:8</description>
+        <Point>
+          <coordinates>113.245788559128,-7.7672974827058,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Aldo Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODP DNLS 01</name>
+        <description>2:8</description>
+        <Point>
+          <coordinates>113.249424560897,-7.76733564944547,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Aldo Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODC PNGR (Kuning)</name>
+        <description>4:8</description>
+        <Point>
+          <coordinates>113.2290402,-7.7594092,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Aldo Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODC SMN (Hitam)</name>
+        <description>2:8</description>
+        <Point>
+          <coordinates>113.23230071679,-7.76093939571315,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Aldo Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODC PRKS (Merah)</name>
+        <description>1:8</description>
+        <Point>
+          <coordinates>113.233111713469,-7.76131577321143,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Aldo Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODC SJS</name>
+        <description>1:8</description>
+        <Point>
+          <coordinates>113.237183513998,-7.76319234731811,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Aldo Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODC YSDS</name>
+        <description>1:8</description>
+        <Point>
+          <coordinates>113.237757258426,-7.7634665685979,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Aldo Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODC KLMS</name>
+        <description>1:8</description>
+        <Point>
+          <coordinates>113.241508921995,-7.76524706477685,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Aldo Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODC DNLS</name>
+        <description>1:8</description>
+        <Point>
+          <coordinates>113.2488637,-7.7689859,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Aldo Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODP GRYL 02 (Orange)</name>
+        <description>2:8</description>
+        <Point>
+          <coordinates>113.23014,-7.76365,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Aldo Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODP MSTP 01</name>
+        <description>1:8</description>
+        <Point>
+          <coordinates>113.214143,-7.773912,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Aldo Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODC MSTP 01</name>
+        <description>0:8</description>
+        <Point>
+          <coordinates>113.213465271424,-7.77061983051545,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Aldo Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODC MSTP 02</name>
+        <description>0:8</description>
+        <Point>
+          <coordinates>113.213024589139,-7.77483603006825,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Aldo Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODC MSTP 03</name>
+        <description>0:8</description>
+        <Point>
+          <coordinates>113.212761352794,-7.77758120899477,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Aldo Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODP KLMS 03</name>
+        <description>1:8</description>
+        <Point>
+          <coordinates>113.2384163,-7.7739387,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Aldo Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODC SNM</name>
+        <description>ODC 1:8</description>
+        <Point>
+          <coordinates>113.218218,-7.768132,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Aldo Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODP SNM</name>
+        <description>ODP 1:8</description>
+        <Point>
+          <coordinates>113.218218,-7.768132,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Aldo Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODP DVAR01</name>
+        <description>1:8</description>
+        <Point>
+          <coordinates>113.2089781,-7.7722036,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Aldo Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+    </Folder>
+    <Folder>
+      <name>Rian Site</name>
+      <Placemark>
+        <name>ODP RIAN-01</name>
+        <description>8 port</description>
+        <Point>
+          <coordinates>113.220726,-7.741342,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Rian Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODP RIAN-02</name>
+        <description>8 port</description>
+        <Point>
+          <coordinates>113.219263,-7.740993,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Rian Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODP RIAN-03</name>
+        <description>8 port</description>
+        <Point>
+          <coordinates>113.219593,-7.740102,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Rian Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODP RIAN-04</name>
+        <description>8 port</description>
+        <Point>
+          <coordinates>113.219135,-7.740138,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Rian Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODC T-1</name>
+        <description>ODC 1:8</description>
+        <Point>
+          <coordinates>113.222683,-7.741917,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Rian Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODP T-1</name>
+        <description>ODP 1:8</description>
+        <Point>
+          <coordinates>113.222683,-7.741917,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Rian Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODP RIAN-05</name>
+        <description>8 port</description>
+        <Point>
+          <coordinates>113.223366,-7.742705,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Rian Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODC B-1</name>
+        <description>ODC 1:8</description>
+        <Point>
+          <coordinates>113.218253,-7.740048,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Rian Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODP B-1</name>
+        <description>ODP 1:8</description>
+        <Point>
+          <coordinates>113.218253,-7.740048,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Rian Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODC S-1</name>
+        <description>ODC 1:8</description>
+        <Point>
+          <coordinates>113.218109,-7.743323,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Rian Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODP S-1</name>
+        <description>ODP 1:8</description>
+        <Point>
+          <coordinates>113.218109,-7.743323,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Rian Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODP U-1</name>
+        <description>8 port</description>
+        <Point>
+          <coordinates>113.218365,-7.738585,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Rian Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODP U-2</name>
+        <description>8 port</description>
+        <Point>
+          <coordinates>113.216404,-7.737374,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Rian Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODP B-2</name>
+        <description>8 port</description>
+        <Point>
+          <coordinates>113.215478,-7.739497,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Rian Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODP B-3</name>
+        <description>8 port</description>
+        <Point>
+          <coordinates>113.214428,-7.739474,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Rian Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODP B-4</name>
+        <description>8 port</description>
+        <Point>
+          <coordinates>113.21371,-7.739471,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Rian Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODP B-11</name>
+        <description>8 port</description>
+        <Point>
+          <coordinates>113.214333,-7.740866,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Rian Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODP B-5</name>
+        <description>8 port</description>
+        <Point>
+          <coordinates>113.211354,-7.739224,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Rian Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODP B-6</name>
+        <description>8 port</description>
+        <Point>
+          <coordinates>113.21024,-7.739509,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Rian Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODP B-7</name>
+        <description>8 port</description>
+        <Point>
+          <coordinates>113.208289,-7.742603,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Rian Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODP B-8</name>
+        <description>8 port</description>
+        <Point>
+          <coordinates>113.206921,-7.74475,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Rian Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODP B-9</name>
+        <description>8 port</description>
+        <Point>
+          <coordinates>113.201866,-7.74722,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Rian Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODP RIAN-06</name>
+        <description>8 port</description>
+        <Point>
+          <coordinates>113.218246,-7.742531,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Rian Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODP B-12</name>
+        <description>8 port</description>
+        <Point>
+          <coordinates>113.213384,-7.742094,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Rian Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODP RIAN-07</name>
+        <description>8 port</description>
+        <Point>
+          <coordinates>113.22097,-7.740002,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Rian Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODP B-10</name>
+        <description>8 port</description>
+        <Point>
+          <coordinates>113.202834,-7.749183,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Rian Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+    </Folder>
+    <Folder>
+      <name>Pramana Site</name>
+      <Placemark>
+        <name>ODP ARMD01</name>
+        <description>8 port</description>
+        <Point>
+          <coordinates>113.197593,-7.753052,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Pramana Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODP ARMD02</name>
+        <description>8 Port</description>
+        <Point>
+          <coordinates>113.197598,-7.752672,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Pramana Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODC ARMD03</name>
+        <description>ODC 1:8</description>
+        <Point>
+          <coordinates>113.196138,-7.752523,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Pramana Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODP ARMD03</name>
+        <description>ODP 1:8</description>
+        <Point>
+          <coordinates>113.196138,-7.752523,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Pramana Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODP ARMD04</name>
+        <description>8 port</description>
+        <Point>
+          <coordinates>113.196601,-7.752944,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Pramana Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODP ARMD05</name>
+        <description>8 port</description>
+        <Point>
+          <coordinates>113.195734,-7.751483,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Pramana Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODP ARMD06</name>
+        <description>8 port</description>
+        <Point>
+          <coordinates>113.195424,-7.753134,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Pramana Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODC ARMD07</name>
+        <description>ODC 1:8</description>
+        <Point>
+          <coordinates>113.194395,-7.75272,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Pramana Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODP ARMD07</name>
+        <description>ODP 1:8</description>
+        <Point>
+          <coordinates>113.194395,-7.75272,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Pramana Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODP ARMD08</name>
+        <description>8 port</description>
+        <Point>
+          <coordinates>113.195188,-7.752453,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Pramana Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODP ARMD09</name>
+        <description>8 port</description>
+        <Point>
+          <coordinates>113.197225,-7.751804,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Pramana Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODC ARMD10</name>
+        <description>ODC 1:8</description>
+        <Point>
+          <coordinates>113.196489,-7.750706,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Pramana Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODP ARMD10</name>
+        <description>ODP 1:8</description>
+        <Point>
+          <coordinates>113.196489,-7.750706,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Pramana Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODP ARMD11</name>
+        <description>8 port</description>
+        <Point>
+          <coordinates>113.196042,-7.751255,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Pramana Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODP ARMD12</name>
+        <description>8 port</description>
+        <Point>
+          <coordinates>113.195309,-7.750349,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Pramana Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODP ARMD13</name>
+        <description>8 port</description>
+        <Point>
+          <coordinates>113.194664,-7.750173,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Pramana Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODP ARMD14</name>
+        <description>8 port</description>
+        <Point>
+          <coordinates>113.197564,-7.753918,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Pramana Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODP CTRM01</name>
+        <description>8 port</description>
+        <Point>
+          <coordinates>113.195708,-7.75513,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Pramana Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODP CTRM02</name>
+        <description>8 port</description>
+        <Point>
+          <coordinates>113.194576,-7.756085,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Pramana Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODC CTRM03</name>
+        <description>ODC 1:8</description>
+        <Point>
+          <coordinates>113.195186,-7.75884,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Pramana Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODP CTRM03</name>
+        <description>ODP 1:8</description>
+        <Point>
+          <coordinates>113.195186,-7.75884,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Pramana Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODC PLNG01</name>
+        <description>ODC 1:8</description>
+        <Point>
+          <coordinates>113.191204,-7.755753,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Pramana Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODP PLNG01</name>
+        <description>ODP 1:8</description>
+        <Point>
+          <coordinates>113.191204,-7.755753,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Pramana Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODP PLNG02</name>
+        <description>8 port</description>
+        <Point>
+          <coordinates>113.191157,-7.754681,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Pramana Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODC PLNG03</name>
+        <description>ODC 1:8</description>
+        <Point>
+          <coordinates>113.189884,-7.755648,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Pramana Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODP PLNG03</name>
+        <description>ODP 1:8</description>
+        <Point>
+          <coordinates>113.189884,-7.755648,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Pramana Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODP PLNG04</name>
+        <description>8 port</description>
+        <Point>
+          <coordinates>113.189933,-7.753574,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Pramana Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODP CTRM04</name>
+        <description>8 port</description>
+        <Point>
+          <coordinates>113.195005,-7.763681,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Pramana Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODC ASBRI01</name>
+        <description>ODC 1:8</description>
+        <Point>
+          <coordinates>113.205277,-7.760613,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Pramana Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODP ASBRI01</name>
+        <description>ODP 1:8</description>
+        <Point>
+          <coordinates>113.205277,-7.760613,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Pramana Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODP PLNG05</name>
+        <description>8 port</description>
+        <Point>
+          <coordinates>113.190721,-7.756771,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Pramana Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODP CTRM05</name>
+        <description>8 port</description>
+        <Point>
+          <coordinates>113.196161,-7.765724,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Pramana Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODP CTRM06</name>
+        <description>8 port</description>
+        <Point>
+          <coordinates>113.194026,-7.766553,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Pramana Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODP CTRM07</name>
+        <description>8 port</description>
+        <Point>
+          <coordinates>113.193682,-7.769151,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Pramana Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODP CTRM08</name>
+        <description>8 port</description>
+        <Point>
+          <coordinates>113.194461,-7.763869,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Pramana Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODP CGRT01</name>
+        <description>8 port</description>
+        <Point>
+          <coordinates>113.197675,-7.769414,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Pramana Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODP CGRT02</name>
+        <description>8 port</description>
+        <Point>
+          <coordinates>113.198911,-7.76922,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Pramana Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODP KDM01</name>
+        <description>8 port</description>
+        <Point>
+          <coordinates>113.188638,-7.77486,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Pramana Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODC KDM02</name>
+        <description>ODC 1:8</description>
+        <Point>
+          <coordinates>113.189091,-7.77644,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Pramana Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODP KDM02</name>
+        <description>ODP 1:8</description>
+        <Point>
+          <coordinates>113.189091,-7.77644,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Pramana Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODP KDM03</name>
+        <description>8 port</description>
+        <Point>
+          <coordinates>113.187906,-7.778262,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Pramana Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODP KDM04</name>
+        <description>8 port</description>
+        <Point>
+          <coordinates>113.186952,-7.77929,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Pramana Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODP KDM05</name>
+        <description>8 port</description>
+        <Point>
+          <coordinates>113.185982,-7.780938,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Pramana Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODC KDM06</name>
+        <description>ODC 1:8</description>
+        <Point>
+          <coordinates>113.184918,-7.781498,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Pramana Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODP KDM06</name>
+        <description>ODP 1:8</description>
+        <Point>
+          <coordinates>113.184918,-7.781498,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Pramana Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODP KDM07</name>
+        <description>8 port</description>
+        <Point>
+          <coordinates>113.185449,-7.7832,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Pramana Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODP KDM08</name>
+        <description>8 port</description>
+        <Point>
+          <coordinates>113.187358,-7.786662,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Pramana Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODP KDM09</name>
+        <description>8 port</description>
+        <Point>
+          <coordinates>113.188941,-7.787593,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Pramana Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODP KDM10</name>
+        <description>8 port</description>
+        <Point>
+          <coordinates>113.189354,-7.784948,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Pramana Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODP KDM11</name>
+        <description>8 port</description>
+        <Point>
+          <coordinates>113.182356,-7.782777,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Pramana Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODP KDM12</name>
+        <description>8 port</description>
+        <Point>
+          <coordinates>113.18052,-7.784596,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Pramana Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODP KDM13</name>
+        <description>8 port</description>
+        <Point>
+          <coordinates>113.180875,-7.782152,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Pramana Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODP KDM14</name>
+        <description>8 port</description>
+        <Point>
+          <coordinates>113.17815,-7.781605,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Pramana Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODP KDM15</name>
+        <description>8 port</description>
+        <Point>
+          <coordinates>113.178237,-7.777982,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Pramana Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODC KDM16</name>
+        <description>ODC 1:8</description>
+        <Point>
+          <coordinates>113.182237,-7.784409,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Pramana Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODP KDM16</name>
+        <description>ODP 1:8</description>
+        <Point>
+          <coordinates>113.182237,-7.784409,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Pramana Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODP KDM17</name>
+        <description>8 port</description>
+        <Point>
+          <coordinates>113.183439,-7.787147,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Pramana Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODP KDM18</name>
+        <description>8 port</description>
+        <Point>
+          <coordinates>113.18261,-7.789004,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Pramana Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODP KDM19</name>
+        <description>8 port</description>
+        <Point>
+          <coordinates>113.184467,-7.789491,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Pramana Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODP PSNGT01</name>
+        <description>8 port</description>
+        <Point>
+          <coordinates>113.17527,-7.792985,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Pramana Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODP PSNGT02</name>
+        <description>8 port</description>
+        <Point>
+          <coordinates>113.174264,-7.792605,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Pramana Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODP PSNGTO3</name>
+        <description>8 port</description>
+        <Point>
+          <coordinates>113.173927,-7.791367,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Pramana Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODP PSNGT04</name>
+        <description>8 port</description>
+        <Point>
+          <coordinates>113.174433,-7.789622,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Pramana Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODP PSNGT05</name>
+        <description>8 port</description>
+        <Point>
+          <coordinates>113.172707,-7.789078,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Pramana Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODP LWYN01</name>
+        <description>8 port</description>
+        <Point>
+          <coordinates>113.172108,-7.790897,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Pramana Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODP PSNGT06</name>
+        <description>8 port</description>
+        <Point>
+          <coordinates>113.172829,-7.793546,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Pramana Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODP PSNGT07</name>
+        <description>8 port</description>
+        <Point>
+          <coordinates>113.174377,-7.795364,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Pramana Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODP PSNGT08</name>
+        <description>8 port</description>
+        <Point>
+          <coordinates>113.176034,-7.794294,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Pramana Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODC PSNGT01G</name>
+        <description>ODC 1:8</description>
+        <Point>
+          <coordinates>113.175245,-7.795172,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Pramana Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODP PSNGT09</name>
+        <description>ODP 1:8</description>
+        <Point>
+          <coordinates>113.175245,-7.795172,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Pramana Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODP PSNGT10</name>
+        <description>8 port</description>
+        <Point>
+          <coordinates>113.174488,-7.796296,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Pramana Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODP PSNGT11</name>
+        <description>8 port</description>
+        <Point>
+          <coordinates>113.175814,-7.796712,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Pramana Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODP PSNGT12</name>
+        <description>8 port</description>
+        <Point>
+          <coordinates>113.174432,-7.799045,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Pramana Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODP PSNGT13</name>
+        <description>8 port</description>
+        <Point>
+          <coordinates>113.173289,-7.801856,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Pramana Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODP PSNGT14</name>
+        <description>8 port</description>
+        <Point>
+          <coordinates>113.172224,-7.798603,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Pramana Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODP LWYN02</name>
+        <description>8 port</description>
+        <Point>
+          <coordinates>113.170742,-7.79675,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Pramana Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODC MKDL01</name>
+        <description>ODC 1:8</description>
+        <Point>
+          <coordinates>113.171588,-7.801576,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Pramana Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODP MKDL01</name>
+        <description>ODP 1:8</description>
+        <Point>
+          <coordinates>113.171588,-7.801576,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Pramana Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODP MKDL02</name>
+        <description>8 port</description>
+        <Point>
+          <coordinates>113.168137,-7.802578,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Pramana Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODP MKDL04</name>
+        <description>8 port</description>
+        <Point>
+          <coordinates>113.166012,-7.807515,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Pramana Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODP MKDL03</name>
+        <description>8 port</description>
+        <Point>
+          <coordinates>113.167316,-7.804522,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Pramana Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODP PSNGT15</name>
+        <description>8 port</description>
+        <Point>
+          <coordinates>113.177919,-7.793811,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Pramana Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODP PSNGT16</name>
+        <description>8 port</description>
+        <Point>
+          <coordinates>113.177531,-7.795924,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Pramana Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODP PSNGT17</name>
+        <description>8 port</description>
+        <Point>
+          <coordinates>113.177816,-7.797346,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Pramana Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODP PSNGT18</name>
+        <description>8 port</description>
+        <Point>
+          <coordinates>113.177233,-7.797934,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Pramana Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODC PSNGT19</name>
+        <description>ODC 1:8</description>
+        <Point>
+          <coordinates>113.178437,-7.79923,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Pramana Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODP PSNGT19</name>
+        <description>ODP 1:8</description>
+        <Point>
+          <coordinates>113.178437,-7.79923,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Pramana Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODP PSNGT20</name>
+        <description>8 port</description>
+        <Point>
+          <coordinates>113.179409,-7.800913,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Pramana Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODP PSNGT21</name>
+        <description>8 port</description>
+        <Point>
+          <coordinates>113.177927,-7.800104,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Pramana Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODP PSNGT22</name>
+        <description>8 port</description>
+        <Point>
+          <coordinates>113.182681,-7.796549,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Pramana Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODP PSNGT23</name>
+        <description>8 port</description>
+        <Point>
+          <coordinates>113.182519,-7.797735,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Pramana Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODP PSNGT24</name>
+        <description>8 port</description>
+        <Point>
+          <coordinates>113.177209,-7.791874,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Pramana Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODP PSNGT25</name>
+        <description>8 port</description>
+        <Point>
+          <coordinates>113.180137,-7.790665,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Pramana Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODP PSNGT26</name>
+        <description>8 port</description>
+        <Point>
+          <coordinates>113.177358,-7.770224,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Pramana Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODC AGRN01</name>
+        <description>ODC 1:8</description>
+        <Point>
+          <coordinates>113.221732,-7.760702,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Pramana Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODP AGRN01</name>
+        <description>ODP 1:8</description>
+        <Point>
+          <coordinates>113.221732,-7.760702,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Pramana Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODP AGRN02</name>
+        <description>8 port</description>
+        <Point>
+          <coordinates>113.221285,-7.762945,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Pramana Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODP AGRN03</name>
+        <description>8 port</description>
+        <Point>
+          <coordinates>113.220833,-7.76564,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Pramana Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODP AGRN04</name>
+        <description>8 port</description>
+        <Point>
+          <coordinates>113.223482,-7.760181,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Pramana Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODC JTI01</name>
+        <description>ODC 1:8</description>
+        <Point>
+          <coordinates>113.226377,-7.760581,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Pramana Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODP JTI01</name>
+        <description>ODP 1:8</description>
+        <Point>
+          <coordinates>113.226377,-7.760581,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Pramana Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODP JTI02</name>
+        <description>8 port</description>
+        <Point>
+          <coordinates>113.226349,-7.759843,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Pramana Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODP JTI03</name>
+        <description>8 port</description>
+        <Point>
+          <coordinates>113.225159,-7.760302,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Pramana Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODP JTI04</name>
+        <description>8 port</description>
+        <Point>
+          <coordinates>113.226124,-7.76154,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Pramana Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODP JTI05</name>
+        <description>8 port</description>
+        <Point>
+          <coordinates>113.226423,-7.762726,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Pramana Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODP JTI06</name>
+        <description>8 port</description>
+        <Point>
+          <coordinates>113.22611,-7.764612,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Pramana Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODP JTI07</name>
+        <description>8 port</description>
+        <Point>
+          <coordinates>113.225416,-7.765304,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Pramana Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODP JTI09</name>
+        <description>8 port</description>
+        <Point>
+          <coordinates>113.226109,-7.767285,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Pramana Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODP JTI08</name>
+        <description>8 port</description>
+        <Point>
+          <coordinates>113.225917,-7.766432,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Pramana Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODP KTPG01</name>
+        <description>8 port</description>
+        <Point>
+          <coordinates>113.175532,-7.757202,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Pramana Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODC KTPG</name>
+        <description>8 port</description>
+        <Point>
+          <coordinates>113.175841,-7.755901,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Pramana Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODP KTPG02</name>
+        <description>8 port</description>
+        <Point>
+          <coordinates>113.175371,-7.757869,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Pramana Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODP KTPG03</name>
+        <description>8 port</description>
+        <Point>
+          <coordinates>113.176014,-7.754546,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Pramana Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODP ASBR02</name>
+        <description>8 port</description>
+        <Point>
+          <coordinates>113.203811,-7.758672,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Pramana Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODC KPTP01</name>
+        <description>ODC 1:8</description>
+        <Point>
+          <coordinates>113.173309,-7.755306,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Pramana Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODP KTPG04</name>
+        <description>ODP 1:8</description>
+        <Point>
+          <coordinates>113.173309,-7.755306,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Pramana Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODC KTPG03</name>
+        <description>8 port</description>
+        <Point>
+          <coordinates>113.18006,-7.754132,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Pramana Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODP PLNG06</name>
+        <description>8 port</description>
+        <Point>
+          <coordinates>113.184799,-7.754192,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Pramana Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODP LWYN01G</name>
+        <description>8 port</description>
+        <Point>
+          <coordinates>113.172732,-7.796108,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Pramana Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODP PSNGT02G</name>
+        <description>8 port</description>
+        <Point>
+          <coordinates>113.177925,-7.791957,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Pramana Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODP PSNGT01G</name>
+        <description>8 port</description>
+        <Point>
+          <coordinates>113.175236,-7.795183,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Pramana Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODC PLNG01G</name>
+        <description>8 port</description>
+        <Point>
+          <coordinates>113.189088,-7.764252,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Pramana Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODP PLNG01G</name>
+        <description>8 port</description>
+        <Point>
+          <coordinates>113.187597,-7.763989,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Pramana Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>ODP KTPG06</name>
+        <description>8 port</description>
+        <Point>
+          <coordinates>113.179902,-7.755579,0</coordinates>
+        </Point>
+        <ExtendedData>
+          <Data>
+            <name>owner_name</name>
+            <value>Pramana Site</value>
+          </Data>
+        </ExtendedData>
+      </Placemark>
+    </Folder>
+  </Document>
+</kml>

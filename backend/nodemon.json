@@ -1,0 +1,7 @@
+{
+  "watch": ["src", "server.js"],
+  "ignore": ["whatsapp_auth_info/**", "node_modules/**", "*.log"],
+  "ext": "js,json",
+  "exec": "node server.js"
+}
+

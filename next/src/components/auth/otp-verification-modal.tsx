@@ -1,0 +1,148 @@
+'use client';
+
+import React, { useState, useEffect } from 'react';
+import { motion, AnimatePresence } from '@/components/motion';
+import { X, KeyRound, Loader2 } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { useRouter } from 'next/navigation';
+import { useAuth } from '@/components/providers/auth-provider';
+
+interface OtpVerificationModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  whatsappNumber: string;
+}
+
+const OtpVerificationModal: React.FC<OtpVerificationModalProps> = ({
+  isOpen,
+  onClose,
+  whatsappNumber,
+}) => {
+  const [otp, setOtp] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const router = useRouter();
+  const { login, checkLoggedIn } = useAuth();
+
+  useEffect(() => {
+    if (isOpen) {
+      setOtp('');
+      setError('');
+    }
+  }, [isOpen]);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    setError('');
+    try {
+      const apiUrl = process.env.NEXT_PUBLIC_API_BASE_URL;
+      const res = await fetch(`${apiUrl}/api/register/verify`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ whatsappNumber, otp }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.message || 'Verifikasi gagal.');
+      }
+      
+      // Simpan token di localStorage sebagai fallback jika cookie tidak bekerja
+      if (data.token && typeof window !== 'undefined') {
+        try {
+          localStorage.setItem('auth_token', data.token);
+          console.log('[Register OTP] Token disimpan ke localStorage');
+        } catch (e) {
+          // localStorage mungkin tidak tersedia atau di-block (misalnya di UC Browser)
+          console.warn('[Register OTP] Gagal menyimpan token ke localStorage, menggunakan cookie saja:', e);
+        }
+      }
+      
+      // Set user data dari response
+      const userData = data.user || { id: data.userId, displayName: data.displayName, profile_picture_url: data.profile_picture_url };
+      login(userData);
+      
+      // Tunggu sebentar untuk memastikan cookie ter-set
+      await new Promise(resolve => setTimeout(resolve, 100));
+      
+      // Setelah registrasi berhasil, cookie sudah di-set oleh backend
+      // Trigger checkLoggedIn untuk verify cookie dan update state dengan data lengkap
+      try {
+        await checkLoggedIn();
+        console.log('[Register OTP] CheckLoggedIn berhasil');
+      } catch (checkError) {
+        console.warn('[Register OTP] CheckLoggedIn error:', checkError);
+        // Jika checkLoggedIn gagal tapi token ada, tetap lanjutkan
+        if (data.token) {
+          console.log('[Register OTP] Menggunakan token dari localStorage untuk melanjutkan');
+        }
+      }
+      
+      onClose();
+      router.push('/dashboard');
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <AnimatePresence>
+      {isOpen && (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          className="fixed inset-0 bg-black/70 flex items-center justify-center z-[1002] p-4"
+          onClick={onClose}
+        >
+          <motion.div
+            initial={{ y: 50, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            exit={{ y: 50, opacity: 0 }}
+            transition={{ type: 'spring', damping: 20, stiffness: 300 }}
+            className="bg-card text-card-foreground rounded-2xl shadow-2xl w-full max-w-sm text-center border"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <header className="flex justify-end p-2">
+              <button
+                type="button"
+                onClick={onClose}
+                className="p-1 rounded-full hover:bg-secondary"
+              >
+                <X size={20} />
+              </button>
+            </header>
+            <div className="p-6 pt-0">
+              <KeyRound className="mx-auto h-12 w-12 text-primary" />
+              <h2 className="text-2xl font-bold mt-4">Verifikasi Nomor</h2>
+              <p className="text-sm text-muted-foreground mt-2">
+                Kami telah mengirim kode 6 digit ke nomor WhatsApp{' '}
+                <strong>{whatsappNumber}</strong>.
+              </p>
+              <form onSubmit={handleSubmit} className="mt-6 space-y-4">
+                <input
+                  type="text"
+                  placeholder="______"
+                  maxLength={6}
+                  value={otp}
+                  onChange={(e) => setOtp(e.target.value)}
+                  className="w-full p-4 text-center text-3xl tracking-[1rem] font-mono rounded-lg bg-input border-transparent focus:ring-2 focus:ring-ring"
+                  required
+                />
+                {error && <p className="text-sm text-destructive">{error}</p>}
+                <Button type="submit" className="w-full" disabled={loading}>
+                  {loading ? <Loader2 className="animate-spin" /> : 'Verifikasi & Daftar'}
+                </Button>
+              </form>
+            </div>
+          </motion.div>
+        </motion.div>
+      )}
+    </AnimatePresence>
+  );
+};
+
+export default OtpVerificationModal;

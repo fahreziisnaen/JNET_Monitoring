@@ -1,0 +1,135 @@
+'use client';
+
+import React, { useState, useRef, useEffect } from 'react';
+import { Camera, Loader2 } from 'lucide-react';
+import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { useAuth } from '@/components/providers/auth-provider';
+import AvatarCropModal from './avatar-crop-modal';
+import { apiFetch, getAuthToken } from '@/utils/api';
+
+const ProfileCard = () => {
+  const { user, loading: authLoading, checkLoggedIn } = useAuth();
+  const [displayName, setDisplayName] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [isCropModalOpen, setIsCropModalOpen] = useState(false);
+  const [imageToCrop, setImageToCrop] = useState<string | null>(null);
+  const apiUrl = process.env.NEXT_PUBLIC_API_BASE_URL;
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (user) {
+      setDisplayName(user.displayName || '');
+    }
+  }, [user]);
+
+  const handleSaveProfile = async () => {
+    setLoading(true);
+    try {
+      const res = await apiFetch(`${apiUrl}/api/user/details`, {
+        method: 'PUT',
+        body: JSON.stringify({ displayName })
+      });
+      if (!res.ok) throw new Error("Gagal menyimpan profil.");
+      await checkLoggedIn();
+      alert("Profil berhasil disimpan!");
+    } catch (error) {
+      alert("Gagal menyimpan profil.");
+    } finally {
+      setLoading(false);
+    }
+  };
+  
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setImageToCrop(reader.result as string);
+        setIsCropModalOpen(true);
+      };
+      reader.readAsDataURL(file);
+    }
+
+    if (e.currentTarget) e.currentTarget.value = "";
+  };
+  
+  const handleSaveAvatar = async (croppedBlob: Blob) => {
+    setLoading(true);
+    const formData = new FormData();
+    formData.append('avatar', croppedBlob, 'avatar.png');
+
+    try {
+      // Note: apiFetch tidak bisa digunakan untuk FormData karena Content-Type harus multipart/form-data
+      // Tapi kita tetap perlu Authorization header
+      const token = getAuthToken();
+      const headers: HeadersInit = {};
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+      
+      await fetch(`${apiUrl}/api/user/avatar`, {
+        method: 'POST',
+        credentials: 'include',
+        headers,
+        body: formData,
+      });
+      await checkLoggedIn();
+      alert("Avatar berhasil diubah!");
+    } catch(err) {
+      alert("Gagal mengubah avatar.");
+    } finally {
+      setLoading(false);
+      setIsCropModalOpen(false);
+      setImageToCrop(null);
+    }
+  };
+
+  if (authLoading) return <Card className="p-6 flex justify-center"><Loader2 className="animate-spin"/></Card>;
+
+  return (
+    <>
+        <Card>
+          <CardHeader><CardTitle>Profil & Tampilan</CardTitle></CardHeader>
+          <CardContent className="space-y-6">
+            <div className="flex items-center gap-6">
+              <div className="relative">
+                <img 
+                  src={user?.profile_picture_url ? `${apiUrl}${user.profile_picture_url}?t=${new Date().getTime()}` : `${apiUrl}/public/uploads/avatars/default.jpg`} 
+                  alt="Avatar" 
+                  className="w-24 h-24 rounded-full object-cover border-4 border-card shadow-md"
+                  onError={(e) => {
+                    // Fallback jika gambar tidak ditemukan
+                    const target = e.target as HTMLImageElement;
+                    target.src = `${apiUrl}/public/uploads/avatars/default.jpg`;
+                  }}
+                />
+                <input type="file" ref={fileInputRef} onChange={handleFileSelect} className="hidden" accept="image/*"/>
+                <button onClick={() => fileInputRef.current?.click()} className="absolute bottom-0 right-0 bg-primary hover:bg-primary/90 text-primary-foreground p-2 rounded-full shadow-md border-2 border-card">
+                  <Camera size={16} />
+                </button>
+              </div>
+              <div className="flex-grow">
+                <label htmlFor="displayName" className="block text-sm font-medium mb-1 text-muted-foreground">Nama Display</label>
+                <input id="displayName" type="text" value={displayName} onChange={(e) => setDisplayName(e.target.value)} className="w-full p-2 rounded-md bg-input border-border focus:outline-none focus:ring-2 focus:ring-ring"/>
+              </div>
+            </div>
+            <div className="text-right">
+              <Button onClick={handleSaveProfile} disabled={loading}>
+                {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin"/>} Simpan Profil
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+        
+        <AvatarCropModal
+            isOpen={isCropModalOpen}
+            onClose={() => setIsCropModalOpen(false)}
+            onSave={handleSaveAvatar}
+            imageSrc={imageToCrop}
+            isSaving={loading}
+        />
+    </>
+  );
+};
+export default ProfileCard;
