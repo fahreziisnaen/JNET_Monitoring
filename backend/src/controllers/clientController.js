@@ -419,20 +419,25 @@ exports.getClient = async (req, res) => {
         
         const client = clients[0];
         
-        // Sync: Jika client punya odp_asset_id, pastikan ada di odp_user_connections
+        // Sync: Jika client punya odp_asset_id, pastikan ada di odp_user_connections (async, tidak blocking)
         if (client.odp_asset_id) {
-            const [existingConnection] = await pool.query(
+            // Lakukan sync secara async agar tidak blocking response
+            pool.query(
                 'SELECT id FROM odp_user_connections WHERE workspace_id = ? AND asset_id = ? AND pppoe_secret_name = ?',
                 [workspace_id, client.odp_asset_id, client.pppoe_secret_name]
-            );
-            
-            if (existingConnection.length === 0) {
-                // Tambahkan ke odp_user_connections jika belum ada
-                await pool.query(
-                    'INSERT INTO odp_user_connections (workspace_id, asset_id, pppoe_secret_name) VALUES (?, ?, ?)',
-                    [workspace_id, client.odp_asset_id, client.pppoe_secret_name]
-                );
-            }
+            ).then(([existingConnection]) => {
+                if (existingConnection.length === 0) {
+                    // Tambahkan ke odp_user_connections jika belum ada (async)
+                    pool.query(
+                        'INSERT INTO odp_user_connections (workspace_id, asset_id, pppoe_secret_name) VALUES (?, ?, ?)',
+                        [workspace_id, client.odp_asset_id, client.pppoe_secret_name]
+                    ).catch(err => {
+                        console.warn(`[GET CLIENT] Error syncing ODP connection:`, err.message);
+                    });
+                }
+            }).catch(err => {
+                console.warn(`[GET CLIENT] Error checking ODP connection:`, err.message);
+            });
         }
         
         // Get PPPoE secret details from MikroTik
@@ -455,67 +460,83 @@ exports.getClient = async (req, res) => {
                     remoteAddress = activeUser.address;
                 }
                 
-                // Get SLA and usage data from database (sama seperti di SLA detail modal)
+                // Get SLA and usage data from database (parallel untuk performa lebih baik)
+                // Menggunakan logika yang sama dengan getSlaDetails dan getUsageHistory
                 let slaData = null;
                 let usageData = null;
                 
                 try {
-                    // Get SLA data (uptime percentage dan recent events)
-                    const [slaResults] = await pool.query(`
-                        SELECT 
-                            COUNT(*) as total_events,
-                            SUM(CASE WHEN end_time IS NULL THEN 1 ELSE 0 END) as ongoing_events,
-                            SUM(CASE WHEN end_time IS NOT NULL THEN duration_seconds ELSE 0 END) as total_downtime_seconds
-                        FROM downtime_events
-                        WHERE workspace_id = ? AND pppoe_user = ? AND start_time >= DATE_SUB(NOW(), INTERVAL 30 DAY)
-                    `, [workspace_id, client.pppoe_secret_name]);
+                    const thirtyDaysAgo = new Date();
+                    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
                     
-                    const totalDowntimeSeconds = slaResults[0]?.total_downtime_seconds || 0;
-                    const thirtyDaysInSeconds = 30 * 24 * 60 * 60;
-                    const uptimeSeconds = thirtyDaysInSeconds - totalDowntimeSeconds;
-                    const slaPercentage = thirtyDaysInSeconds > 0 ? (uptimeSeconds / thirtyDaysInSeconds) * 100 : 100;
+                    // Parallel queries untuk SLA dan usage data
+                    const [completedDowntimeResult, ongoingDowntimeResult, recentEventsResult, usageResults] = await Promise.all([
+                        // Query 1: Hitung completed downtime
+                        pool.query(`
+                            SELECT COALESCE(SUM(duration_seconds), 0) as total_downtime
+                            FROM downtime_events
+                            WHERE workspace_id = ? AND pppoe_user = ? AND start_time >= ? AND end_time IS NOT NULL
+                        `, [workspace_id, client.pppoe_secret_name, thirtyDaysAgo]),
+                        
+                        // Query 2: Hitung ongoing downtime
+                        pool.query(`
+                            SELECT COALESCE(SUM(TIMESTAMPDIFF(SECOND, start_time, NOW())), 0) as ongoing_downtime
+                            FROM downtime_events
+                            WHERE workspace_id = ? AND pppoe_user = ? AND start_time >= ? AND end_time IS NULL
+                        `, [workspace_id, client.pppoe_secret_name, thirtyDaysAgo]),
+                        
+                        // Query 3: Ambil recent events
+                        pool.query(`
+                            SELECT 
+                                start_time,
+                                CASE 
+                                    WHEN end_time IS NULL THEN TIMESTAMPDIFF(SECOND, start_time, NOW())
+                                    ELSE duration_seconds 
+                                END as duration_seconds,
+                                end_time,
+                                end_time IS NULL as is_ongoing
+                            FROM downtime_events
+                            WHERE workspace_id = ? AND pppoe_user = ? AND start_time >= ?
+                            ORDER BY start_time DESC
+                            LIMIT 10
+                        `, [workspace_id, client.pppoe_secret_name, thirtyDaysAgo]),
+                        
+                        // Query 4: Get usage data (daily, weekly, monthly)
+                        pool.query(`
+                            SELECT 
+                                SUM(CASE WHEN DATE(usage_date) = CURDATE() THEN total_bytes ELSE 0 END) as daily,
+                                SUM(CASE WHEN DATE(usage_date) >= DATE_SUB(CURDATE(), INTERVAL 6 DAY) THEN total_bytes ELSE 0 END) as weekly,
+                                SUM(CASE WHEN DATE(usage_date) >= DATE_SUB(CURDATE(), INTERVAL 29 DAY) THEN total_bytes ELSE 0 END) as monthly
+                            FROM pppoe_usage_logs
+                            WHERE workspace_id = ? AND pppoe_user = ? AND DATE(usage_date) >= DATE_SUB(CURDATE(), INTERVAL 29 DAY)
+                        `, [workspace_id, client.pppoe_secret_name])
+                    ]);
                     
-                    // Get recent downtime events
-                    const [recentEvents] = await pool.query(`
-                        SELECT 
-                            start_time,
-                            end_time,
-                            duration_seconds,
-                            CASE WHEN end_time IS NULL THEN 1 ELSE 0 END as is_ongoing
-                        FROM downtime_events
-                        WHERE workspace_id = ? AND pppoe_user = ?
-                        ORDER BY start_time DESC
-                        LIMIT 10
-                    `, [workspace_id, client.pppoe_secret_name]);
+                    const completedDowntimeSeconds = parseInt(completedDowntimeResult[0][0]?.total_downtime || 0, 10);
+                    const ongoingDowntimeSeconds = parseInt(ongoingDowntimeResult[0][0]?.ongoing_downtime || 0, 10);
+                    const totalDowntimeSeconds = completedDowntimeSeconds + ongoingDowntimeSeconds;
                     
-                    // Get usage data (daily, weekly, monthly)
-                    // Perbaiki logika perhitungan:
-                    // - daily: hanya data hari ini (DATE(usage_date) = CURDATE())
-                    // - weekly: data 7 hari terakhir termasuk hari ini (DATE(usage_date) >= DATE_SUB(CURDATE(), INTERVAL 6 DAY))
-                    // - monthly: data 30 hari terakhir termasuk hari ini (DATE(usage_date) >= DATE_SUB(CURDATE(), INTERVAL 29 DAY))
-                    const [usageResults] = await pool.query(`
-                        SELECT 
-                            SUM(CASE WHEN DATE(usage_date) = CURDATE() THEN total_bytes ELSE 0 END) as daily,
-                            SUM(CASE WHEN DATE(usage_date) >= DATE_SUB(CURDATE(), INTERVAL 6 DAY) THEN total_bytes ELSE 0 END) as weekly,
-                            SUM(CASE WHEN DATE(usage_date) >= DATE_SUB(CURDATE(), INTERVAL 29 DAY) THEN total_bytes ELSE 0 END) as monthly
-                        FROM pppoe_usage_logs
-                        WHERE workspace_id = ? AND pppoe_user = ? AND DATE(usage_date) >= DATE_SUB(CURDATE(), INTERVAL 29 DAY)
-                    `, [workspace_id, client.pppoe_secret_name]);
+                    const totalSecondsInPeriod = 30 * 24 * 60 * 60;
+                    const uptimeSeconds = totalSecondsInPeriod - totalDowntimeSeconds;
+                    const slaPercentage = (uptimeSeconds / totalSecondsInPeriod) * 100;
+                    
+                    // Ambil recent events
+                    const recentEvents = recentEventsResult[0].map(event => ({
+                        start_time: event.start_time,
+                        end_time: event.end_time,
+                        duration_seconds: event.duration_seconds || 0,
+                        is_ongoing: event.is_ongoing === 1 || event.is_ongoing === true
+                    }));
                     
                     slaData = {
                         sla_percentage: slaPercentage.toFixed(2),
-                        recent_events: recentEvents.map(event => ({
-                            start_time: event.start_time,
-                            end_time: event.end_time,
-                            duration_seconds: event.duration_seconds || 0,
-                            is_ongoing: event.is_ongoing === 1
-                        }))
+                        recent_events: recentEvents
                     };
                     
                     usageData = {
-                        daily: usageResults[0]?.daily || 0,
-                        weekly: usageResults[0]?.weekly || 0,
-                        monthly: usageResults[0]?.monthly || 0
+                        daily: usageResults[0][0]?.daily || 0,
+                        weekly: usageResults[0][0]?.weekly || 0,
+                        monthly: usageResults[0][0]?.monthly || 0
                     };
                 } catch (slaError) {
                     console.warn(`[GET CLIENT] Error mengambil SLA/usage data:`, slaError.message);
@@ -548,37 +569,62 @@ exports.getClient = async (req, res) => {
                 
                 return res.status(200).json(response);
             } else {
-                // Secret not found in MikroTik - get SLA/usage data anyway
-                const [slaResults] = await pool.query(`
-                    SELECT 
-                        COUNT(*) as total_events,
-                        SUM(CASE WHEN end_time IS NULL THEN 1 ELSE 0 END) as ongoing_events,
-                        SUM(CASE WHEN end_time IS NOT NULL THEN duration_seconds ELSE 0 END) as total_downtime_seconds
-                    FROM downtime_events
-                    WHERE workspace_id = ? AND pppoe_user = ? AND start_time >= DATE_SUB(NOW(), INTERVAL 30 DAY)
-                `, [workspace_id, client.pppoe_secret_name]).catch(() => [{ total_downtime_seconds: 0 }]);
+                // Secret not found in MikroTik - get SLA/usage data anyway (parallel)
+                const thirtyDaysAgo = new Date();
+                thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
                 
-                const totalDowntimeSeconds = slaResults[0]?.total_downtime_seconds || 0;
-                const thirtyDaysInSeconds = 30 * 24 * 60 * 60;
-                const uptimeSeconds = thirtyDaysInSeconds - totalDowntimeSeconds;
-                const slaPercentage = thirtyDaysInSeconds > 0 ? (uptimeSeconds / thirtyDaysInSeconds) * 100 : 100;
+                const [completedDowntimeResult, ongoingDowntimeResult, recentEventsResult, usageResults] = await Promise.all([
+                    pool.query(`
+                        SELECT COALESCE(SUM(duration_seconds), 0) as total_downtime
+                        FROM downtime_events
+                        WHERE workspace_id = ? AND pppoe_user = ? AND start_time >= ? AND end_time IS NOT NULL
+                    `, [workspace_id, client.pppoe_secret_name, thirtyDaysAgo]).catch(() => [{ total_downtime: 0 }]),
+                    
+                    pool.query(`
+                        SELECT COALESCE(SUM(TIMESTAMPDIFF(SECOND, start_time, NOW())), 0) as ongoing_downtime
+                        FROM downtime_events
+                        WHERE workspace_id = ? AND pppoe_user = ? AND start_time >= ? AND end_time IS NULL
+                    `, [workspace_id, client.pppoe_secret_name, thirtyDaysAgo]).catch(() => [{ ongoing_downtime: 0 }]),
+                    
+                    pool.query(`
+                        SELECT 
+                            start_time,
+                            CASE 
+                                WHEN end_time IS NULL THEN TIMESTAMPDIFF(SECOND, start_time, NOW())
+                                ELSE duration_seconds 
+                            END as duration_seconds,
+                            end_time,
+                            end_time IS NULL as is_ongoing
+                        FROM downtime_events
+                        WHERE workspace_id = ? AND pppoe_user = ? AND start_time >= ?
+                        ORDER BY start_time DESC
+                        LIMIT 10
+                    `, [workspace_id, client.pppoe_secret_name, thirtyDaysAgo]).catch(() => []),
+                    
+                    pool.query(`
+                        SELECT 
+                            SUM(CASE WHEN DATE(usage_date) = CURDATE() THEN total_bytes ELSE 0 END) as daily,
+                            SUM(CASE WHEN DATE(usage_date) >= DATE_SUB(CURDATE(), INTERVAL 6 DAY) THEN total_bytes ELSE 0 END) as weekly,
+                            SUM(CASE WHEN DATE(usage_date) >= DATE_SUB(CURDATE(), INTERVAL 29 DAY) THEN total_bytes ELSE 0 END) as monthly
+                        FROM pppoe_usage_logs
+                        WHERE workspace_id = ? AND pppoe_user = ? AND DATE(usage_date) >= DATE_SUB(CURDATE(), INTERVAL 29 DAY)
+                    `, [workspace_id, client.pppoe_secret_name]).catch(() => [{ daily: 0, weekly: 0, monthly: 0 }])
+                ]);
                 
-                const [recentEvents] = await pool.query(`
-                    SELECT start_time, end_time, duration_seconds,
-                           CASE WHEN end_time IS NULL THEN 1 ELSE 0 END as is_ongoing
-                    FROM downtime_events
-                    WHERE workspace_id = ? AND pppoe_user = ?
-                    ORDER BY start_time DESC LIMIT 10
-                `, [workspace_id, client.pppoe_secret_name]).catch(() => []);
+                const completedDowntimeSeconds = parseInt(completedDowntimeResult[0][0]?.total_downtime || 0, 10);
+                const ongoingDowntimeSeconds = parseInt(ongoingDowntimeResult[0][0]?.ongoing_downtime || 0, 10);
+                const totalDowntimeSeconds = completedDowntimeSeconds + ongoingDowntimeSeconds;
                 
-                const [usageResults] = await pool.query(`
-                    SELECT 
-                        SUM(CASE WHEN usage_date = CURDATE() THEN total_bytes ELSE 0 END) as daily,
-                        SUM(CASE WHEN usage_date >= DATE_SUB(CURDATE(), INTERVAL 7 DAY) THEN total_bytes ELSE 0 END) as weekly,
-                        SUM(CASE WHEN usage_date >= DATE_SUB(CURDATE(), INTERVAL 30 DAY) THEN total_bytes ELSE 0 END) as monthly
-                    FROM pppoe_usage_logs
-                    WHERE workspace_id = ? AND pppoe_user = ?
-                `, [workspace_id, client.pppoe_secret_name]).catch(() => [{ daily: 0, weekly: 0, monthly: 0 }]);
+                const totalSecondsInPeriod = 30 * 24 * 60 * 60;
+                const uptimeSeconds = totalSecondsInPeriod - totalDowntimeSeconds;
+                const slaPercentage = (uptimeSeconds / totalSecondsInPeriod) * 100;
+                
+                const recentEvents = recentEventsResult[0].map(event => ({
+                    start_time: event.start_time,
+                    end_time: event.end_time,
+                    duration_seconds: event.duration_seconds || 0,
+                    is_ongoing: event.is_ongoing === 1 || event.is_ongoing === true
+                }));
                 
                 return res.status(200).json({
                     ...client,
@@ -594,51 +640,68 @@ exports.getClient = async (req, res) => {
                     },
                     sla: {
                         sla_percentage: slaPercentage.toFixed(2),
-                        recent_events: recentEvents.map(event => ({
-                            start_time: event.start_time,
-                            end_time: event.end_time,
-                            duration_seconds: event.duration_seconds || 0,
-                            is_ongoing: event.is_ongoing === 1
-                        }))
+                        recent_events: recentEvents
                     },
                     usage: {
-                        daily: usageResults[0]?.daily || 0,
-                        weekly: usageResults[0]?.weekly || 0,
-                        monthly: usageResults[0]?.monthly || 0
+                        daily: usageResults[0][0]?.daily || 0,
+                        weekly: usageResults[0][0]?.weekly || 0,
+                        monthly: usageResults[0][0]?.monthly || 0
                     }
                 });
             }
         } catch (mikrotikError) {
             console.error("[GET CLIENT] Error fetching PPPoE data:", mikrotikError);
-            // Get SLA/usage data anyway
-            const [slaResults] = await pool.query(`
-                SELECT 
-                    SUM(CASE WHEN end_time IS NOT NULL THEN duration_seconds ELSE 0 END) as total_downtime_seconds
-                FROM downtime_events
-                WHERE workspace_id = ? AND pppoe_user = ? AND start_time >= DATE_SUB(NOW(), INTERVAL 30 DAY)
-            `, [workspace_id, client.pppoe_secret_name]).catch(() => [{ total_downtime_seconds: 0 }]);
+            // Get SLA/usage data anyway (parallel)
+            const thirtyDaysAgo = new Date();
+            thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
             
-            const totalDowntimeSeconds = slaResults[0]?.total_downtime_seconds || 0;
-            const thirtyDaysInSeconds = 30 * 24 * 60 * 60;
-            const uptimeSeconds = thirtyDaysInSeconds - totalDowntimeSeconds;
-            const slaPercentage = thirtyDaysInSeconds > 0 ? (uptimeSeconds / thirtyDaysInSeconds) * 100 : 100;
+            const [slaResults, recentEventsResults, usageResults] = await Promise.all([
+                pool.query(`
+                    SELECT COALESCE(SUM(duration_seconds), 0) as total_downtime
+                    FROM downtime_events
+                    WHERE workspace_id = ? AND pppoe_user = ? AND start_time >= ? AND end_time IS NOT NULL
+                `, [workspace_id, client.pppoe_secret_name, thirtyDaysAgo]).catch(() => [{ total_downtime: 0 }]),
+                
+                pool.query(`
+                    SELECT 
+                        COALESCE(SUM(TIMESTAMPDIFF(SECOND, start_time, NOW())), 0) as ongoing_downtime,
+                        start_time,
+                        CASE 
+                            WHEN end_time IS NULL THEN TIMESTAMPDIFF(SECOND, start_time, NOW())
+                            ELSE duration_seconds 
+                        END as duration_seconds,
+                        end_time,
+                        end_time IS NULL as is_ongoing
+                    FROM downtime_events
+                    WHERE workspace_id = ? AND pppoe_user = ? AND start_time >= ?
+                    ORDER BY start_time DESC
+                    LIMIT 10
+                `, [workspace_id, client.pppoe_secret_name, thirtyDaysAgo]).catch(() => []),
+                
+                pool.query(`
+                    SELECT 
+                        SUM(CASE WHEN DATE(usage_date) = CURDATE() THEN total_bytes ELSE 0 END) as daily,
+                        SUM(CASE WHEN DATE(usage_date) >= DATE_SUB(CURDATE(), INTERVAL 6 DAY) THEN total_bytes ELSE 0 END) as weekly,
+                        SUM(CASE WHEN DATE(usage_date) >= DATE_SUB(CURDATE(), INTERVAL 29 DAY) THEN total_bytes ELSE 0 END) as monthly
+                    FROM pppoe_usage_logs
+                    WHERE workspace_id = ? AND pppoe_user = ? AND DATE(usage_date) >= DATE_SUB(CURDATE(), INTERVAL 29 DAY)
+                `, [workspace_id, client.pppoe_secret_name]).catch(() => [{ daily: 0, weekly: 0, monthly: 0 }])
+            ]);
             
-            const [recentEvents] = await pool.query(`
-                SELECT start_time, end_time, duration_seconds,
-                       CASE WHEN end_time IS NULL THEN 1 ELSE 0 END as is_ongoing
-                FROM downtime_events
-                WHERE workspace_id = ? AND pppoe_user = ?
-                ORDER BY start_time DESC LIMIT 10
-            `, [workspace_id, client.pppoe_secret_name]).catch(() => []);
+            const completedDowntimeSeconds = parseInt(slaResults[0][0]?.total_downtime || 0, 10);
+            const ongoingDowntimeSeconds = parseInt(recentEventsResults[0][0]?.ongoing_downtime || 0, 10);
+            const totalDowntimeSeconds = completedDowntimeSeconds + ongoingDowntimeSeconds;
             
-            const [usageResults] = await pool.query(`
-                SELECT 
-                    SUM(CASE WHEN usage_date = CURDATE() THEN total_bytes ELSE 0 END) as daily,
-                    SUM(CASE WHEN usage_date >= DATE_SUB(CURDATE(), INTERVAL 7 DAY) THEN total_bytes ELSE 0 END) as weekly,
-                    SUM(CASE WHEN usage_date >= DATE_SUB(CURDATE(), INTERVAL 30 DAY) THEN total_bytes ELSE 0 END) as monthly
-                FROM pppoe_usage_logs
-                WHERE workspace_id = ? AND pppoe_user = ?
-            `, [workspace_id, client.pppoe_secret_name]).catch(() => [{ daily: 0, weekly: 0, monthly: 0 }]);
+            const totalSecondsInPeriod = 30 * 24 * 60 * 60;
+            const uptimeSeconds = totalSecondsInPeriod - totalDowntimeSeconds;
+            const slaPercentage = (uptimeSeconds / totalSecondsInPeriod) * 100;
+            
+            const recentEvents = recentEventsResults[0].slice(0, 10).map(event => ({
+                start_time: event.start_time,
+                end_time: event.end_time,
+                duration_seconds: event.duration_seconds || 0,
+                is_ongoing: event.is_ongoing === 1 || event.is_ongoing === true
+            }));
             
             return res.status(200).json({
                 ...client,
@@ -654,17 +717,12 @@ exports.getClient = async (req, res) => {
                 },
                 sla: {
                     sla_percentage: slaPercentage.toFixed(2),
-                    recent_events: recentEvents.map(event => ({
-                        start_time: event.start_time,
-                        end_time: event.end_time,
-                        duration_seconds: event.duration_seconds || 0,
-                        is_ongoing: event.is_ongoing === 1
-                    }))
+                    recent_events: recentEvents
                 },
                 usage: {
-                    daily: usageResults[0]?.daily || 0,
-                    weekly: usageResults[0]?.weekly || 0,
-                    monthly: usageResults[0]?.monthly || 0
+                    daily: usageResults[0][0]?.daily || 0,
+                    weekly: usageResults[0][0]?.weekly || 0,
+                    monthly: usageResults[0][0]?.monthly || 0
                 }
             });
         }

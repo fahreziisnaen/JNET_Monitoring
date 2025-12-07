@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useMemo, useEffect, useRef } from 'react';
-import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap } from 'react-leaflet';
+import { MapContainer, TileLayer, Marker, Tooltip, Polyline, useMap } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
 import { Asset } from './asset-list';
@@ -343,7 +343,7 @@ const MapDisplay = ({ assets, clients = [], onMarkerClick, onClientClick, showLi
                 icon={icon}
                 zIndexOffset={isSelected ? 1000 : 0}
         >
-              <Popup>
+              <Tooltip permanent={false} direction="top" offset={[0, -10]} opacity={0.95}>
                 <div className="font-sans">
                   <p className="font-bold">{asset.name}</p>
                   <p>{asset.type}</p>
@@ -355,7 +355,7 @@ const MapDisplay = ({ assets, clients = [], onMarkerClick, onClientClick, showLi
                     </p>
                   )}
                 </div>
-              </Popup>
+              </Tooltip>
         </Marker>
           );
         } catch (error) {
@@ -390,7 +390,7 @@ const MapDisplay = ({ assets, clients = [], onMarkerClick, onClientClick, showLi
               icon={icon}
               zIndexOffset={isSelected ? 1000 : 100}
             >
-              <Popup>
+              <Tooltip permanent={false} direction="top" offset={[0, -10]} opacity={0.95}>
                 <div className="font-sans">
                   <p className="font-bold">{client.pppoe_secret_name}</p>
                   <p className="text-xs text-muted-foreground">Client</p>
@@ -400,7 +400,7 @@ const MapDisplay = ({ assets, clients = [], onMarkerClick, onClientClick, showLi
                     </p>
                   )}
                 </div>
-              </Popup>
+              </Tooltip>
             </Marker>
           );
         } catch (error) {

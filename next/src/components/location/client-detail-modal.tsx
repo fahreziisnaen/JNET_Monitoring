@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from '@/components/motion';
 import {
   X,
@@ -25,6 +25,7 @@ ChartJS.register(ArcElement, Tooltip);
 import { Button } from '@/components/ui/button';
 import { Client } from './client-list';
 import { apiFetch } from '@/utils/api';
+import { useMikrotik } from '@/components/providers/mikrotik-provider';
 
 interface PppoeDetails {
   name: string;
@@ -51,12 +52,6 @@ interface UsageData {
   daily: number;
   weekly: number;
   monthly: number;
-}
-
-interface ClientDetailData extends Client {
-  pppoe?: PppoeDetails;
-  sla?: SlaData;
-  usage?: UsageData;
 }
 
 interface ClientDetailModalProps {
@@ -102,12 +97,35 @@ const ClientDetailModal = ({
   onEdit,
   onDelete,
 }: ClientDetailModalProps) => {
-  const [clientData, setClientData] = useState<ClientDetailData | null>(null);
+  const { pppoeSecrets } = useMikrotik() || {};
+  const [slaData, setSlaData] = useState<SlaData | null>(null);
+  const [usageData, setUsageData] = useState<UsageData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const apiUrl = process.env.NEXT_PUBLIC_API_BASE_URL;
 
+  // Get PPPoE details from WebSocket data (sama seperti management page)
+  const pppoeDetails = useMemo(() => {
+    if (!pppoeSecrets || !client) return null;
+    
+    const secretsArray = Array.isArray(pppoeSecrets) ? pppoeSecrets : [];
+    const secret = secretsArray.find((s: any) => s.name === client.pppoe_secret_name);
+    
+    if (!secret) return null;
+    
+    return {
+      name: secret.name || client.pppoe_secret_name,
+      profile: secret.profile || 'N/A',
+      'remote-address': secret.currentAddress || secret['remote-address'] || null,
+      disabled: secret.disabled === 'true' || secret.disabled === true,
+      isActive: secret.isActive === true,
+      uptime: secret.uptime || null,
+      comment: secret.comment || null,
+    };
+  }, [pppoeSecrets, client]);
+
+  // Fetch hanya SLA dan usage (tidak perlu fetch basic client data karena sudah ada di props)
   const fetchClientData = React.useCallback(async (isInitial = false) => {
     if (!client) return;
     
@@ -118,10 +136,27 @@ const ClientDetailModal = ({
     }
     
     try {
-      const res = await apiFetch(`${apiUrl}/api/clients/${client.id}`);
-      if (!res.ok) throw new Error('Gagal memuat data client.');
-      const data = await res.json();
-      setClientData(data);
+      // Fetch hanya SLA dan usage secara parallel (tidak perlu basic client data)
+      const [slaRes, usageRes] = await Promise.all([
+        apiFetch(`${apiUrl}/api/pppoe/secrets/${client.pppoe_secret_name}/sla`).catch(() => ({ ok: false })),
+        apiFetch(`${apiUrl}/api/pppoe/secrets/${client.pppoe_secret_name}/usage`).catch(() => ({ ok: false }))
+      ]);
+      
+      // Process SLA data
+      if (slaRes.ok) {
+        const sla = await slaRes.json();
+        setSlaData({
+          sla_percentage: sla.sla_percentage || '0',
+          recent_events: sla.recent_events || []
+        });
+      }
+      
+      // Process usage data
+      if (usageRes.ok) {
+        const usage = await usageRes.json();
+        setUsageData(usage);
+      }
+      
       setError(null);
     } catch (err: any) {
       console.error('Error fetching client details:', err);
@@ -138,20 +173,21 @@ const ClientDetailModal = ({
   useEffect(() => {
     if (client && isOpen) {
       setError(null);
-      // Fetch initial data with loading
+      // Fetch initial data with loading (hanya SLA dan usage)
       fetchClientData(true);
       
-      // Set up polling for real-time updates (every 3 seconds)
+      // Set up polling for real-time updates (every 5 seconds untuk SLA/usage)
       const intervalId = setInterval(() => {
         fetchClientData(false);
-      }, 3000);
+      }, 5000);
       
       return () => {
         clearInterval(intervalId);
       };
     } else {
       // Reset when modal closes
-      setClientData(null);
+      setSlaData(null);
+      setUsageData(null);
       setLoading(true);
       setError(null);
     }
@@ -161,7 +197,8 @@ const ClientDetailModal = ({
 
   const lat = parseFloat(client.latitude.toString());
   const lon = parseFloat(client.longitude.toString());
-  const pppoe = clientData?.pppoe;
+  const pppoe = pppoeDetails;
+  const odpName = client.odp_name;
 
   return (
     <AnimatePresence>
@@ -232,12 +269,12 @@ const ClientDetailModal = ({
                       </span>
                     </div>
 
-                    {(clientData?.odp_name || client.odp_name) && (
+                    {odpName && (
                       <div className="flex items-center gap-3">
                         <Network size={16} className="text-muted-foreground" />
                         <span className="text-sm">
                           ODP:{' '}
-                          <span className="font-semibold">{clientData?.odp_name || client.odp_name}</span>
+                          <span className="font-semibold">{odpName}</span>
                         </span>
                       </div>
                     )}
@@ -320,7 +357,7 @@ const ClientDetailModal = ({
                   )}
 
                   {/* SLA & Usage Data */}
-                  {clientData?.sla && clientData?.usage && (
+                  {slaData && usageData && (
                     <div className="pt-4 border-t">
                       <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-4">
                         Informasi SLA & Usage
@@ -334,12 +371,12 @@ const ClientDetailModal = ({
                               data={{
                                 datasets: [{
                                   data: [
-                                    parseFloat(clientData.sla.sla_percentage || '0'),
-                                    100 - parseFloat(clientData.sla.sla_percentage || '0')
+                                    parseFloat(slaData.sla_percentage || '0'),
+                                    100 - parseFloat(slaData.sla_percentage || '0')
                                   ],
                                   backgroundColor: [
-                                    parseFloat(clientData.sla.sla_percentage || '0') >= 99.9 ? '#22c55e' : 
-                                    parseFloat(clientData.sla.sla_percentage || '0') >= 99.0 ? '#facc15' : '#ef4444',
+                                    parseFloat(slaData.sla_percentage || '0') >= 99.9 ? '#22c55e' : 
+                                    parseFloat(slaData.sla_percentage || '0') >= 99.0 ? '#facc15' : '#ef4444',
                                     '#374151'
                                   ],
                                   borderColor: 'transparent',
@@ -357,7 +394,7 @@ const ClientDetailModal = ({
                             />
                             <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
                               <span className="text-2xl font-bold tracking-tight">
-                                {parseFloat(clientData.sla.sla_percentage || '0').toFixed(2)}
+                                {parseFloat(slaData.sla_percentage || '0').toFixed(2)}
                                 <span className="text-lg text-muted-foreground">%</span>
                               </span>
                               <span className="text-xs text-muted-foreground mt-1">Uptime</span>
@@ -370,19 +407,19 @@ const ClientDetailModal = ({
                               <span className="text-muted-foreground flex items-center gap-1.5">
                                 <Calendar size={14} /> Hari Ini
                               </span>
-                              <span className="font-semibold">{formatDataSize(clientData.usage.daily)}</span>
+                              <span className="font-semibold">{formatDataSize(usageData.daily)}</span>
                             </div>
                             <div className="flex justify-between items-center">
                               <span className="text-muted-foreground flex items-center gap-1.5">
                                 <Server size={14} /> 7 Hari
                               </span>
-                              <span className="font-semibold">{formatDataSize(clientData.usage.weekly)}</span>
+                              <span className="font-semibold">{formatDataSize(usageData.weekly)}</span>
                             </div>
                             <div className="flex justify-between items-center">
                               <span className="text-muted-foreground flex items-center gap-1.5">
                                 <ArrowDown size={14} /> 30 Hari
                               </span>
-                              <span className="font-semibold">{formatDataSize(clientData.usage.monthly)}</span>
+                              <span className="font-semibold">{formatDataSize(usageData.monthly)}</span>
                             </div>
                           </div>
                         </div>
@@ -393,8 +430,8 @@ const ClientDetailModal = ({
                             <History size={16} /> Riwayat Downtime Terakhir
                           </h4>
                           <div className="space-y-2 max-h-[200px] overflow-y-auto pr-2 bg-secondary/50 p-3 rounded-lg">
-                            {clientData.sla.recent_events && clientData.sla.recent_events.length > 0 ? (
-                              clientData.sla.recent_events.map((event, i) => (
+                            {slaData.recent_events && slaData.recent_events.length > 0 ? (
+                              slaData.recent_events.map((event, i) => (
                                 <div
                                   key={i}
                                   className={`text-sm p-2 bg-background rounded-md flex justify-between items-center ${
