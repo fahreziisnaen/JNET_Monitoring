@@ -137,15 +137,19 @@ export const MikrotikProvider = ({ children }: { children: React.ReactNode }) =>
                 } else {
                     // Device changed, close and reconnect
                                 console.log('[WebSocket] Device berubah, menutup koneksi lama');
-                                ws.current.close();
-                                ws.current = null;
+                                if (ws.current) {
+                                    ws.current.close();
+                                    ws.current = null;
+                                }
                             }
                         }
                     } catch (urlError) {
                         // Jika URL tidak valid, close dan reconnect
                         console.warn('[WebSocket] Error parsing URL, menutup koneksi:', urlError);
-                    ws.current.close();
-                    ws.current = null;
+                        if (ws.current) {
+                            ws.current.close();
+                            ws.current = null;
+                        }
                     }
                 }
             }
@@ -301,8 +305,9 @@ export const MikrotikProvider = ({ children }: { children: React.ReactNode }) =>
             // Hanya close jika user logout atau deviceId dihapus
             if (ws.current && (!user || !selectedDeviceId)) {
                 console.log('[WebSocket] Cleanup: Menutup WebSocket karena user atau deviceId tidak ada');
-                if (ws.current.readyState === WebSocket.OPEN || ws.current.readyState === WebSocket.CONNECTING) {
-                ws.current.close();
+                const currentWs = ws.current;
+                if (currentWs.readyState === WebSocket.OPEN || currentWs.readyState === WebSocket.CONNECTING) {
+                    currentWs.close();
                 }
                 ws.current = null;
             }
@@ -351,9 +356,9 @@ export const MikrotikProvider = ({ children }: { children: React.ReactNode }) =>
                 setTimeout(() => {
                     if (ws.current && ws.current.readyState === WebSocket.CONNECTING) {
                         console.warn('[MikrotikProvider] WebSocket masih CONNECTING setelah 5 detik, force close');
-            ws.current.close();
-            ws.current = null;
-        }
+                        ws.current.close();
+                        ws.current = null;
+                    }
                 }, 5000);
                 
                 // Mulai check setelah 200ms

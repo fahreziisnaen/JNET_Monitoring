@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { FileText, Download, Loader2, Calendar, Plus, X, Server, CheckSquare, Square, ChevronDown, ChevronUp } from 'lucide-react';
+import { FileText, Download, Loader2, Calendar, Plus, X, Server, ChevronDown, ChevronUp } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { apiFetch, getAuthToken } from '@/utils/api';
