@@ -17,12 +17,17 @@ exports.getPools = async (req, res) => {
 // Sync IP pools dari Mikrotik ke database
 exports.syncPoolsFromMikrotik = async (req, res) => {
     const workspaceId = req.user.workspace_id;
+    const deviceId = req.query.deviceId ? parseInt(req.query.deviceId) : null;
     try {
-        // Ambil IP pools dari Mikrotik
-        const mikrotikPools = await runCommandForWorkspace(workspaceId, '/ip/pool/print');
+        console.log(`[Sync IP Pools] Memulai sync untuk workspace ${workspaceId}, deviceId ${deviceId}`);
         
-        // Ambil profiles dari Mikrotik untuk mapping
-        const profiles = await runCommandForWorkspace(workspaceId, '/ppp/profile/print');
+        // Ambil IP pools dan profiles dari Mikrotik secara parallel untuk lebih cepat
+        const [mikrotikPools, profiles] = await Promise.all([
+            runCommandForWorkspace(workspaceId, '/ip/pool/print', [], deviceId),
+            runCommandForWorkspace(workspaceId, '/ppp/profile/print', [], deviceId)
+        ]);
+        
+        console.log(`[Sync IP Pools] Ditemukan ${mikrotikPools.length} pools dan ${profiles.length} profiles`);
         
         // Buat mapping pool name -> pool data
         const poolMap = new Map();
@@ -30,7 +35,8 @@ exports.syncPoolsFromMikrotik = async (req, res) => {
             poolMap.set(pool.name, pool);
         });
         
-        let syncedCount = 0;
+        // Siapkan data untuk batch insert
+        const poolsToInsert = [];
         let skippedCount = 0;
         
         // Loop melalui setiap profile dan cari IP pool yang digunakan
@@ -69,22 +75,33 @@ exports.syncPoolsFromMikrotik = async (req, res) => {
             // Ambil gateway dari profile (local-address)
             const gateway = profile['local-address'] || '';
             
-            // Jika ada data yang valid, simpan ke database
+            // Jika ada data yang valid, tambahkan ke array untuk batch insert
             if (ipStart && ipEnd && gateway) {
-                const sql = `
-                    INSERT INTO ip_pools (workspace_id, profile_name, ip_start, ip_end, gateway) 
-                    VALUES (?, ?, ?, ?, ?)
-                    ON DUPLICATE KEY UPDATE ip_start=VALUES(ip_start), ip_end=VALUES(ip_end), gateway=VALUES(gateway)`;
-                await pool.query(sql, [workspaceId, profileName, ipStart, ipEnd, gateway]);
-                syncedCount++;
+                poolsToInsert.push([workspaceId, profileName, ipStart, ipEnd, gateway]);
             } else {
                 skippedCount++;
             }
         }
         
+        // Batch insert/update semua pools sekaligus untuk performa lebih baik
+        if (poolsToInsert.length > 0) {
+            // MySQL mendukung batch insert dengan ON DUPLICATE KEY UPDATE
+            // Gunakan Promise.all untuk insert secara parallel (lebih cepat dari sequential)
+            const insertPromises = poolsToInsert.map(poolData => {
+                const sql = `
+                    INSERT INTO ip_pools (workspace_id, profile_name, ip_start, ip_end, gateway) 
+                    VALUES (?, ?, ?, ?, ?)
+                    ON DUPLICATE KEY UPDATE ip_start=VALUES(ip_start), ip_end=VALUES(ip_end), gateway=VALUES(gateway)`;
+                return pool.query(sql, poolData);
+            });
+            
+            await Promise.all(insertPromises);
+            console.log(`[Sync IP Pools] Berhasil sync ${poolsToInsert.length} pools ke database`);
+        }
+        
         res.json({ 
-            message: `Sinkronisasi selesai. ${syncedCount} pool berhasil di-sync, ${skippedCount} profile dilewati.`,
-            synced: syncedCount,
+            message: `Sinkronisasi selesai. ${poolsToInsert.length} pool berhasil di-sync, ${skippedCount} profile dilewati.`,
+            synced: poolsToInsert.length,
             skipped: skippedCount
         });
     } catch (error) {

@@ -196,6 +196,59 @@ async function startWorkspaceMonitoring(workspaceId, connectionKey, deviceId = n
                     return [];
                 });
                 
+                // Ambil total secrets untuk summary (dengan timeout lebih panjang karena bisa banyak)
+                // Ini akan digunakan untuk summary total dan inactive count
+                const pppoeSecrets = await safeWrite('/ppp/secret/print', [], 25000).catch(err => {
+                    return [];
+                });
+                
+                // Merge pppoeActive ke pppoeSecrets: tambahkan info aktif (isActive, uptime, currentAddress)
+                // Buat Map untuk lookup cepat dari pppoeActive
+                const activeUserMap = new Map();
+                pppoeActive.forEach(user => {
+                    if (user.name) {
+                        activeUserMap.set(user.name, {
+                            address: user.address || null,
+                            uptime: user.uptime || null,
+                            service: user.service || 'pppoe',
+                            '.id': user['.id'] || null
+                        });
+                    }
+                });
+                
+                // Enrich pppoeSecrets dengan data dari pppoeActive
+                const enrichedSecrets = pppoeSecrets.map(secret => {
+                    const activeInfo = activeUserMap.get(secret.name);
+                    const isActive = !!activeInfo;
+                    
+                    // Build enriched secret object
+                    const enriched = Object.assign({}, secret);
+                    
+                    // Tambahkan field isActive
+                    enriched.isActive = isActive;
+                    
+                    // Tambahkan uptime jika aktif
+                    if (isActive && activeInfo.uptime) {
+                        enriched.uptime = activeInfo.uptime;
+                    }
+                    
+                    // Tambahkan .id dari active connection untuk keperluan kick
+                    if (isActive && activeInfo['.id']) {
+                        enriched.activeConnectionId = activeInfo['.id'];
+                    }
+                    
+                    // Untuk remote-address: prioritas 1) dari active connection, 2) dari secret, 3) null
+                    if (isActive && activeInfo.address) {
+                        enriched.currentAddress = activeInfo.address;
+                        // Jika secret tidak punya remote-address, gunakan dari active connection
+                        if (!enriched['remote-address']) {
+                            enriched['remote-address'] = activeInfo.address;
+                        }
+                    }
+                    
+                    return enriched;
+                });
+                
                 // Catatan: processSlaEvents TIDAK dipanggil di sini untuk menghindari duplikasi notifikasi
                 // processSlaEvents sudah dijalankan oleh cron job monitorSlaAndNotifications setiap 3 detik
                 // yang berjalan terus menerus tanpa bergantung pada user login
@@ -256,7 +309,7 @@ async function startWorkspaceMonitoring(workspaceId, connectionKey, deviceId = n
                 
                 const batchPayload = { 
                     resource: finalResource, 
-                    pppoeActive: pppoeActive || [], 
+                    pppoeSecrets: enrichedSecrets || [], // Secrets yang sudah di-enrich dengan info aktif (isActive, uptime, currentAddress)
                     activeInterfaces: activeInterfacesList || [], // Kirim list interface aktif
                     traffic: trafficUpdateBatch 
                 };
@@ -268,7 +321,7 @@ async function startWorkspaceMonitoring(workspaceId, connectionKey, deviceId = n
                     // Jangan stop monitoring untuk !empty, hanya untuk error lain
                     if (cycleError.message?.includes('!empty')) {
                         // Tetap kirim data kosong agar frontend tahu koneksi masih aktif
-                        const emptyPayload = { resource: {}, pppoeActive: [], activeInterfaces: [], traffic: {} };
+                        const emptyPayload = { resource: {}, pppoeSecrets: [], activeInterfaces: [], traffic: {} };
                         broadcastToWorkspace(workspaceId, { type: 'batch-update', payload: emptyPayload });
                         return; // Lanjutkan monitoring
                     }
@@ -277,7 +330,7 @@ async function startWorkspaceMonitoring(workspaceId, connectionKey, deviceId = n
                 }
                 // Jangan stop monitoring untuk error lain, coba kirim data kosong dulu
                 try {
-                    const emptyPayload = { resource: {}, pppoeActive: [], activeInterfaces: [], traffic: {} };
+                    const emptyPayload = { resource: {}, pppoeSecrets: [], activeInterfaces: [], traffic: {} };
                     broadcastToWorkspace(workspaceId, { type: 'batch-update', payload: emptyPayload });
                 } catch (broadcastError) {
                     // Log WS monitoring disabled
@@ -322,8 +375,37 @@ async function startWorkspaceMonitoring(workspaceId, connectionKey, deviceId = n
     }
 }
 
-wss.on('connection', async (ws, req) => {
+wss.on('connection', (ws, req) => {
+    // Set connection timeout untuk mencegah hanging
+    let connectionTimeout = setTimeout(() => {
+        if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) {
+            console.warn('[WebSocket] Connection setup timeout, menutup koneksi');
+            try {
+                ws.close(1008, 'Connection setup timeout');
+            } catch (e) {
+                // Ignore jika sudah closed
+            }
+        }
+    }, 15000); // 15 detik timeout untuk setup connection
+    
+    // Cek apakah WebSocket sudah di-close sebelum setup selesai
+    const checkIfClosed = () => {
+        if (ws.readyState === WebSocket.CLOSED || ws.readyState === WebSocket.CLOSING) {
+            console.log('[WebSocket] Koneksi ditutup sebelum setup selesai');
+            if (connectionTimeout) {
+                clearTimeout(connectionTimeout);
+                connectionTimeout = null;
+            }
+            return true;
+        }
+        return false;
+    };
+    
+    // Handle connection setup secara async tapi jangan block
+    (async () => {
     try {
+        // Cek apakah sudah di-close sebelum mulai
+        if (checkIfClosed()) return;
         let token = null;
         let decoded = null;
         
@@ -387,18 +469,46 @@ wss.on('connection', async (ws, req) => {
         }
         
         if (!token || !decoded) {
+            if (connectionTimeout) {
+                clearTimeout(connectionTimeout);
+                connectionTimeout = null;
+            }
             console.warn('[WebSocket] Tidak ada token ditemukan, menutup koneksi');
             console.warn('[WebSocket] URL:', req.url);
             console.warn('[WebSocket] Cookies:', req.headers.cookie);
             console.warn('[WebSocket] Authorization:', req.headers.authorization);
-            return ws.close(1008, 'Unauthorized: No token provided');
+            if (!checkIfClosed()) {
+                try {
+                    ws.close(1008, 'Unauthorized: No token provided');
+                } catch (e) {
+                    // Ignore jika sudah closed
+                }
+            }
+            return;
         }
+        
+        // Cek lagi apakah sudah di-close
+        if (checkIfClosed()) return;
         
         const [users] = await pool.query('SELECT workspace_id FROM users WHERE id = ?', [decoded.id]);
         if (!users[0]?.workspace_id) {
+            if (connectionTimeout) {
+                clearTimeout(connectionTimeout);
+                connectionTimeout = null;
+            }
             console.warn(`[WebSocket] User ${decoded.id} tidak punya workspace_id`);
-            return ws.close(1008, 'Unauthorized: No workspace');
+            if (!checkIfClosed()) {
+                try {
+                    ws.close(1008, 'Unauthorized: No workspace');
+                } catch (e) {
+                    // Ignore jika sudah closed
+                }
+            }
+            return;
         }
+
+        // Cek lagi apakah sudah di-close
+        if (checkIfClosed()) return;
 
         ws.workspaceId = users[0].workspace_id;
         
@@ -415,22 +525,54 @@ wss.on('connection', async (ws, req) => {
         }
         
         if (!finalDeviceId) {
+            if (connectionTimeout) {
+                clearTimeout(connectionTimeout);
+                connectionTimeout = null;
+            }
             console.warn(`[WebSocket] Tidak ada device untuk workspace ${ws.workspaceId}`);
-            return ws.close();
+            if (!checkIfClosed()) {
+                try {
+                    ws.close(1008, 'No device configured');
+                } catch (e) {
+                    // Ignore jika sudah closed
+                }
+            }
+            return;
         }
+        
+        // Cek lagi apakah sudah di-close sebelum start monitoring
+        if (checkIfClosed()) return;
         
         ws.deviceId = finalDeviceId;
         const connectionKey = `ws-${ws.workspaceId}-${finalDeviceId}`;
 
         let connection = getConnection(connectionKey);
         if (!connection) {
+            // Cek lagi sebelum start monitoring (ini bisa lama)
+            if (checkIfClosed()) return;
+            
             await startWorkspaceMonitoring(ws.workspaceId, connectionKey, finalDeviceId);
+            
+            // Cek lagi setelah start monitoring
+            if (checkIfClosed()) return;
+            
             connection = getConnection(connectionKey);
         }
 
         if (connection) {
             connection.userCount = (connection.userCount || 0) + 1;
         }
+        
+        // Clear connection timeout setelah setup berhasil
+        if (connectionTimeout) {
+            clearTimeout(connectionTimeout);
+            connectionTimeout = null;
+        }
+        
+        // Final check sebelum log success
+        if (checkIfClosed()) return;
+        
+        console.log(`[WebSocket] Koneksi berhasil di-setup untuk workspace ${ws.workspaceId}, device ${finalDeviceId}`);
         
         ws.on('close', () => {
             const currentConnection = getConnection(connectionKey);
@@ -441,10 +583,30 @@ wss.on('connection', async (ws, req) => {
                 }
             }
         });
+        
+        ws.on('error', (error) => {
+            console.error('[WebSocket] Error pada koneksi:', error);
+            if (connectionTimeout) {
+                clearTimeout(connectionTimeout);
+                connectionTimeout = null;
+            }
+        });
     } catch (error) {
+        if (connectionTimeout) {
+            clearTimeout(connectionTimeout);
+            connectionTimeout = null;
+        }
         console.error('[WebSocket] Error:', error);
-        ws.close();
+        // Hanya close jika connection masih dalam state yang valid
+        if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) {
+            try {
+                ws.close(1011, 'Internal server error');
+            } catch (closeError) {
+                console.error('[WebSocket] Error saat menutup koneksi:', closeError);
     }
+        }
+    }
+    })(); // End async IIFE
 });
 
 // Process-level error handlers untuk mencegah crash aplikasi

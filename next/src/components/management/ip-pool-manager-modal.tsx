@@ -4,6 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from '@/components/motion';
 import { X, Save, Trash2, Database, Loader2, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { useMikrotik } from '@/components/providers/mikrotik-provider';
 import { apiFetch } from '@/utils/api';
 
 interface IpPool {
@@ -20,6 +21,7 @@ interface IpPoolManagerModalProps {
 }
 
 const IpPoolManagerModal = ({ isOpen, onClose }: IpPoolManagerModalProps) => {
+  const { selectedDeviceId } = useMikrotik() || { selectedDeviceId: null };
   const [pools, setPools] = useState<IpPool[]>([]);
   const [profiles, setProfiles] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
@@ -38,12 +40,14 @@ const IpPoolManagerModal = ({ isOpen, onClose }: IpPoolManagerModalProps) => {
       if (!poolsRes.ok || !profilesRes.ok) throw new Error("Gagal memuat data.");
       const poolsData = await poolsRes.json();
       const profilesData = await profilesRes.json();
+      // Pastikan profiles terurut (untuk safety, meskipun backend sudah sort)
+      const sortedProfiles = [...profilesData].sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()));
       setPools(poolsData);
-      setProfiles(profilesData);
+      setProfiles(sortedProfiles);
       
       // Setelah pools di-set, update form berdasarkan profile yang dipilih
       setFormData(prev => {
-        const currentProfile = prev.profile_name || (profilesData.length > 0 ? profilesData[0] : '');
+        const currentProfile = prev.profile_name || (sortedProfiles.length > 0 ? sortedProfiles[0] : '');
         
         if (currentProfile) {
           const existingPool = poolsData.find((pool: IpPool) => pool.profile_name === currentProfile);
@@ -64,9 +68,9 @@ const IpPoolManagerModal = ({ isOpen, onClose }: IpPoolManagerModalProps) => {
               gateway: ''
             };
           }
-        } else if (profilesData.length > 0) {
+        } else if (sortedProfiles.length > 0) {
           // Jika belum ada profile yang dipilih, pilih profile pertama
-          const firstProfile = profilesData[0];
+          const firstProfile = sortedProfiles[0];
           const existingPool = poolsData.find((pool: IpPool) => pool.profile_name === firstProfile);
           if (existingPool) {
             return {
@@ -82,7 +86,7 @@ const IpPoolManagerModal = ({ isOpen, onClose }: IpPoolManagerModalProps) => {
               ip_end: '',
               gateway: ''
             };
-          }
+      }
         }
         
         return prev;
@@ -184,7 +188,12 @@ const IpPoolManagerModal = ({ isOpen, onClose }: IpPoolManagerModalProps) => {
     setLoading(true);
     setError('');
     try {
-      const res = await apiFetch(`${apiUrl}/api/ip-pools/sync`, {
+      // Kirim deviceId jika ada untuk optimasi
+      const syncUrl = selectedDeviceId 
+        ? `${apiUrl}/api/ip-pools/sync?deviceId=${selectedDeviceId}`
+        : `${apiUrl}/api/ip-pools/sync`;
+      
+      const res = await apiFetch(syncUrl, {
         method: 'POST'
       });
       const data = await res.json();

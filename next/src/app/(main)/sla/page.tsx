@@ -20,9 +20,9 @@ interface SlaUser {
 
 const SlaPage = () => {
   const { user } = useAuth();
-  const { selectedDeviceId, setSelectedDeviceId } = useMikrotik() || {};
+  const { selectedDeviceId, setSelectedDeviceId, pppoeSecrets } = useMikrotik() || {};
   const [allUsers, setAllUsers] = useState<SlaUser[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedUser, setSelectedUser] = useState<string | null>(null);
@@ -50,71 +50,35 @@ const SlaPage = () => {
     checkDevices();
   }, [user?.workspace_id]);
 
-  const fetchUsers = useCallback(async () => {
-    if (!selectedDeviceId || !hasDevices) {
-      console.log('[SLA Page] Skip fetch - selectedDeviceId:', selectedDeviceId, 'hasDevices:', hasDevices);
-      setLoading(false);
+  // Update users dari WebSocket data (sama seperti page management)
+  useEffect(() => {
+    if (!selectedDeviceId) {
       setAllUsers([]);
+      setLoading(false);
       return;
     }
     
-    console.log('[SLA Page] Fetching users untuk deviceId:', selectedDeviceId);
-    setLoading(true);
-    let timeoutId: NodeJS.Timeout | null = null;
-    const controller = new AbortController();
+    // Gunakan data WebSocket untuk users (sama seperti page management)
+    const secretsArray = Array.isArray(pppoeSecrets) ? pppoeSecrets : [];
     
-    try {
-      const apiUrl = process.env.NEXT_PUBLIC_API_BASE_URL;
-      
-      // Tambahkan timeout 20 detik (lebih lama dari backend timeout 15 detik)
-      timeoutId = setTimeout(() => {
-        if (!controller.signal.aborted) {
-          console.warn('[SLA Page] Request timeout setelah 20 detik');
-          controller.abort();
-        }
-      }, 20000);
-      
-      const res = await apiFetch(`${apiUrl}/api/pppoe/secrets?disabled=false&deviceId=${selectedDeviceId}`, {
-        signal: controller.signal
-      });
-      
-      if (timeoutId) {
-        clearTimeout(timeoutId);
-        timeoutId = null;
-      }
-      
-      if (controller.signal.aborted) {
-        console.log('[SLA Page] Request di-abort, skip update state');
-        return;
-      }
-      
-      if (!res.ok) {
-        const errorText = await res.text().catch(() => 'Unknown error');
-        throw new Error(`Gagal mengambil daftar pengguna PPPoE: ${res.status} ${res.statusText} - ${errorText}`);
-      }
-      
-      const data = await res.json();
-      console.log('[SLA Page] Users data diterima, jumlah:', Array.isArray(data) ? data.length : 0);
-      setAllUsers(Array.isArray(data) ? data : []);
-    } catch (error: any) {
-        // Handle AbortError dengan benar
-        if (error?.name === 'AbortError' || error?.message?.includes('aborted')) {
-          console.warn('[SLA Page] Request di-abort (timeout atau cancelled)');
-        } else {
-          console.error('[SLA Page] Error fetching users:', error);
-        }
-        // Set empty array jika error
-        setAllUsers([]);
-    } finally {
-        if (timeoutId) clearTimeout(timeoutId);
-        console.log('[SLA Page] Set loading ke false');
-        setLoading(false);
-    }
-  }, [selectedDeviceId, hasDevices]);
-
-  useEffect(() => {
-    fetchUsers();
-  }, [fetchUsers]);
+    // Filter hanya yang disabled=false (sesuai dengan query parameter sebelumnya)
+    const enabledSecrets = secretsArray.filter((secret: any) => secret.disabled !== 'true');
+    
+    // Transform ke format SlaUser
+    const transformedUsers: SlaUser[] = enabledSecrets.map((secret: any) => ({
+      name: secret.name || '',
+      profile: secret.profile || ''
+    }));
+    
+    setAllUsers(transformedUsers);
+    setLoading(false);
+    
+    console.log('[SLA Page] Update users dari WebSocket:', {
+      total: transformedUsers.length,
+      totalSecrets: secretsArray.length,
+      enabledSecrets: enabledSecrets.length
+    });
+  }, [pppoeSecrets, selectedDeviceId]);
 
   const filteredUsers = useMemo(() => {
     const usersToDisplay = allUsers.filter(user =>

@@ -8,11 +8,11 @@ exports.getSummary = async (req, res) => {
         const deviceId = req.query.deviceId ? parseInt(req.query.deviceId) : null;
         console.log(`[PPPoE Summary] Request untuk workspace ${workspaceId}, deviceId ${deviceId}`);
         
-        // Timeout sudah di-handle di runCommandForWorkspace
-        const [secrets, active] = await Promise.all([
-            runCommandForWorkspace(workspaceId, '/ppp/secret/print', [], deviceId),
-            runCommandForWorkspace(workspaceId, '/ppp/active/print', ['?service=pppoe'], deviceId)
-        ]);
+        // Jalankan secara sequential untuk menghindari deadlock dengan locking mechanism
+        // Kedua command akan menggunakan koneksi yang sama (karena deviceId sama)
+        // Locking mechanism akan memastikan hanya satu koneksi dibuat dan di-reuse
+        const secrets = await runCommandForWorkspace(workspaceId, '/ppp/secret/print', [], deviceId);
+        const active = await runCommandForWorkspace(workspaceId, '/ppp/active/print', ['?service=pppoe'], deviceId).catch(() => []);
         
         const duration = Date.now() - startTime;
         console.log(`[PPPoE Summary] Berhasil dalam ${duration}ms - total: ${secrets.length}, active: ${active.length}`);
@@ -34,11 +34,20 @@ exports.getSecrets = async (req, res) => {
         console.log(`[PPPoE Secrets] Request untuk workspace ${workspaceId}, deviceId ${deviceId}, disabled=${disabled}`);
         
         // Timeout sudah di-handle di runCommandForWorkspace
-        // Ambil secrets dan active users secara bersamaan
-        const [secrets, activeUsers] = await Promise.all([
-            runCommandForWorkspace(workspaceId, '/ppp/secret/print', [], deviceId),
-            runCommandForWorkspace(workspaceId, '/ppp/active/print', ['?service=pppoe'], deviceId).catch(() => [])
-        ]);
+        // Ambil secrets dan active users secara sequential untuk menghindari race condition
+        // Kedua command akan menggunakan koneksi yang sama (karena deviceId sama)
+        // Locking mechanism akan memastikan hanya satu koneksi dibuat dan di-reuse
+        console.log(`[PPPoE Secrets] Memulai fetch secrets untuk deviceId ${deviceId}`);
+        const secretsStartTime = Date.now();
+        const secrets = await runCommandForWorkspace(workspaceId, '/ppp/secret/print', [], deviceId);
+        console.log(`[PPPoE Secrets] Secrets fetched dalam ${Date.now() - secretsStartTime}ms, jumlah: ${secrets.length}`);
+        
+        const activeStartTime = Date.now();
+        const activeUsers = await runCommandForWorkspace(workspaceId, '/ppp/active/print', ['?service=pppoe'], deviceId).catch((err) => {
+            console.warn(`[PPPoE Secrets] Error fetching active users:`, err.message);
+            return []; // Return empty array jika error
+        });
+        console.log(`[PPPoE Secrets] Active users fetched dalam ${Date.now() - activeStartTime}ms, jumlah: ${activeUsers.length}`);
         
         // Filter berdasarkan disabled jika diperlukan
         let filteredSecrets = secrets;
@@ -170,7 +179,12 @@ exports.addSecret = async (req, res) => {
 exports.getProfiles = async (req, res) => {
     try {
         const profiles = await runCommandForWorkspace(req.user.workspace_id, '/ppp/profile/print');
-        res.json(profiles.map(p => p.name));
+        // Extract profile names dan urutkan secara ascending
+        const profileNames = profiles.map(p => p.name).sort((a, b) => {
+            // Case-insensitive sorting
+            return a.toLowerCase().localeCompare(b.toLowerCase());
+        });
+        res.json(profileNames);
     } catch (error) {
         res.status(500).json({ message: error.message });
     }
@@ -281,13 +295,17 @@ exports.getUsageHistory = async (req, res) => {
     const { name } = req.params;
     const workspaceId = req.user.workspace_id;
 
+    // Perbaiki logika perhitungan:
+    // - daily: hanya data hari ini (usage_date = CURDATE())
+    // - weekly: data 7 hari terakhir termasuk hari ini (usage_date >= DATE_SUB(CURDATE(), INTERVAL 6 DAY))
+    // - monthly: data 30 hari terakhir termasuk hari ini (usage_date >= DATE_SUB(CURDATE(), INTERVAL 29 DAY))
     const query = `
         SELECT 
-            SUM(CASE WHEN usage_date >= CURDATE() THEN total_bytes ELSE 0 END) as daily,
-            SUM(CASE WHEN usage_date >= DATE_SUB(CURDATE(), INTERVAL 7 DAY) THEN total_bytes ELSE 0 END) as weekly,
-            SUM(CASE WHEN usage_date >= DATE_SUB(CURDATE(), INTERVAL 30 DAY) THEN total_bytes ELSE 0 END) as monthly
+            SUM(CASE WHEN DATE(usage_date) = CURDATE() THEN total_bytes ELSE 0 END) as daily,
+            SUM(CASE WHEN DATE(usage_date) >= DATE_SUB(CURDATE(), INTERVAL 6 DAY) THEN total_bytes ELSE 0 END) as weekly,
+            SUM(CASE WHEN DATE(usage_date) >= DATE_SUB(CURDATE(), INTERVAL 29 DAY) THEN total_bytes ELSE 0 END) as monthly
         FROM pppoe_usage_logs
-        WHERE workspace_id = ? AND pppoe_user = ? AND usage_date >= DATE_SUB(CURDATE(), INTERVAL 30 DAY);
+        WHERE workspace_id = ? AND pppoe_user = ? AND DATE(usage_date) >= DATE_SUB(CURDATE(), INTERVAL 29 DAY);
     `;
 
     try {

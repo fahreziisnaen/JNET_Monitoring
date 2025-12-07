@@ -7,12 +7,15 @@ import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Loader2 } from 'lucide-react';
 
 const PppoeTable = () => {
-    const { pppoeActive, isConnected } = useMikrotik() || { pppoeActive: [], isConnected: false };
+    const { pppoeSecrets, isConnected } = useMikrotik() || { pppoeSecrets: [], isConnected: false };
+    
+    // Filter hanya yang aktif
+    const activeUsers = pppoeSecrets.filter((secret: any) => secret.isActive === true);
 
     return (
         <Card>
             <CardHeader>
-                <CardTitle>PPPoE Active Users ({isConnected && pppoeActive ? pppoeActive.length : '...'})</CardTitle>
+                <CardTitle>PPPoE Active Users ({isConnected && activeUsers ? activeUsers.length : '...'})</CardTitle>
             </CardHeader>
             <CardContent className="p-0">
                 <div className="overflow-x-auto">
@@ -35,27 +38,27 @@ const PppoeTable = () => {
                                         </div>
                                     </td>
                                 </tr>
-                            ) : pppoeActive && pppoeActive.length > 0 ? (
-                                pppoeActive.map((user: any, i: number) => (
+                            ) : activeUsers && activeUsers.length > 0 ? (
+                                activeUsers.map((user: any, i: number) => (
                                     <motion.tr
-                                        key={user['.id']}
+                                        key={user['.id'] || user.name}
                                         className="border-b"
                                         initial={{ opacity: 0 }}
                                         animate={{ opacity: 1 }}
                                         transition={{ duration: 0.3, delay: i * 0.05 }}
                                     >
                                         <td className="p-4 font-medium">{user.name}</td>
-                                        <td className="p-4">{user.service}</td>
-                                        <td className="p-4">{user.uptime}</td>
+                                        <td className="p-4">{user.service || 'pppoe'}</td>
+                                        <td className="p-4">{user.uptime || 'N/A'}</td>
                                         <td className="p-4 font-mono">
-                                          {user.address ? (
+                                          {user.currentAddress || user['remote-address'] ? (
                                             <a
-                                              href={`http://${user.address}`}
+                                              href={`http://${user.currentAddress || user['remote-address']}`}
                                               target="_blank"
                                               rel="noopener noreferrer"
                                               className="text-primary hover:underline"
                                             >
-                                              {user.address}
+                                              {user.currentAddress || user['remote-address']}
                                             </a>
                                           ) : (
                                             'N/A'

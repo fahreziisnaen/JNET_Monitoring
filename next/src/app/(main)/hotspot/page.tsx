@@ -63,13 +63,13 @@ const HotspotPage = () => {
       const controller = new AbortController();
       abortControllerRef.current = controller;
       
-      // Tambahkan timeout untuk mencegah loading terus menerus
+      // Tambahkan timeout 25 detik (lebih lama dari backend timeout 18 detik + buffer)
       timeoutId = setTimeout(() => {
         if (!controller.signal.aborted) {
-        console.warn('[Hotspot Page] Request timeout setelah 10 detik');
+        console.warn('[Hotspot Page] Request timeout setelah 25 detik');
         controller.abort();
         }
-      }, 10000); // 10 detik timeout
+      }, 25000); // 25 detik timeout
       
       const res = await apiFetch(`${apiUrl}/api/hotspot/summary?deviceId=${selectedDeviceId}`, {
         signal: controller.signal

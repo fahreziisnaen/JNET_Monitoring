@@ -4,6 +4,7 @@ import React, { useEffect, useState, useMemo, useRef } from 'react';
 import { Line } from 'react-chartjs-2';
 import { Chart as ChartJS, CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend } from 'chart.js';
 import { useMikrotik } from '@/components/providers/mikrotik-provider';
+import { useAuth } from '@/components/providers/auth-provider';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Loader2, Filter, GripVertical } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -28,26 +29,22 @@ import { CSS } from '@dnd-kit/utilities';
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend);
 
 const EtherChart = ({ trafficData, interfaceName }: { trafficData: any; interfaceName: string }) => {
-  const storageKey = `chart-data-${interfaceName}`;
-  const MAX_GAP_MINUTES = 5; // Reset jika gap waktu > 5 menit
+  const { user } = useAuth();
+  const workspaceId = user?.workspace_id || 'default';
+  const storageKey = `chart-data-${workspaceId}-${interfaceName}`;
+  // Tidak ada batasan waktu - data grafik tetap tersimpan meskipun logout lama
+  // Polling cron job tetap berjalan di background untuk update dashboard_snapshot
   
   // Load saved data from localStorage on mount
+  // Data grafik tetap tersimpan tanpa batasan waktu karena polling cron job
+  // terus berjalan di background untuk update dashboard_snapshot
   const loadSavedData = () => {
     try {
       const saved = localStorage.getItem(storageKey);
       if (saved) {
         const parsed = JSON.parse(saved);
-        const savedTime = parsed.lastUpdate || 0;
-        const now = Date.now();
-        const gapMinutes = (now - savedTime) / 60000; // Convert to minutes
-        
-        // Jika gap waktu terlalu besar, reset
-        if (gapMinutes > MAX_GAP_MINUTES) {
-          localStorage.removeItem(storageKey);
-          return null;
-        }
-        
-        // Jika data masih fresh, return data yang tersimpan
+        // Return data yang tersimpan tanpa cek gap waktu
+        // Polling cron job tetap berjalan, jadi data bisa dilanjutkan kapan saja
         if (parsed.data) {
           return parsed.data;
         }
@@ -69,9 +66,31 @@ const EtherChart = ({ trafficData, interfaceName }: { trafficData: any; interfac
 
   const [chartData, setChartData] = useState(initialData);
   const lastUpdateRef = useRef<number | null>(null);
+  const isInitializedRef = useRef(false);
+
+  // Initialize chart data from localStorage on mount
+  useEffect(() => {
+    if (!isInitializedRef.current) {
+      const saved = loadSavedData();
+      if (saved) {
+        setChartData(saved);
+        // Set lastUpdateRef to prevent immediate update saat data baru masuk
+        try {
+          const savedItem = localStorage.getItem(storageKey);
+          if (savedItem) {
+            const parsed = JSON.parse(savedItem);
+            lastUpdateRef.current = parsed.lastUpdate || Date.now();
+          }
+        } catch (e) {
+          // Ignore error
+        }
+      }
+      isInitializedRef.current = true;
+    }
+  }, [storageKey]);
 
   useEffect(() => {
-    if (trafficData) {
+    if (trafficData && isInitializedRef.current) {
       const txBps = parseFloat(trafficData['tx-bits-per-second'] || '0');
       const rxBps = parseFloat(trafficData['rx-bits-per-second'] || '0');
       const txMbps = parseFloat((txBps / 1000000).toFixed(2));

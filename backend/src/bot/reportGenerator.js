@@ -24,23 +24,11 @@ async function generateSingleReport(workspace) {
             return;
         }
 
-        const twentyFourHoursAgo = new Date();
-        twentyFourHoursAgo.setDate(twentyFourHoursAgo.getDate() - 1);
-        const [usageResult] = await pool.query(
-            'SELECT SUM(tx_usage + rx_usage) as total_usage FROM traffic_logs WHERE workspace_id = ? AND interface_name = ? AND timestamp >= ?',
-            [workspace.id, workspace.main_interface, twentyFourHoursAgo]
-        );
-        const totalDataUsed = (usageResult.length > 0) ? formatDataSize(usageResult[0].total_usage) : '0 B';
-        const [peakData] = await pool.query(
-            `SELECT (tx_usage + rx_usage) as peak_usage, (active_users_pppoe + active_users_hotspot) as users_at_peak, HOUR(timestamp) as peak_hour
-             FROM traffic_logs WHERE workspace_id = ? AND interface_name = ? AND timestamp >= ?
-             ORDER BY peak_usage DESC LIMIT 1`,
-            [workspace.id, workspace.main_interface, twentyFourHoursAgo]
-        );
-        
-        const peakHour = peakData.length > 0 ? `${peakData[0].peak_hour}:00` : 'N/A';
-        const usersAtPeak = peakData.length > 0 ? peakData[0].users_at_peak : 0;
-        const peakBandwidth = peakData.length > 0 ? formatPeakBandwidth(peakData[0].peak_usage) : '0 Mbps';
+        // Traffic logs sudah dihapus, set nilai default
+        const totalDataUsed = '0 B';
+        const peakHour = 'N/A';
+        const usersAtPeak = 0;
+        const peakBandwidth = '0 Mbps';
         const [snapshotPppoe, snapshotHotspot] = await Promise.all([
             runCommandForWorkspace(workspace.id, '/ppp/active/print').then(r => r.length),
             runCommandForWorkspace(workspace.id, '/ip/hotspot/active/print').then(r => r.length)

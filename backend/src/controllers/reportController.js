@@ -232,6 +232,21 @@ function drawTableWithHeader(doc, options) {
     return { currentY, pageNum };
 }
 
+// Helper function to add footer and new page
+function addFooterAndNewPage(doc, pageNum) {
+    const footerText = `Dibuat pada: ${new Date().toLocaleString('id-ID')} | Halaman ${pageNum}`;
+    doc.fontSize(8)
+       .fillColor('#718096')
+       .text(
+           footerText,
+           50,
+           750,
+           { align: 'center', width: doc.page.width - 100 }
+       );
+    doc.addPage();
+    return pageNum + 1;
+}
+
 // Helper function to draw info box
 function drawInfoBox(doc, x, y, width, title, items) {
     const boxHeight = 30 + (items.length * 20);
@@ -259,7 +274,7 @@ function drawInfoBox(doc, x, y, width, title, items) {
 
 exports.generateMonthlyReport = async (req, res) => {
     const workspaceId = req.user.workspace_id;
-    const { year, month, devices, interfaces, includeClientStats } = req.query;
+    const { year, month, devices } = req.query;
     
     if (!year || !month) {
         return res.status(400).json({ message: 'Year dan month harus diisi.' });
@@ -272,10 +287,8 @@ exports.generateMonthlyReport = async (req, res) => {
         return res.status(400).json({ message: 'Year dan month tidak valid.' });
     }
     
-    // Parse selected devices and interfaces
+    // Parse selected devices
     let selectedDevices = [];
-    let selectedInterfaces = new Map(); // deviceId -> [interface names]
-    let includeClientStatsMap = new Map(); // deviceId -> boolean
     
     if (devices) {
         try {
@@ -285,32 +298,8 @@ exports.generateMonthlyReport = async (req, res) => {
         }
     }
     
-    if (interfaces) {
-        try {
-            const interfacesObj = JSON.parse(interfaces);
-            // Convert object to Map
-            Object.keys(interfacesObj).forEach(deviceId => {
-                selectedInterfaces.set(parseInt(deviceId), interfacesObj[deviceId]);
-            });
-            console.log('[Report] Selected interfaces:', Array.from(selectedInterfaces.entries()));
-        } catch (e) {
-            console.error('[Report] Error parsing interfaces:', e);
-            return res.status(400).json({ message: 'Format interfaces tidak valid.' });
-        }
-    }
-    
-    if (includeClientStats) {
-        try {
-            const includeClientStatsObj = JSON.parse(includeClientStats);
-            // Convert object to Map
-            Object.keys(includeClientStatsObj).forEach(deviceId => {
-                includeClientStatsMap.set(parseInt(deviceId), includeClientStatsObj[deviceId] === true);
-            });
-            console.log('[Report] Include client stats map:', Array.from(includeClientStatsMap.entries()));
-        } catch (e) {
-            console.error('[Report] Error parsing includeClientStats:', e);
-            return res.status(400).json({ message: 'Format includeClientStats tidak valid.' });
-        }
+    if (selectedDevices.length === 0) {
+        return res.status(400).json({ message: 'Minimal satu MikroTik harus dipilih.' });
     }
     
     try {
@@ -329,60 +318,6 @@ exports.generateMonthlyReport = async (req, res) => {
         // Calculate date range for the month
         const startDate = new Date(yearNum, monthNum - 1, 1);
         const endDate = new Date(yearNum, monthNum, 0, 23, 59, 59);
-        
-        // Get all selected interfaces from all selected devices
-        const allSelectedInterfaces = [];
-        if (selectedDevices.length > 0 && selectedInterfaces.size > 0) {
-            selectedInterfaces.forEach((interfaces, deviceId) => {
-                allSelectedInterfaces.push(...interfaces);
-            });
-        }
-        
-        // Remove duplicates
-        const uniqueInterfaces = [...new Set(allSelectedInterfaces)];
-        
-        // Get traffic data for the month
-        // Use selected interfaces if available, otherwise fallback to main_interface
-        let totalUsage = 0;
-        let peakBandwidth = 0;
-        let peakHour = 'N/A';
-        let usersAtPeak = 0;
-        
-        // Determine which interfaces to query
-        let interfacesToQuery = uniqueInterfaces.length > 0 ? uniqueInterfaces : (workspace.main_interface ? [workspace.main_interface] : []);
-        
-        if (interfacesToQuery.length > 0) {
-            const placeholders = interfacesToQuery.map(() => '?').join(',');
-            
-            const [usageResult] = await pool.query(
-                `SELECT SUM(tx_usage + rx_usage) as total_usage 
-                 FROM traffic_logs 
-                 WHERE workspace_id = ? 
-                 AND interface_name IN (${placeholders})
-                 AND DATE(timestamp) >= ? AND DATE(timestamp) <= ?`,
-                [workspaceId, ...interfacesToQuery, startDate, endDate]
-            );
-            
-            totalUsage = usageResult[0]?.total_usage || 0;
-            
-            const [peakData] = await pool.query(
-                `SELECT (tx_usage + rx_usage) as peak_usage, 
-                        (active_users_pppoe + active_users_hotspot) as users_at_peak, 
-                        HOUR(timestamp) as peak_hour
-                 FROM traffic_logs 
-                 WHERE workspace_id = ? 
-                 AND interface_name IN (${placeholders})
-                 AND DATE(timestamp) >= ? AND DATE(timestamp) <= ?
-                 ORDER BY peak_usage DESC LIMIT 1`,
-                [workspaceId, ...interfacesToQuery, startDate, endDate]
-            );
-            
-            if (peakData.length > 0) {
-                peakBandwidth = peakData[0].peak_usage;
-                peakHour = `${peakData[0].peak_hour}:00`;
-                usersAtPeak = peakData[0].users_at_peak || 0;
-            }
-        }
         
         // Get SLA data (downtime events)
         const [downtimeStats] = await pool.query(
@@ -414,187 +349,52 @@ exports.generateMonthlyReport = async (req, res) => {
         const totalUsers = pppoeStats[0]?.total_users || 0;
         const totalUserUsage = pppoeStats[0]?.total_usage || 0;
         
-        // Get daily traffic summary
-        // Use selected interfaces if available, otherwise fallback to main_interface
-        let dailyTraffic = [];
-        const interfacesForDaily = uniqueInterfaces.length > 0 ? uniqueInterfaces : (workspace.main_interface ? [workspace.main_interface] : []);
+        // Daily traffic data (empty for now, can be populated later if needed)
+        const dailyTraffic = [];
         
-        if (interfacesForDaily.length > 0) {
-            const placeholders = interfacesForDaily.map(() => '?').join(',');
-            const [dailyTrafficResult] = await pool.query(
-                `SELECT 
-                    DATE(timestamp) as date,
-                    SUM(tx_usage + rx_usage) as daily_usage,
-                    AVG(active_users_pppoe + active_users_hotspot) as avg_users
-                 FROM traffic_logs
-                 WHERE workspace_id = ? 
-                 AND interface_name IN (${placeholders})
-                 AND DATE(timestamp) >= ? AND DATE(timestamp) <= ?
-                 GROUP BY DATE(timestamp)
-                 ORDER BY DATE(timestamp) ASC`,
-                [workspaceId, ...interfacesForDaily, startDate, endDate]
-            );
-            dailyTraffic = dailyTrafficResult;
-        }
-        
-        // Get interface statistics (total usage and average bandwidth per interface)
-        const [interfaceStats] = await pool.query(
-            `SELECT 
-                interface_name,
-                SUM(tx_usage + rx_usage) as total_usage,
-                AVG(tx_usage + rx_usage) as avg_bandwidth_bytes,
-                COUNT(*) as log_count
-             FROM traffic_logs
-             WHERE workspace_id = ?
-             AND DATE(timestamp) >= ? AND DATE(timestamp) <= ?
-             GROUP BY interface_name
-             ORDER BY total_usage DESC`,
-            [workspaceId, startDate, endDate]
-        );
-        
-        // Get MikroTik device information and interface bandwidth per device
-        // Use selected devices if provided, otherwise use active device
-        let deviceInterfaceStats = [];
-        
-        if (selectedDevices.length > 0) {
-            // Get interface stats for selected devices and interfaces
-            for (const deviceId of selectedDevices) {
-                // Verify device belongs to workspace
-                const [deviceInfo] = await pool.query(
-                    'SELECT id, name FROM mikrotik_devices WHERE id = ? AND workspace_id = ?',
-                    [deviceId, workspaceId]
-                );
-                
-                if (deviceInfo.length === 0) {
-                    console.log(`[Report] Device ${deviceId} not found in workspace ${workspaceId}`);
-                    continue;
-                }
-                
-                // Get selected interfaces for this device
-                const deviceInterfaces = selectedInterfaces.get(deviceId) || [];
-                
-                console.log(`[Report] Device ${deviceId} (${deviceInfo[0].name}): Selected interfaces:`, deviceInterfaces);
-                console.log(`[Report] Selected interfaces map:`, Array.from(selectedInterfaces.entries()));
-                
-                // If no interfaces selected for this device, skip it
-                if (deviceInterfaces.length === 0) {
-                    console.log(`[Report] No interfaces selected for device ${deviceId}, skipping...`);
-                    continue;
-                }
-                
-                // Build query for interface stats - MUST filter by selected interfaces
-                // But also check what interfaces actually have data in the database
-                const placeholders = deviceInterfaces.map(() => '?').join(',');
-                const interfaceQuery = `
-                    SELECT 
-                        interface_name,
-                        SUM(tx_usage + rx_usage) as total_usage,
-                        AVG(tx_usage + rx_usage) as avg_bandwidth_bytes,
-                        COUNT(*) as log_count
-                     FROM traffic_logs
-                     WHERE workspace_id = ?
-                     AND DATE(timestamp) >= ? AND DATE(timestamp) <= ?
-                     AND interface_name IN (${placeholders})
-                     GROUP BY interface_name 
-                     ORDER BY total_usage DESC
-                `;
-                
-                const queryParams = [workspaceId, startDate, endDate, ...deviceInterfaces];
-                
-                console.log(`[Report] Query for device ${deviceId}:`, interfaceQuery);
-                console.log(`[Report] Query params:`, queryParams);
-                console.log(`[Report] Looking for interfaces:`, deviceInterfaces);
-                
-                const [interfaceStatsForDevice] = await pool.query(interfaceQuery, queryParams);
-                
-                console.log(`[Report] Found ${interfaceStatsForDevice.length} interface stats for device ${deviceId}:`, interfaceStatsForDevice.map(s => s.interface_name));
-                
-                // Check which selected interfaces have no data
-                const foundInterfaces = interfaceStatsForDevice.map(s => s.interface_name);
-                const missingInterfaces = deviceInterfaces.filter(iface => !foundInterfaces.includes(iface));
-                if (missingInterfaces.length > 0) {
-                    console.log(`[Report] Warning: No data found for interfaces:`, missingInterfaces);
-                    // Add entries with zero values for interfaces that have no data
-                    missingInterfaces.forEach(ifaceName => {
-                        deviceInterfaceStats.push({
-                            device_id: deviceId,
-                            device_name: deviceInfo[0].name,
-                            interface_name: ifaceName,
-                            total_usage: 0,
-                            avg_bandwidth_bytes: 0,
-                            log_count: 0
-                        });
-                    });
-                }
-                
-                // Add device info to each interface stat that has data
-                interfaceStatsForDevice.forEach(stat => {
-                    deviceInterfaceStats.push({
-                        device_id: deviceId,
-                        device_name: deviceInfo[0].name,
-                        interface_name: stat.interface_name,
-                        total_usage: stat.total_usage || 0,
-                        avg_bandwidth_bytes: stat.avg_bandwidth_bytes || 0,
-                        log_count: stat.log_count || 0
-                    });
-                });
-            }
-        } else {
-            // Fallback: use active device if no devices selected
-            const [workspaceDevice] = await pool.query(
-                'SELECT active_device_id FROM workspaces WHERE id = ?',
-                [workspaceId]
-            );
-            
-            if (workspaceDevice.length > 0 && workspaceDevice[0].active_device_id) {
-                const deviceId = workspaceDevice[0].active_device_id;
-                
-                const [deviceInfo] = await pool.query(
-                    'SELECT id, name FROM mikrotik_devices WHERE id = ? AND workspace_id = ?',
-                    [deviceId, workspaceId]
-                );
-                
-                if (deviceInfo.length > 0) {
-                    const [interfaceStatsForDevice] = await pool.query(
-                        `SELECT 
-                            interface_name,
-                            SUM(tx_usage + rx_usage) as total_usage,
-                            AVG(tx_usage + rx_usage) as avg_bandwidth_bytes,
-                            COUNT(*) as log_count
-                         FROM traffic_logs
-                         WHERE workspace_id = ?
-                         AND DATE(timestamp) >= ? AND DATE(timestamp) <= ?
-                         GROUP BY interface_name
-                         ORDER BY total_usage DESC`,
-                        [workspaceId, startDate, endDate]
-                    );
-                    
-                    interfaceStatsForDevice.forEach(stat => {
-                        deviceInterfaceStats.push({
-                            device_id: deviceId,
-                            device_name: deviceInfo[0].name,
-                            interface_name: stat.interface_name,
-                            total_usage: stat.total_usage,
-                            avg_bandwidth_bytes: stat.avg_bandwidth_bytes,
-                            log_count: stat.log_count
-                        });
-                    });
-                }
-            }
-        }
-        
-        // Get client statistics per device (if includeClientStats is enabled for that device)
-        // Store client stats per device
+        // Get device statistics (CPU & Memory) and client statistics per device
+        const deviceStatsMap = new Map(); // deviceId -> { device_name, avg_cpu, avg_memory }
         const clientStatsPerDevice = new Map(); // deviceId -> [client stats]
         
         for (const deviceId of selectedDevices) {
-            if (!includeClientStatsMap.get(deviceId)) {
-                continue; // Skip if client stats not requested for this device
+            // Verify device belongs to workspace
+            const [deviceInfo] = await pool.query(
+                'SELECT id, name FROM mikrotik_devices WHERE id = ? AND workspace_id = ?',
+                [deviceId, workspaceId]
+            );
+            
+            if (deviceInfo.length === 0) {
+                console.log(`[Report] Device ${deviceId} not found in workspace ${workspaceId}`);
+                continue;
             }
             
-            // Get client statistics for this workspace (all PPPoE users)
+            const deviceName = deviceInfo[0].name;
+            
+            // Get average CPU and Memory usage from resource_logs for this device in the selected month
+            const [resourceStats] = await pool.query(
+                `SELECT 
+                    AVG(cpu_load) as avg_cpu_load,
+                    AVG(memory_usage) as avg_memory_usage,
+                    COUNT(*) as log_count
+                 FROM resource_logs
+                 WHERE workspace_id = ? AND device_id = ?
+                 AND DATE(timestamp) >= ? AND DATE(timestamp) <= ?`,
+                [workspaceId, deviceId, startDate, endDate]
+            );
+            
+            const avgCpu = resourceStats[0]?.avg_cpu_load ? Math.round(resourceStats[0].avg_cpu_load) : null;
+            const avgMemory = resourceStats[0]?.avg_memory_usage ? Math.round(resourceStats[0].avg_memory_usage) : null;
+            
+            deviceStatsMap.set(deviceId, {
+                device_name: deviceName,
+                avg_cpu: avgCpu,
+                avg_memory: avgMemory,
+                log_count: resourceStats[0]?.log_count || 0
+            });
+            
+            // Get all client statistics for this workspace (all PPPoE users)
             // Note: Since there's no direct link between PPPoE user and device,
-            // we'll show all workspace clients for each device that has includeClientStats enabled
+            // we'll show all workspace clients for each device
             const [clientUsage] = await pool.query(
                 `SELECT 
                     pppoe_user,
@@ -694,85 +494,52 @@ exports.generateMonthlyReport = async (req, res) => {
         // Track page number for footer
         let pageNum = 1;
         
-        // MikroTik Device Interface Bandwidth Section
-        if (deviceInterfaceStats.length > 0) {
-            if (currentY > 650) {
-                addFooterAndNewPage();
-                currentY = 50;
-            }
-            
-            doc.fontSize(16)
-               .fillColor('#2d3748')
-               .font('Helvetica-Bold')
-               .text('BANDWIDTH INTERFACE PER MIKROTIK', 50, currentY);
-            currentY += 25;
-            
-            // Group by device
-            const deviceGroups = new Map();
-            deviceInterfaceStats.forEach(stat => {
-                const deviceKey = stat.device_id;
-                if (!deviceGroups.has(deviceKey)) {
-                    deviceGroups.set(deviceKey, {
-                        device_name: stat.device_name || 'N/A',
-                        interfaces: []
-                    });
-                }
-                deviceGroups.get(deviceKey).interfaces.push({
-                    interface_name: stat.interface_name || 'N/A',
-                    total_usage: stat.total_usage || 0,
-                    avg_bandwidth: stat.avg_bandwidth_bytes || 0
-                });
-            });
-            
-            // Display each device
-            for (const [deviceId, deviceData] of deviceGroups) {
+        // MikroTik Device Statistics Section (CPU & Memory) and Client Statistics
+        if (deviceStatsMap.size > 0) {
+            // Render each device
+            for (const [deviceId, deviceStats] of deviceStatsMap) {
                 // Check if we need a new page
                 if (currentY > 600) {
-                    addFooterAndNewPage();
+                    pageNum = addFooterAndNewPage(doc, pageNum);
                     currentY = 50;
                 }
                 
-                // Device name header
-                doc.fontSize(14)
-                   .fillColor('#4a5568')
+                doc.fontSize(16)
+                   .fillColor('#2d3748')
                    .font('Helvetica-Bold')
-                   .text(`Device: ${deviceData.device_name}`, 50, currentY);
+                   .text(`DEVICE: ${deviceStats.device_name}`, 50, currentY);
+                currentY += 25;
+                
+                // Device Statistics (CPU & Memory)
+                const deviceStatsItems = [];
+                if (deviceStats.avg_cpu !== null) {
+                    deviceStatsItems.push(`Rata-rata CPU Load: ${deviceStats.avg_cpu}%`);
+                } else {
+                    deviceStatsItems.push(`Rata-rata CPU Load: N/A (tidak ada data)`);
+                }
+                if (deviceStats.avg_memory !== null) {
+                    deviceStatsItems.push(`Rata-rata Memory Usage: ${formatDataSize(deviceStats.avg_memory)}`);
+                } else {
+                    deviceStatsItems.push(`Rata-rata Memory Usage: N/A (tidak ada data)`);
+                }
+                deviceStatsItems.push(`Total Log Entries: ${deviceStats.log_count}`);
+                
+                currentY = drawInfoBox(doc, 50, currentY, doc.page.width - 100, 'DEVICE STATISTICS', deviceStatsItems);
                 currentY += 20;
                 
-                // Interface table for this device
-                const deviceInterfaceRows = deviceData.interfaces.map(iface => [
-                    iface.interface_name,
-                    formatDataSize(iface.total_usage),
-                    formatAvgBandwidth(iface.avg_bandwidth)
-                ]);
-                
-                const tableResult = drawTableWithHeader(doc, {
-                    startY: currentY,
-                    columnWidths: [200, 150, 200],
-                    headers: ['Interface', 'Total Usage', 'Rata-rata Bandwidth'],
-                    rows: deviceInterfaceRows,
-                    fontSize: 10,
-                    headerFontSize: 11,
-                    pageBottom: 750,
-                    pageNum: pageNum
-                });
-                currentY = tableResult.currentY;
-                pageNum = tableResult.pageNum;
-                currentY += 20; // Space between interface table and client stats
-                
-                // Client Statistics for this device (if enabled)
+                // Client Statistics for this device
                 const deviceClientStats = clientStatsPerDevice.get(deviceId);
                 if (deviceClientStats && deviceClientStats.length > 0) {
                     // Check if we need a new page
                     if (currentY > 650) {
-                        addFooterAndNewPage();
+                        pageNum = addFooterAndNewPage(doc, pageNum);
                         currentY = 50;
                     }
                     
                     doc.fontSize(14)
                        .fillColor('#4a5568')
                        .font('Helvetica-Bold')
-                       .text(`STATISTIK PER CLIENT (PPPoE SECRET) - ${deviceData.device_name}`, 50, currentY);
+                       .text(`STATISTIK PER CLIENT (PPPoE SECRET) - ${deviceStats.device_name}`, 50, currentY);
                     currentY += 20;
                     
                     // Add Total Pengguna above the table
@@ -807,6 +574,13 @@ exports.generateMonthlyReport = async (req, res) => {
                     currentY = tableResult2.currentY;
                     pageNum = tableResult2.pageNum;
                     currentY += 20; // Space before next device
+                } else {
+                    // No clients found
+                    doc.fontSize(12)
+                       .fillColor('#718096')
+                       .font('Helvetica')
+                       .text('Tidak ada data client untuk device ini.', 50, currentY);
+                    currentY += 20;
                 }
             }
         }
@@ -815,7 +589,7 @@ exports.generateMonthlyReport = async (req, res) => {
         // This section is kept for backward compatibility but should not be reached
         if (false && clientStats && clientStats.length > 0) {
             if (currentY > 650) {
-                addFooterAndNewPage();
+                pageNum = addFooterAndNewPage(doc, pageNum);
                 currentY = 50;
             }
             
@@ -860,9 +634,9 @@ exports.generateMonthlyReport = async (req, res) => {
         }
         
         // Daily Traffic Section
-        if (dailyTraffic.length > 0) {
+        if (dailyTraffic && dailyTraffic.length > 0) {
             if (currentY > 650) {
-                addFooterAndNewPage();
+                pageNum = addFooterAndNewPage(doc, pageNum);
                 currentY = 50;
             }
             

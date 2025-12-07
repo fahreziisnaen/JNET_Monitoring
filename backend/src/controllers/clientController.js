@@ -489,13 +489,17 @@ exports.getClient = async (req, res) => {
                     `, [workspace_id, client.pppoe_secret_name]);
                     
                     // Get usage data (daily, weekly, monthly)
+                    // Perbaiki logika perhitungan:
+                    // - daily: hanya data hari ini (DATE(usage_date) = CURDATE())
+                    // - weekly: data 7 hari terakhir termasuk hari ini (DATE(usage_date) >= DATE_SUB(CURDATE(), INTERVAL 6 DAY))
+                    // - monthly: data 30 hari terakhir termasuk hari ini (DATE(usage_date) >= DATE_SUB(CURDATE(), INTERVAL 29 DAY))
                     const [usageResults] = await pool.query(`
                         SELECT 
-                            SUM(CASE WHEN usage_date = CURDATE() THEN total_bytes ELSE 0 END) as daily,
-                            SUM(CASE WHEN usage_date >= DATE_SUB(CURDATE(), INTERVAL 7 DAY) THEN total_bytes ELSE 0 END) as weekly,
-                            SUM(CASE WHEN usage_date >= DATE_SUB(CURDATE(), INTERVAL 30 DAY) THEN total_bytes ELSE 0 END) as monthly
+                            SUM(CASE WHEN DATE(usage_date) = CURDATE() THEN total_bytes ELSE 0 END) as daily,
+                            SUM(CASE WHEN DATE(usage_date) >= DATE_SUB(CURDATE(), INTERVAL 6 DAY) THEN total_bytes ELSE 0 END) as weekly,
+                            SUM(CASE WHEN DATE(usage_date) >= DATE_SUB(CURDATE(), INTERVAL 29 DAY) THEN total_bytes ELSE 0 END) as monthly
                         FROM pppoe_usage_logs
-                        WHERE workspace_id = ? AND pppoe_user = ?
+                        WHERE workspace_id = ? AND pppoe_user = ? AND DATE(usage_date) >= DATE_SUB(CURDATE(), INTERVAL 29 DAY)
                     `, [workspace_id, client.pppoe_secret_name]);
                     
                     slaData = {

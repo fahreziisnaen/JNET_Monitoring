@@ -35,7 +35,10 @@ const formatUptime = (uptimeStr: string) => {
 };
 
 const Sidebar = () => {
-  const { resource, pppoeActive, isConnected } = useMikrotik() || { resource: null, pppoeActive: [], isConnected: false };
+  const { resource, pppoeSecrets, isConnected } = useMikrotik() || { resource: null, pppoeSecrets: [], isConnected: false };
+  
+  // Filter hanya yang aktif
+  const activeCount = pppoeSecrets.filter((secret: any) => secret.isActive === true).length;
   
   if (!isConnected || !resource) {
     return (
@@ -91,7 +94,7 @@ const Sidebar = () => {
                 <div className="bg-secondary rounded-lg p-4">
                     <h4 className="font-semibold text-muted-foreground mb-2 text-center">PPPoE Active Users</h4>
                     <div className="text-center">
-                        <p className="text-3xl font-bold text-primary">{pppoeActive?.length || 0}</p>
+                        <p className="text-3xl font-bold text-primary">{activeCount}</p>
                         <p className="text-xs text-muted-foreground mt-1">Pengguna Aktif</p>
                     </div>
                 </div>

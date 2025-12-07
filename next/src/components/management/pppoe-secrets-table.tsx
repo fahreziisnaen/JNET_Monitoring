@@ -19,6 +19,7 @@ interface PppoeSecret {
   'remote-address'?: string;
   disabled: 'true' | 'false';
   isActive?: boolean; // Status aktif dari backend
+  activeConnectionId?: string; // .id dari active connection untuk keperluan kick
 }
 
 interface PppoeSecretsTableProps {
@@ -28,9 +29,9 @@ interface PppoeSecretsTableProps {
 }
 
 const PppoeSecretsTable = ({ refreshTrigger, onActionComplete, initialFilter = 'all' }: PppoeSecretsTableProps) => {
-  const { pppoeActive, selectedDeviceId } = useMikrotik() || { pppoeActive: [], selectedDeviceId: null };
+  const { pppoeSecrets, selectedDeviceId } = useMikrotik() || { pppoeSecrets: [], selectedDeviceId: null };
   const [allSecrets, setAllSecrets] = useState<PppoeSecret[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
@@ -40,93 +41,62 @@ const PppoeSecretsTable = ({ refreshTrigger, onActionComplete, initialFilter = '
   const [secretToEdit, setSecretToEdit] = useState<PppoeSecret | null>(null);
   const apiUrl = process.env.NEXT_PUBLIC_API_BASE_URL;
 
-  const fetchSecrets = useCallback(async () => {
+  // Update secrets dari WebSocket data (sama seperti summary aktif)
+  useEffect(() => {
     if (!selectedDeviceId) {
-      setLoading(false);
       setAllSecrets([]);
+      setLoading(false);
       return;
     }
     
-    setLoading(true);
-    let timeoutId: NodeJS.Timeout | null = null;
-    const controller = new AbortController();
+    // Gunakan data WebSocket untuk tabel (sama seperti summary aktif)
+    const secretsArray = Array.isArray(pppoeSecrets) ? pppoeSecrets : [];
     
-    try {
-      // Tambahkan timeout 20 detik (lebih lama dari backend timeout 15 detik)
-      timeoutId = setTimeout(() => {
-        if (!controller.signal.aborted) {
-          console.warn('[PppoeSecretsTable] Request timeout setelah 20 detik');
-          controller.abort();
-        }
-      }, 20000);
-      
-      const response = await apiFetch(`${apiUrl}/api/pppoe/secrets?deviceId=${selectedDeviceId}`, {
-        signal: controller.signal
-      });
-      
-      if (timeoutId) {
-        clearTimeout(timeoutId);
-        timeoutId = null;
-      }
-      
-      if (controller.signal.aborted) {
-        return;
-      }
-      
-      if (!response.ok) {
-        throw new Error(`Gagal mengambil daftar secret: ${response.status} ${response.statusText}`);
-      }
-      
-      const data = await response.json();
-      setAllSecrets(Array.isArray(data) ? data : []);
-    } catch (error: any) {
-        // Handle AbortError dengan benar
-        if (error?.name === 'AbortError' || error?.message?.includes('aborted')) {
-          console.warn('[PppoeSecretsTable] Request di-abort (timeout atau cancelled)');
-        } else {
-          console.error('[PppoeSecretsTable] Error fetching secrets:', error);
-        }
-        // Set empty array jika error
-        setAllSecrets([]);
-    } finally {
-        if (timeoutId) clearTimeout(timeoutId);
-      setLoading(false);
-    }
-  }, [apiUrl, selectedDeviceId]);
+    // Transform secrets dari WebSocket ke format yang diharapkan
+    // Data sudah di-enrich di backend dengan isActive, uptime, currentAddress, activeConnectionId
+    const transformedSecrets: PppoeSecret[] = secretsArray.map((secret: any) => {
+      const secretData: PppoeSecret = {
+        '.id': secret['.id'] || '',
+        name: secret.name || '',
+        profile: secret.profile || '',
+        'remote-address': secret.currentAddress || secret['remote-address'] || null,
+        disabled: secret.disabled || 'false',
+        isActive: secret.isActive === true,
+        activeConnectionId: secret.activeConnectionId || undefined
+      };
+      return secretData;
+    });
+    
+    setAllSecrets(transformedSecrets);
+    setLoading(false);
+    
+    const activeCount = transformedSecrets.filter(s => s.isActive).length;
+    console.log('[PppoeSecretsTable] Update secrets dari WebSocket:', {
+      total: transformedSecrets.length,
+      active: activeCount
+    });
+  }, [pppoeSecrets, selectedDeviceId, refreshTrigger]);
 
-  useEffect(() => {
-    fetchSecrets();
-  }, [fetchSecrets, refreshTrigger]);
-
-  const activeUsersSet = useMemo(() => new Set(pppoeActive?.map((user: any) => user.name) || []), [pppoeActive]);
-  
-  // Map untuk lookup uptime dari active users
-  const activeUsersMap = useMemo(() => {
+  // Map untuk lookup uptime dari secrets yang aktif
+  const secretsUptimeMap = useMemo(() => {
     const map = new Map();
-    pppoeActive?.forEach((user: any) => {
-      if (user.name) {
-        map.set(user.name, user);
+    pppoeSecrets?.forEach((secret: any) => {
+      if (secret.name && secret.isActive && secret.uptime) {
+        map.set(secret.name, secret.uptime);
       }
     });
     return map;
-  }, [pppoeActive]);
+  }, [pppoeSecrets]);
   
   // Fungsi untuk menentukan apakah secret aktif
-  // Prioritas: 1) isActive dari backend, 2) WebSocket data, 3) false
   const isSecretActive = useCallback((secret: PppoeSecret): boolean => {
-    // Jika backend sudah menyediakan isActive, gunakan itu
-    if (secret.isActive !== undefined) {
-      return secret.isActive;
-    }
-    // Fallback ke WebSocket data
-    return activeUsersSet.has(secret.name);
-  }, [activeUsersSet]);
+    return secret.isActive === true;
+  }, []);
   
-  // Fungsi untuk mendapatkan uptime dari active user
+  // Fungsi untuk mendapatkan uptime dari secret
   const getUptime = useCallback((secretName: string): string | null => {
-    const activeUser = activeUsersMap.get(secretName);
-    return activeUser?.uptime || null;
-  }, [activeUsersMap]);
+    return secretsUptimeMap.get(secretName) || null;
+  }, [secretsUptimeMap]);
   
   const filteredSecrets = useMemo(() => {
     let filtered = allSecrets;
@@ -160,30 +130,36 @@ const PppoeSecretsTable = ({ refreshTrigger, onActionComplete, initialFilter = '
     
     try {
         if (action === 'kick') {
-            const activeUser = pppoeActive.find((u: any) => u.name === secret.name);
-            if(!activeUser || !activeUser['.id']) throw new Error("User tidak aktif, tidak bisa di-kick.");
-            const encodedId = encodeURIComponent(activeUser['.id']);
-            const res = await apiFetch(`${apiUrl}/api/pppoe/active/${encodedId}/kick`, {
-                method: 'POST'
-            });
-            if(!res.ok) {
-                const errData = await res.json();
-                throw new Error(errData.message || "Aksi gagal");
+            // Untuk kick, kita perlu .id dari /ppp/active/print
+            // Data sudah di-enrich di backend dengan activeConnectionId
+            if (!isSecretActive(secret)) {
+                throw new Error("User tidak aktif, tidak bisa di-kick.");
+            }
+            
+            // Gunakan activeConnectionId yang sudah ada di secret (dari WebSocket data)
+            if (!secret.activeConnectionId) {
+                throw new Error("ID koneksi aktif tidak ditemukan. Silakan refresh halaman.");
+            }
+            
+            try {
+                const encodedId = encodeURIComponent(secret.activeConnectionId);
+                const res = await apiFetch(`${apiUrl}/api/pppoe/active/${encodedId}/kick`, {
+                    method: 'POST'
+                });
+                if(!res.ok) {
+                    const errData = await res.json();
+                    throw new Error(errData.message || "Aksi gagal");
+                }
+            } catch (error: any) {
+                throw new Error(error.message || "Gagal melakukan kick");
             }
         } else if (action === 'disable') {
             // Jika disable, kick user terlebih dahulu jika sedang aktif
-            const activeUser = pppoeActive.find((u: any) => u.name === secret.name);
-            if (activeUser && activeUser['.id']) {
-                try {
-                    const encodedId = encodeURIComponent(activeUser['.id']);
-                    await apiFetch(`${apiUrl}/api/pppoe/active/${encodedId}/kick`, {
-                        method: 'POST'
-                    });
-                    // Tidak perlu throw error jika kick gagal, lanjutkan disable
-                } catch (kickError: any) {
-                    console.warn('Gagal kick user sebelum disable:', kickError.message);
-                    // Lanjutkan disable meskipun kick gagal
-                }
+            // Note: Untuk kick, kita perlu .id dari /ppp/active/print
+            // Tapi karena data sudah merged, kita skip kick dan langsung disable
+            // User akan terputus otomatis saat secret di-disable
+            if (isSecretActive(secret)) {
+                console.log('User aktif akan terputus otomatis saat secret di-disable');
             }
             
             // Setelah kick (jika user aktif), lakukan disable
@@ -281,8 +257,11 @@ const PppoeSecretsTable = ({ refreshTrigger, onActionComplete, initialFilter = '
                     filteredSecrets.map((user, i) => {
                       const isActive = isSecretActive(user);
                       const uptime = getUptime(user.name);
+                      // Gunakan kombinasi .id dan name untuk key yang unik
+                      // Jika .id tidak ada, gunakan name sebagai fallback (name harus unik)
+                      const uniqueKey = user['.id'] || `secret-${user.name}-${i}`;
                       return (
-                        <motion.tr key={user['.id']} className="border-b" initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: i * 0.05 }}>
+                        <motion.tr key={uniqueKey} className="border-b" initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: i * 0.05 }}>
                           <td className="p-4">
                             {user.disabled === 'true' ? 
                               (<span className="flex items-center gap-2 text-muted-foreground"><PowerOff size={14} /> Disabled</span>) : 

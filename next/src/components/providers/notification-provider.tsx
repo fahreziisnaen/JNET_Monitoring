@@ -37,12 +37,15 @@ export const NotificationProvider = ({ children }: { children: React.ReactNode }
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [disconnectCount, setDisconnectCount] = useState(0);
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
-  const { pppoeActive } = useMikrotik() || { pppoeActive: [] };
+  const { pppoeSecrets } = useMikrotik() || { pppoeSecrets: [] };
   const { user } = useAuth();
   const previousActiveRef = useRef<Set<string>>(new Set());
   const lastNotificationTimeRef = useRef<Map<string, number>>(new Map());
   const isInitializedRef = useRef<boolean>(false); // Flag untuk track apakah sudah initialized
   const notificationCooldown = 60000; // 1 menit cooldown per user
+  
+  // Filter hanya yang aktif dari pppoeSecrets
+  const pppoeActive = pppoeSecrets.filter((secret: any) => secret.isActive === true);
 
   // Reset initialization flag saat user logout atau pppoeActive menjadi kosong/null
   useEffect(() => {

@@ -52,13 +52,35 @@ export async function apiFetch(
     headers['Authorization'] = `Bearer ${token}`;
   }
 
-  return fetch(url, {
+  try {
+    const response = await fetch(url, {
     ...options,
     credentials: 'include',
     headers: headers as HeadersInit,
     // Pastikan signal di-pass jika ada di options
     signal: options.signal,
   });
+    
+    // Log error response untuk debugging (hanya di development)
+    if (!response.ok && process.env.NODE_ENV === 'development') {
+      console.warn(`[API Fetch] Response tidak OK: ${response.status} ${response.statusText} untuk ${url}`);
+    }
+    
+    return response;
+  } catch (error: any) {
+    // Handle network errors dan abort errors dengan lebih baik
+    if (error?.name === 'AbortError') {
+      throw error; // Re-throw abort errors untuk di-handle oleh caller
+    }
+    
+    // Log network errors
+    if (error?.message?.includes('Failed to fetch') || error?.message?.includes('NetworkError')) {
+      console.error(`[API Fetch] Network error untuk ${url}:`, error.message);
+      throw new Error('Gagal terhubung ke server. Pastikan server sedang berjalan dan dapat diakses.');
+    }
+    
+    throw error;
+  }
 }
 
 // Export getAuthToken untuk digunakan di komponen lain

@@ -15,11 +15,11 @@ import { apiFetch } from '@/utils/api';
 
 const ManagementPage = () => {
   const { user } = useAuth();
-  const { selectedDeviceId, setSelectedDeviceId } = useMikrotik() || {};
+  const { selectedDeviceId, setSelectedDeviceId, pppoeSecrets } = useMikrotik() || {};
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [isIpPoolModalOpen, setIsIpPoolModalOpen] = useState(false);
   const [summary, setSummary] = useState({ total: 0, active: 0, inactive: 0 });
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [refreshTrigger, setRefreshTrigger] = useState(0);
   const [activeFilter, setActiveFilter] = useState<'all' | 'active' | 'inactive'>('all');
@@ -47,75 +47,55 @@ const ManagementPage = () => {
     checkDevices();
   }, [user?.workspace_id]);
 
+  // Tidak perlu fetchSummary lagi, semua data dari WebSocket
   const fetchSummary = useCallback(async () => {
-    if (!selectedDeviceId || !hasDevices) {
-      console.log('[Management Page] Skip fetch - selectedDeviceId:', selectedDeviceId, 'hasDevices:', hasDevices);
-      setLoading(false);
+    // Function ini tetap ada untuk backward compatibility tapi tidak melakukan apa-apa
+    // Semua data sekarang dari WebSocket
+    console.log('[Management Page] fetchSummary dipanggil, tapi data sekarang dari WebSocket');
+  }, []);
+
+  // Update summary secara real-time dari WebSocket data (sama seperti summary aktif)
+  useEffect(() => {
+    if (!selectedDeviceId) {
       setSummary({ total: 0, active: 0, inactive: 0 });
+      setLoading(false);
       return;
     }
     
-    console.log('[Management Page] Fetching summary untuk deviceId:', selectedDeviceId);
-    setLoading(true);
-    let timeoutId: NodeJS.Timeout | null = null;
-    const controller = new AbortController();
+    // Gunakan data WebSocket untuk semua summary (sama seperti summary aktif)
+    const secretsArray = Array.isArray(pppoeSecrets) ? pppoeSecrets : [];
     
-    try {
-        const apiUrl = process.env.NEXT_PUBLIC_API_BASE_URL;
-        
-        // Tambahkan timeout 20 detik (lebih lama dari backend timeout 15 detik)
-        timeoutId = setTimeout(() => {
-          if (!controller.signal.aborted) {
-            console.warn('[Management Page] Request timeout setelah 20 detik');
-            controller.abort();
-          }
-        }, 20000);
-        
-        const response = await apiFetch(`${apiUrl}/api/pppoe/summary?deviceId=${selectedDeviceId}`, {
-          signal: controller.signal
+    const totalSecrets = secretsArray.length;
+    const activeCount = secretsArray.filter((secret: any) => secret.isActive === true).length;
+    const inactiveCount = Math.max(0, totalSecrets - activeCount);
+    
+    // Update summary dari WebSocket data (real-time, sama seperti aktif)
+    setSummary(prev => {
+      // Hanya update jika ada perubahan
+      if (prev.total !== totalSecrets || prev.active !== activeCount || prev.inactive !== inactiveCount) {
+        console.log('[Management Page] Update summary dari WebSocket:', {
+          total: totalSecrets,
+          active: activeCount,
+          inactive: inactiveCount,
+          pppoeSecretsCount: secretsArray.length
         });
         
-        if (timeoutId) {
-          clearTimeout(timeoutId);
-          timeoutId = null;
-        }
-        
-        if (controller.signal.aborted) {
-          console.log('[Management Page] Request di-abort, skip update state');
-          return;
-        }
-        
-        if (!response.ok) {
-          const errorText = await response.text().catch(() => 'Unknown error');
-          throw new Error(`Gagal mengambil data summary: ${response.status} ${response.statusText} - ${errorText}`);
-        }
-        
-        const data = await response.json();
-        console.log('[Management Page] Summary data diterima:', data);
-        setSummary({
-          total: data?.total ?? 0,
-          active: data?.active ?? 0,
-          inactive: data?.inactive ?? 0
-        });
-    } catch (error: any) {
-        // Handle AbortError dengan benar
-        if (error?.name === 'AbortError' || error?.message?.includes('aborted')) {
-          console.warn('[Management Page] Request di-abort (timeout atau cancelled)');
-        } else {
-          console.error('[Management Page] Error fetching summary:', error);
-        }
-        // Set default values jika error
-        setSummary({ total: 0, active: 0, inactive: 0 });
-    } finally {
-        if (timeoutId) clearTimeout(timeoutId);
-        console.log('[Management Page] Set loading ke false');
-        setLoading(false);
+        return {
+          total: totalSecrets,
+          active: activeCount,
+          inactive: inactiveCount
+        };
+      }
+      
+      return prev;
+    });
+    
+    // Set loading ke false jika ada data WebSocket
+    if (loading && totalSecrets > 0) {
+      console.log('[Management Page] Set loading ke false karena ada data WebSocket');
+      setLoading(false);
     }
-  }, [selectedDeviceId, hasDevices]);
-
-  useEffect(() => {
-    fetchSummary();
-  }, [fetchSummary, refreshTrigger]);
+  }, [pppoeSecrets, selectedDeviceId, loading]);
 
   const handleSuccess = () => {
       setRefreshTrigger(prev => prev + 1);

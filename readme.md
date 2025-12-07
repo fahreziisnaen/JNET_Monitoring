@@ -14,6 +14,11 @@ JNET Monitoring is a full-stack application designed to provide an intuitive and
 * **Resource Monitoring**: Track system resources with live charts and graphs
 * **Traffic Analysis**: View interface traffic statistics with detailed bandwidth information
 * **Active Users**: Monitor active PPPoE and Hotspot users in real-time
+* **Historical Data Logging**:
+  - **Resource Logs**: CPU and Memory usage logged every 3 seconds for historical analysis
+  - **PPPoE Usage Logs**: Daily usage tracking (upload, download, total bytes) per user
+  - **Dashboard Snapshot**: Cached dashboard data for instant loading
+* **Data Persistence**: Chart data persisted in localStorage with workspace-specific keys
 
 ### 👥 User Management
 * **PPPoE Management**: 
@@ -25,6 +30,8 @@ JNET Monitoring is a full-stack application designed to provide an intuitive and
 * **IP Pool Management**: Automatically assign IP addresses to new PPPoE users based on profiles
   - Auto-populate IP start, IP end, and gateway when profile is selected
   - Link IP pools to PPPoE profiles
+  - **Sync from MikroTik**: One-click synchronization to import IP pools from MikroTik devices
+  - Optimized batch processing for fast synchronization
 
 ### 🗺️ Network Asset Mapping
 * **Interactive Map**: Visualize your network infrastructure (MikroTik, OLT, ODC, ODP) on an interactive Leaflet map
@@ -42,6 +49,11 @@ JNET Monitoring is a full-stack application designed to provide an intuitive and
 
 ### 📈 SLA & Downtime Tracking
 * **SLA Monitoring**: Track user uptime and generate Service Level Agreement reports
+* **Usage Statistics**: 
+  - Daily usage: Data usage for today only
+  - 7 Days usage: Total data usage for the last 7 days (including today)
+  - 30 Days usage: Total data usage for the last 30 days (including today)
+  - Accurate calculation from `pppoe_usage_logs` table
 * **Downtime Events**: 
   - Automatic detection of user disconnections
   - Track downtime duration with detailed timestamps
@@ -54,21 +66,27 @@ JNET Monitoring is a full-stack application designed to provide an intuitive and
 
 ### 📄 Report Generation
 * **Monthly PDF Reports**: Generate comprehensive monthly reports in PDF format
-* **Customizable Reports**:
-  - Select specific MikroTik devices
-  - Choose interfaces to include per device
-  - Option to include client statistics per device
+* **Simplified Report Generation**:
+  - Select year and month
+  - Select one or more MikroTik devices
+  - No need to select interfaces - automatically includes all device statistics
 * **Report Sections**:
   - SLA & Downtime statistics
-  - Bandwidth interface per MikroTik device
-  - Client statistics (PPPoE secret: total usage, total downtime, downtime events)
-  - Daily traffic summary
-  - Total users per device
+  - Device Statistics per MikroTik:
+    - Average CPU Load percentage
+    - Average Memory Usage
+    - Total log entries
+  - Client Statistics (PPPoE secret):
+    - Total usage (upload + download)
+    - Total downtime duration
+    - Downtime events count
+    - All clients automatically included for each selected device
 * **Beautiful PDF Formatting**: 
   - Professional table layouts with repeating headers
   - Alternating row colors
   - Consistent borders and pagination
   - Centered tables with proper margins
+  - Info boxes for device statistics
 
 ### 🤖 Interactive WhatsApp Bot
 * **Commands Available**:
@@ -551,12 +569,12 @@ The application uses MySQL with the following main tables:
 * **clients** - Client/PPPoE user locations and connections
 * **odp_user_connections** - Connections between clients and ODPs
 * **ip_pools** - IP pool configurations for PPPoE profiles
-* **traffic_logs** - Interface traffic logging (all active interfaces)
-* **pppoe_usage_logs** - PPPoE user usage statistics
-* **downtime_events** - User downtime tracking
+* **resource_logs** - Historical CPU and Memory usage logs (logged every 3 seconds)
+* **pppoe_usage_logs** - PPPoE user daily usage statistics (upload, download, total bytes)
+* **downtime_events** - User downtime tracking with duration and timestamps
 * **pppoe_user_status** - Real-time PPPoE user status
 * **user_sessions** - Active user sessions
-* **dashboard_snapshot** - Cached dashboard data
+* **dashboard_snapshot** - Cached dashboard data for instant loading
 * **login_otps** - OTP codes for authentication
 * **pending_registrations** - Pending user registrations
 
@@ -584,6 +602,8 @@ See `backend/database_schema.sql` for complete schema definition.
 * `PUT /api/pppoe/secrets/:id` - Update PPPoE secret
 * `DELETE /api/pppoe/secrets/:id` - Delete PPPoE secret
 * `POST /api/active/*/kick` - Kick active user
+* `GET /api/pppoe/secrets/:name/usage` - Get usage history (daily, weekly, monthly)
+* `GET /api/pppoe/secrets/:name/sla` - Get SLA details and downtime events
 
 ### Assets & Clients
 * `GET /api/assets` - List network assets
@@ -595,13 +615,20 @@ See `backend/database_schema.sql` for complete schema definition.
 * `PUT /api/clients/:id` - Update client
 * `DELETE /api/clients/:id` - Delete client
 
+### IP Pools
+* `GET /api/ip-pools` - List IP pools
+* `POST /api/ip-pools` - Create or update IP pool
+* `DELETE /api/ip-pools/:id` - Delete IP pool
+* `POST /api/ip-pools/sync?deviceId=X` - Sync IP pools from MikroTik device
+
 ### Import/Export
 * `POST /api/import/kml` - Import KML file
 * `GET /api/import/kml` - Export KML file
 
 ### Reports
 * `GET /api/reports/monthly` - Generate monthly PDF report
-  * Query parameters: `year`, `month`, `devices` (JSON array), `interfaces` (JSON object), `includeClientStats` (JSON object)
+  * Query parameters: `year`, `month`, `devices` (JSON array of device IDs)
+  * Automatically includes device statistics (CPU & Memory) and all client statistics for selected devices
 
 ### Workspace
 * `GET /api/workspaces/me` - Get workspace info
@@ -678,23 +705,29 @@ See `backend/database_schema.sql` for complete schema definition.
 ### Monthly PDF Reports
 * **Selection Options**:
   - Choose year and month
-  - Select multiple MikroTik devices
-  - Choose specific interfaces per device
-  - Option to include client statistics per device
+  - Select one or more MikroTik devices
+  - No interface selection needed - automatically includes all device statistics
 
 * **Report Content**:
   - SLA & Downtime statistics
-  - Bandwidth interface per MikroTik device
-  - Client statistics (if enabled)
-  - Daily traffic summary
-  - Total users count
+  - Device Statistics per MikroTik:
+    - Average CPU Load (from `resource_logs`)
+    - Average Memory Usage (from `resource_logs`)
+    - Total log entries count
+  - Client Statistics (automatically included for all selected devices):
+    - All PPPoE users with their usage data
+    - Total usage (bytes)
+    - Total downtime duration
+    - Downtime events count
+    - Total users count per device
 
 * **PDF Features**:
-  - Professional formatting
+  - Professional formatting with info boxes
   - Repeating table headers on each page
   - Alternating row colors
   - Consistent borders and margins
   - Proper pagination with footers
+  - Device-specific sections with clear organization
 
 ---
 
@@ -719,15 +752,41 @@ npm run dev  # Next.js development server with hot reload
 **For Initial Deployment:**
 * Use `backend/database_setup.sql` - This file includes:
   - Complete database schema
-  - All migrations (clients table, notification_sent column, whatsapp_group_id column)
+  - All migrations (clients table, notification_sent column, whatsapp_group_id column, resource_logs table)
   - Timezone setup
+  - Indexes for performance
   - Optional seeder (commented out)
 
 **For Existing Databases:**
-* Apply individual migration files in order:
+* Apply individual migration files in order (if needed):
   * `migration_add_clients_table.sql`
   * `migration_add_notification_sent_to_downtime_events.sql`
   * `migration_add_whatsapp_group.sql`
+
+### Background Jobs (Cron Jobs)
+
+The application runs several background jobs automatically:
+
+* **Data Logging** (every 3 seconds):
+  - Logs PPPoE usage from MikroTik queue simple
+  - Stores daily usage in `pppoe_usage_logs` table
+
+* **SLA & Notifications** (every 3 seconds):
+  - Monitors user connections/disconnections
+  - Detects downtime events
+  - Sends notifications (WhatsApp + WebSocket)
+
+* **Dashboard Snapshot** (every 3 seconds):
+  - Updates cached dashboard data
+  - Logs resource data (CPU & Memory) to `resource_logs`
+  - Stores snapshot in `dashboard_snapshot` for instant loading
+
+* **Downtime Notifications** (every 30 seconds):
+  - Checks for ongoing downtime events
+  - Sends notifications for events >= 2 minutes
+
+* **Daily Reports** (every day at 00:00):
+  - Generates and sends daily performance reports via WhatsApp
 
 ---
 

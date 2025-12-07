@@ -1,6 +1,12 @@
 // Connection key format: "workspaceId-deviceId" atau "workspaceId" (backward compatibility)
 const workspaceConnections = new Map();
 
+// Mutex untuk mencegah race condition saat membuat koneksi baru
+const connectionLocks = new Map(); // Map<connectionKey, Promise>
+
+// Pending queue untuk request yang menunggu koneksi yang sedang dibuat
+const pendingConnections = new Map(); // Map<connectionKey, Array<{resolve, reject}>>
+
 const DEFAULT_IDLE_TIMEOUT = 5 * 60 * 1000;
 
 function setIdleTimeout(connectionKey, connection, timeout) {
@@ -27,10 +33,29 @@ const getConnection = (connectionKey) => {
 };
 
 const addConnection = (connectionKey, connectionData, timeout = DEFAULT_IDLE_TIMEOUT) => {
-    const conn = { ...connectionData, timeout };
-    setIdleTimeout(connectionKey, conn, timeout);
+    // Pastikan timeout tidak null, undefined, atau 0 - gunakan default jika tidak valid
+    const effectiveTimeout = (timeout && timeout > 0) ? timeout : DEFAULT_IDLE_TIMEOUT;
+    const conn = { ...connectionData, timeout: effectiveTimeout };
+    setIdleTimeout(connectionKey, conn, effectiveTimeout);
     workspaceConnections.set(connectionKey, conn);
-    console.log(`[Connection Manager] Koneksi untuk ${connectionKey} didaftarkan dengan timeout ${timeout/1000} detik.`);
+    console.log(`[Connection Manager] Koneksi untuk ${connectionKey} didaftarkan dengan timeout ${effectiveTimeout/1000} detik.`);
+    
+    // Resolve semua pending requests yang menunggu koneksi ini
+    const pending = pendingConnections.get(connectionKey);
+    if (pending && pending.length > 0) {
+        console.log(`[Connection Manager] Resolving ${pending.length} pending request(s) untuk ${connectionKey}`);
+        pending.forEach(({ resolve }) => {
+            try {
+                resolve(conn.client);
+            } catch (err) {
+                console.error(`[Connection Manager] Error resolving pending request:`, err);
+            }
+        });
+        pendingConnections.delete(connectionKey);
+    }
+    
+    // Clear lock setelah koneksi berhasil dibuat
+    connectionLocks.delete(connectionKey);
 };
 
 const removeConnection = (connectionKey) => {
@@ -43,6 +68,64 @@ const removeConnection = (connectionKey) => {
         }
         workspaceConnections.delete(connectionKey);
     }
+    
+    // Reject semua pending requests jika koneksi dihapus
+    const pending = pendingConnections.get(connectionKey);
+    if (pending && pending.length > 0) {
+        console.log(`[Connection Manager] Rejecting ${pending.length} pending request(s) untuk ${connectionKey} karena koneksi dihapus`);
+        pending.forEach(({ reject }) => {
+            try {
+                reject(new Error('Koneksi dihapus sebelum selesai dibuat'));
+            } catch (err) {
+                console.error(`[Connection Manager] Error rejecting pending request:`, err);
+            }
+        });
+        pendingConnections.delete(connectionKey);
+    }
+    
+    // Clear lock jika ada
+    connectionLocks.delete(connectionKey);
+};
+
+/**
+ * Tambahkan request ke pending queue untuk menunggu koneksi yang sedang dibuat
+ */
+const addPendingRequest = (connectionKey, resolve, reject) => {
+    if (!pendingConnections.has(connectionKey)) {
+        pendingConnections.set(connectionKey, []);
+    }
+    pendingConnections.get(connectionKey).push({ resolve, reject });
+};
+
+/**
+ * Cek apakah ada koneksi yang sedang dibuat (ada lock)
+ */
+const isConnectionLocked = (connectionKey) => {
+    return connectionLocks.has(connectionKey);
+};
+
+/**
+ * Set lock untuk koneksi yang sedang dibuat
+ */
+const setConnectionLock = (connectionKey, promise) => {
+    connectionLocks.set(connectionKey, promise);
+};
+
+/**
+ * Get lock promise untuk koneksi yang sedang dibuat
+ */
+const getConnectionLock = (connectionKey) => {
+    return connectionLocks.get(connectionKey);
+};
+
+/**
+ * Clear lock yang hang (untuk recovery dari deadlock)
+ */
+const clearConnectionLock = (connectionKey) => {
+    if (connectionLocks.has(connectionKey)) {
+        console.warn(`[Connection Manager] Clearing hang lock untuk ${connectionKey}`);
+        connectionLocks.delete(connectionKey);
+    }
 };
 
 module.exports = {
@@ -50,4 +133,9 @@ module.exports = {
     addConnection,
     removeConnection,
     setIdleTimeout, // Export untuk update timeout koneksi yang sudah ada
+    addPendingRequest,
+    isConnectionLocked,
+    setConnectionLock,
+    getConnectionLock,
+    clearConnectionLock,
 };
