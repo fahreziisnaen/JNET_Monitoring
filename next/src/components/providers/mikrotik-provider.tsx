@@ -40,7 +40,7 @@ export const MikrotikProvider = ({ children }: { children: React.ReactNode }) =>
 
     useEffect(() => {
         if (!user) {
-            if (ws.current) {
+            if (ws.current && (ws.current.readyState === WebSocket.OPEN || ws.current.readyState === WebSocket.CONNECTING)) {
                 ws.current.close();
                 ws.current = null;
             }
@@ -136,12 +136,12 @@ export const MikrotikProvider = ({ children }: { children: React.ReactNode }) =>
                     return; // Same device, already connected
                 } else {
                     // Device changed, close and reconnect
-                                console.log('[WebSocket] Device berubah, menutup koneksi lama');
-                                if (ws.current) {
-                                    ws.current.close();
-                                    ws.current = null;
-                                }
-                            }
+                    console.log('[WebSocket] Device berubah, menutup koneksi lama');
+                    if (ws.current && (ws.current.readyState === WebSocket.OPEN || ws.current.readyState === WebSocket.CONNECTING)) {
+                        ws.current.close();
+                        ws.current = null;
+                    }
+                }
                         }
                     } catch (urlError) {
                         // Jika URL tidak valid, close dan reconnect
@@ -305,9 +305,8 @@ export const MikrotikProvider = ({ children }: { children: React.ReactNode }) =>
             // Hanya close jika user logout atau deviceId dihapus
             if (ws.current && (!user || !selectedDeviceId)) {
                 console.log('[WebSocket] Cleanup: Menutup WebSocket karena user atau deviceId tidak ada');
-                const currentWs = ws.current;
-                if (currentWs.readyState === WebSocket.OPEN || currentWs.readyState === WebSocket.CONNECTING) {
-                    currentWs.close();
+                if (ws.current.readyState === WebSocket.OPEN || ws.current.readyState === WebSocket.CONNECTING) {
+                    ws.current.close();
                 }
                 ws.current = null;
             }
