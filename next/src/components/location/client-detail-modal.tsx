@@ -138,12 +138,12 @@ const ClientDetailModal = ({
     try {
       // Fetch hanya SLA dan usage secara parallel (tidak perlu basic client data)
       const [slaRes, usageRes] = await Promise.all([
-        apiFetch(`${apiUrl}/api/pppoe/secrets/${client.pppoe_secret_name}/sla`).catch(() => ({ ok: false })),
-        apiFetch(`${apiUrl}/api/pppoe/secrets/${client.pppoe_secret_name}/usage`).catch(() => ({ ok: false }))
+        apiFetch(`${apiUrl}/api/pppoe/secrets/${client.pppoe_secret_name}/sla`).catch(() => null),
+        apiFetch(`${apiUrl}/api/pppoe/secrets/${client.pppoe_secret_name}/usage`).catch(() => null)
       ]);
       
       // Process SLA data
-      if (slaRes.ok) {
+      if (slaRes && slaRes.ok) {
         const sla = await slaRes.json();
         setSlaData({
           sla_percentage: sla.sla_percentage || '0',
@@ -152,7 +152,7 @@ const ClientDetailModal = ({
       }
       
       // Process usage data
-      if (usageRes.ok) {
+      if (usageRes && usageRes.ok) {
         const usage = await usageRes.json();
         setUsageData(usage);
       }
@@ -286,12 +286,6 @@ const ClientDetailModal = ({
                       <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
                         Informasi PPPoE
                       </h3>
-
-                      {pppoe.error && (
-                        <div className="bg-destructive/10 text-destructive p-3 rounded-md text-sm">
-                          {pppoe.error}
-                        </div>
-                      )}
 
                       <div className="grid grid-cols-2 gap-3">
                         <div className="flex items-center gap-3">
