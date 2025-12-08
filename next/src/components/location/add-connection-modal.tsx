@@ -35,9 +35,13 @@ const AddConnectionModal = ({ isOpen, onClose, onSuccess, asset }: AddConnection
           return res.json();
         })
         .then(data => {
-          setSecrets(data);
-          if (data.length > 0) {
-            setSelectedSecret(data[0].name);
+          // Sort berdasarkan nama A-Z
+          const sortedData = [...data].sort((a, b) => 
+            a.name.toLowerCase().localeCompare(b.name.toLowerCase())
+          );
+          setSecrets(sortedData);
+          if (sortedData.length > 0) {
+            setSelectedSecret(sortedData[0].name);
           } else {
             setError("Semua user aktif sudah terhubung ke ODP.");
           }

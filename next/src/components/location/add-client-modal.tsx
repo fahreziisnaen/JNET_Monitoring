@@ -88,7 +88,7 @@ const AddClientModal = ({ isOpen, onClose, onSuccess, assets = [] }: AddClientMo
     const existingClientsSet = new Set(existingClients);
 
     // Filter secrets yang belum jadi client dan map dengan ODP connection
-    return secretsArray
+    const filtered = secretsArray
       .filter((secret: any) => secret.name && !existingClientsSet.has(secret.name))
       .map((secret: any) => {
         const secretData: PppoeSecret = {
@@ -97,6 +97,9 @@ const AddClientModal = ({ isOpen, onClose, onSuccess, assets = [] }: AddClientMo
         };
         return secretData;
       });
+    
+    // Sort berdasarkan nama A-Z
+    return filtered.sort((a, b) => a.name.toLowerCase().localeCompare(b.name.toLowerCase()));
   }, [pppoeSecrets, selectedDeviceId, existingClients, odpConnections]);
 
   // Auto-select first secret saat secrets tersedia
@@ -122,7 +125,10 @@ const AddClientModal = ({ isOpen, onClose, onSuccess, assets = [] }: AddClientMo
     const lat = parseFloat(latitude);
     const lon = parseFloat(longitude);
     if (isNaN(lat) || isNaN(lon) || lat < -90 || lat > 90 || lon < -180 || lon > 180) {
-      setError('Koordinat tidak valid.');
+      setError('Koordinat tidak valid. Silakan masukkan ulang.');
+      // Reset koordinat agar user bisa memasukkan ulang
+      setLatitude('');
+      setLongitude('');
       return;
     }
 

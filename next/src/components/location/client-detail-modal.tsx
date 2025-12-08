@@ -26,6 +26,7 @@ import { Button } from '@/components/ui/button';
 import { Client } from './client-list';
 import { apiFetch } from '@/utils/api';
 import { useMikrotik } from '@/components/providers/mikrotik-provider';
+import { formatUptime } from '@/utils/format';
 
 interface PppoeDetails {
   name: string;
@@ -343,7 +344,7 @@ const ClientDetailModal = ({
                           <Network size={16} className="text-muted-foreground" />
                           <div className="flex-1 min-w-0">
                             <p className="text-xs text-muted-foreground">Uptime</p>
-                            <p className="text-sm font-semibold">{pppoe.uptime}</p>
+                            <p className="text-sm font-semibold">{formatUptime(pppoe.uptime)}</p>
                           </div>
                         </div>
                       )}

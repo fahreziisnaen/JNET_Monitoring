@@ -216,9 +216,35 @@ const EditAssetModal = ({
       }
     }
 
-    const [latitude, longitude] = formData.coords
-      .split(",")
-      .map((s) => parseFloat(s.trim()));
+    // Validasi koordinat sebelum submit
+    const coordsParts = formData.coords.split(",").map((s) => s.trim());
+    if (coordsParts.length !== 2) {
+      setError('Format koordinat tidak valid. Gunakan format: latitude, longitude (contoh: -7.821, 112.013)');
+      // Reset koordinat ke nilai awal dari asset agar user bisa memasukkan ulang
+      if (assetToEdit) {
+        setFormData(prev => ({ ...prev, coords: `${assetToEdit.latitude}, ${assetToEdit.longitude}` }));
+      } else {
+        setFormData(prev => ({ ...prev, coords: '' }));
+      }
+      setLoading(false);
+      return;
+    }
+
+    const latitude = parseFloat(coordsParts[0]);
+    const longitude = parseFloat(coordsParts[1]);
+    
+    if (isNaN(latitude) || isNaN(longitude) || latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180) {
+      setError('Koordinat tidak valid. Silakan masukkan ulang. Latitude: -90 sampai 90, Longitude: -180 sampai 180.');
+      // Reset koordinat ke nilai awal dari asset agar user bisa memasukkan ulang
+      if (assetToEdit) {
+        setFormData(prev => ({ ...prev, coords: `${assetToEdit.latitude}, ${assetToEdit.longitude}` }));
+      } else {
+        setFormData(prev => ({ ...prev, coords: '' }));
+      }
+      setLoading(false);
+      return;
+    }
+
     const submissionData = {
       ...formData,
       latitude,

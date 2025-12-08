@@ -1,6 +1,7 @@
 const PDFDocument = require('pdfkit');
 const pool = require('../config/database');
 const { runCommandForWorkspace } = require('../utils/apiConnection');
+const { PassThrough } = require('stream');
 
 const formatDataSize = (bytes) => {
     if (!+bytes || bytes < 0) return '0 B';
@@ -315,39 +316,66 @@ exports.generateMonthlyReport = async (req, res) => {
         
         const workspace = workspaces[0];
         
+        // Validate workspace data
+        if (!workspace || !workspace.name) {
+            return res.status(400).json({ message: 'Workspace data tidak valid.' });
+        }
+        
         // Calculate date range for the month
         const startDate = new Date(yearNum, monthNum - 1, 1);
         const endDate = new Date(yearNum, monthNum, 0, 23, 59, 59);
         
-        // Get SLA data (downtime events)
-        const [downtimeStats] = await pool.query(
-            `SELECT 
-                COUNT(*) as total_events,
-                SUM(CASE WHEN end_time IS NOT NULL THEN duration_seconds ELSE 0 END) as total_downtime_seconds,
-                COUNT(CASE WHEN end_time IS NULL THEN 1 END) as ongoing_events
-             FROM downtime_events
-             WHERE workspace_id = ? 
-             AND DATE(start_time) >= ? AND DATE(start_time) <= ?`,
-            [workspaceId, startDate, endDate]
-        );
+        // Validate date range
+        if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) {
+            return res.status(400).json({ message: 'Tanggal tidak valid.' });
+        }
         
-        const totalDowntimeSeconds = downtimeStats[0]?.total_downtime_seconds || 0;
-        const totalEvents = downtimeStats[0]?.total_events || 0;
-        const ongoingEvents = downtimeStats[0]?.ongoing_events || 0;
+        // Get SLA data (downtime events) - with error handling
+        let totalDowntimeSeconds = 0;
+        let totalEvents = 0;
+        let ongoingEvents = 0;
         
-        // Get user statistics
-        const [pppoeStats] = await pool.query(
-            `SELECT 
-                COUNT(DISTINCT pppoe_user) as total_users,
-                SUM(CASE WHEN DATE(usage_date) >= ? AND DATE(usage_date) <= ? THEN total_bytes ELSE 0 END) as total_usage
-             FROM pppoe_usage_logs
-             WHERE workspace_id = ? 
-             AND usage_date >= ? AND usage_date <= ?`,
-            [startDate, endDate, workspaceId, startDate, endDate]
-        );
+        try {
+            const [downtimeStats] = await pool.query(
+                `SELECT 
+                    COUNT(*) as total_events,
+                    SUM(CASE WHEN end_time IS NOT NULL THEN duration_seconds ELSE 0 END) as total_downtime_seconds,
+                    COUNT(CASE WHEN end_time IS NULL THEN 1 END) as ongoing_events
+                 FROM downtime_events
+                 WHERE workspace_id = ? 
+                 AND DATE(start_time) >= ? AND DATE(start_time) <= ?`,
+                [workspaceId, startDate, endDate]
+            );
+            
+            totalDowntimeSeconds = downtimeStats[0]?.total_downtime_seconds || 0;
+            totalEvents = downtimeStats[0]?.total_events || 0;
+            ongoingEvents = downtimeStats[0]?.ongoing_events || 0;
+        } catch (dbError) {
+            console.error("[Report] Error fetching downtime stats:", dbError);
+            // Continue with default values
+        }
         
-        const totalUsers = pppoeStats[0]?.total_users || 0;
-        const totalUserUsage = pppoeStats[0]?.total_usage || 0;
+        // Get user statistics - with error handling
+        let totalUsers = 0;
+        let totalUserUsage = 0;
+        
+        try {
+            const [pppoeStats] = await pool.query(
+                `SELECT 
+                    COUNT(DISTINCT pppoe_user) as total_users,
+                    SUM(CASE WHEN DATE(usage_date) >= ? AND DATE(usage_date) <= ? THEN total_bytes ELSE 0 END) as total_usage
+                 FROM pppoe_usage_logs
+                 WHERE workspace_id = ? 
+                 AND usage_date >= ? AND usage_date <= ?`,
+                [startDate, endDate, workspaceId, startDate, endDate]
+            );
+            
+            totalUsers = pppoeStats[0]?.total_users || 0;
+            totalUserUsage = pppoeStats[0]?.total_usage || 0;
+        } catch (dbError) {
+            console.error("[Report] Error fetching PPPoE stats:", dbError);
+            // Continue with default values
+        }
         
         // Daily traffic data (empty for now, can be populated later if needed)
         const dailyTraffic = [];
@@ -357,98 +385,146 @@ exports.generateMonthlyReport = async (req, res) => {
         const clientStatsPerDevice = new Map(); // deviceId -> [client stats]
         
         for (const deviceId of selectedDevices) {
-            // Verify device belongs to workspace
-            const [deviceInfo] = await pool.query(
-                'SELECT id, name FROM mikrotik_devices WHERE id = ? AND workspace_id = ?',
-                [deviceId, workspaceId]
-            );
-            
-            if (deviceInfo.length === 0) {
-                console.log(`[Report] Device ${deviceId} not found in workspace ${workspaceId}`);
-                continue;
-            }
-            
-            const deviceName = deviceInfo[0].name;
-            
-            // Get average CPU and Memory usage from resource_logs for this device in the selected month
-            const [resourceStats] = await pool.query(
-                `SELECT 
-                    AVG(cpu_load) as avg_cpu_load,
-                    AVG(memory_usage) as avg_memory_usage,
-                    COUNT(*) as log_count
-                 FROM resource_logs
-                 WHERE workspace_id = ? AND device_id = ?
-                 AND DATE(timestamp) >= ? AND DATE(timestamp) <= ?`,
-                [workspaceId, deviceId, startDate, endDate]
-            );
-            
-            const avgCpu = resourceStats[0]?.avg_cpu_load ? Math.round(resourceStats[0].avg_cpu_load) : null;
-            const avgMemory = resourceStats[0]?.avg_memory_usage ? Math.round(resourceStats[0].avg_memory_usage) : null;
-            
-            deviceStatsMap.set(deviceId, {
-                device_name: deviceName,
-                avg_cpu: avgCpu,
-                avg_memory: avgMemory,
-                log_count: resourceStats[0]?.log_count || 0
-            });
-            
-            // Get all client statistics for this workspace (all PPPoE users)
-            // Note: Since there's no direct link between PPPoE user and device,
-            // we'll show all workspace clients for each device
-            const [clientUsage] = await pool.query(
-                `SELECT 
-                    pppoe_user,
-                    SUM(total_bytes) as total_usage
-                 FROM pppoe_usage_logs
-                 WHERE workspace_id = ?
-                 AND usage_date >= ? AND usage_date <= ?
-                 GROUP BY pppoe_user
-                 ORDER BY total_usage DESC`,
-                [workspaceId, startDate, endDate]
-            );
-            
-            const clientStats = await Promise.all(
-                clientUsage.map(async (client) => {
-                    const [downtimeData] = await pool.query(
+            try {
+                // Verify device belongs to workspace
+                const [deviceInfo] = await pool.query(
+                    'SELECT id, name FROM mikrotik_devices WHERE id = ? AND workspace_id = ?',
+                    [deviceId, workspaceId]
+                );
+                
+                if (deviceInfo.length === 0) {
+                    console.log(`[Report] Device ${deviceId} not found in workspace ${workspaceId}`);
+                    continue;
+                }
+                
+                const deviceName = deviceInfo[0].name;
+                
+                // Get average CPU and Memory usage from resource_logs for this device in the selected month
+                let avgCpu = null;
+                let avgMemory = null;
+                let logCount = 0;
+                
+                try {
+                    const [resourceStats] = await pool.query(
                         `SELECT 
-                            SUM(CASE WHEN end_time IS NOT NULL THEN duration_seconds ELSE 0 END) as total_downtime_seconds,
-                            COUNT(*) as downtime_events
-                         FROM downtime_events
-                         WHERE workspace_id = ?
-                         AND pppoe_user = ?
-                         AND DATE(start_time) >= ? AND DATE(start_time) <= ?`,
-                        [workspaceId, client.pppoe_user, startDate, endDate]
+                            AVG(cpu_load) as avg_cpu_load,
+                            AVG(memory_usage) as avg_memory_usage,
+                            COUNT(*) as log_count
+                         FROM resource_logs
+                         WHERE workspace_id = ? AND device_id = ?
+                         AND DATE(timestamp) >= ? AND DATE(timestamp) <= ?`,
+                        [workspaceId, deviceId, startDate, endDate]
                     );
                     
-                    return {
-                        pppoe_user: client.pppoe_user,
-                        total_usage: client.total_usage || 0,
-                        total_downtime_seconds: downtimeData[0]?.total_downtime_seconds || 0,
-                        downtime_events: downtimeData[0]?.downtime_events || 0
-                    };
-                })
-            );
-            
-            clientStatsPerDevice.set(deviceId, clientStats);
+                    avgCpu = resourceStats[0]?.avg_cpu_load ? Math.round(resourceStats[0].avg_cpu_load) : null;
+                    avgMemory = resourceStats[0]?.avg_memory_usage ? Math.round(resourceStats[0].avg_memory_usage) : null;
+                    logCount = resourceStats[0]?.log_count || 0;
+                } catch (resourceError) {
+                    console.error(`[Report] Error fetching resource stats for device ${deviceId}:`, resourceError);
+                    // Continue with null values
+                }
+                
+                deviceStatsMap.set(deviceId, {
+                    device_name: deviceName,
+                    avg_cpu: avgCpu,
+                    avg_memory: avgMemory,
+                    log_count: logCount
+                });
+                
+                // Get all client statistics for this workspace (all PPPoE users)
+                // Note: Since there's no direct link between PPPoE user and device,
+                // we'll show all workspace clients for each device
+                let clientStats = [];
+                
+                try {
+                    const [clientUsage] = await pool.query(
+                        `SELECT 
+                            pppoe_user,
+                            SUM(total_bytes) as total_usage
+                         FROM pppoe_usage_logs
+                         WHERE workspace_id = ?
+                         AND usage_date >= ? AND usage_date <= ?
+                         GROUP BY pppoe_user
+                         ORDER BY total_usage DESC
+                         LIMIT 1000`,
+                        [workspaceId, startDate, endDate]
+                    );
+                    
+                    // Process client stats with error handling
+                    clientStats = await Promise.all(
+                        clientUsage.map(async (client) => {
+                            try {
+                                const [downtimeData] = await pool.query(
+                                    `SELECT 
+                                        SUM(CASE WHEN end_time IS NOT NULL THEN duration_seconds ELSE 0 END) as total_downtime_seconds,
+                                        COUNT(*) as downtime_events
+                                     FROM downtime_events
+                                     WHERE workspace_id = ?
+                                     AND pppoe_user = ?
+                                     AND DATE(start_time) >= ? AND DATE(start_time) <= ?`,
+                                    [workspaceId, client.pppoe_user, startDate, endDate]
+                                );
+                                
+                                return {
+                                    pppoe_user: client.pppoe_user,
+                                    total_usage: client.total_usage || 0,
+                                    total_downtime_seconds: downtimeData[0]?.total_downtime_seconds || 0,
+                                    downtime_events: downtimeData[0]?.downtime_events || 0
+                                };
+                            } catch (clientError) {
+                                console.error(`[Report] Error fetching downtime for client ${client.pppoe_user}:`, clientError);
+                                // Return client with default downtime values
+                                return {
+                                    pppoe_user: client.pppoe_user,
+                                    total_usage: client.total_usage || 0,
+                                    total_downtime_seconds: 0,
+                                    downtime_events: 0
+                                };
+                            }
+                        })
+                    );
+                } catch (clientUsageError) {
+                    console.error(`[Report] Error fetching client usage for device ${deviceId}:`, clientUsageError);
+                    // Continue with empty client stats
+                }
+                
+                clientStatsPerDevice.set(deviceId, clientStats);
+            } catch (deviceError) {
+                console.error(`[Report] Error processing device ${deviceId}:`, deviceError);
+                // Continue to next device
+                continue;
+            }
         }
         
-        // Generate PDF
+        // Validate that we have at least some data
+        if (deviceStatsMap.size === 0) {
+            return res.status(400).json({ message: 'Tidak ada device yang valid untuk dilaporkan.' });
+        }
+        
+        // Generate PDF to buffer first (not directly to response)
+        // This prevents "response already sent" errors if something fails during generation
+        const pdfBuffer = [];
         const doc = new PDFDocument({ 
             margin: 50,
             size: 'A4'
         });
         
-        // Set response headers
+        // Create a stream to collect PDF data
+        const stream = new PassThrough();
+        
+        // Collect PDF chunks
+        stream.on('data', (chunk) => {
+            pdfBuffer.push(chunk);
+        });
+        
+        // Pipe PDF to stream (not directly to response)
+        doc.pipe(stream);
+        
+        // Set response headers (before generating content)
         const monthNames = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 
                            'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
         const monthName = monthNames[monthNum - 1];
         const filename = `Laporan-${monthName}-${yearNum}.pdf`;
-        
-        res.setHeader('Content-Type', 'application/pdf');
-        res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
-        
-        // Pipe PDF to response
-        doc.pipe(res);
         
         // Beautiful Header with background
         const headerHeight = 120;
@@ -683,9 +759,42 @@ exports.generateMonthlyReport = async (req, res) => {
         // Finalize PDF
         doc.end();
         
+        // Wait for PDF to finish generating
+        await new Promise((resolve, reject) => {
+            stream.on('end', () => {
+                resolve();
+            });
+            stream.on('error', (err) => {
+                reject(err);
+            });
+            doc.on('error', (err) => {
+                reject(err);
+            });
+        });
+        
+        // Now that PDF is complete, send response
+        const finalBuffer = Buffer.concat(pdfBuffer);
+        
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+        res.setHeader('Content-Length', finalBuffer.length);
+        
+        res.send(finalBuffer);
+        
     } catch (error) {
         console.error("GENERATE MONTHLY REPORT ERROR:", error);
-        res.status(500).json({ message: 'Gagal membuat laporan PDF.', error: error.message });
+        console.error("Error stack:", error.stack);
+        
+        // Only send error response if response hasn't been sent yet
+        if (!res.headersSent) {
+            res.status(500).json({ 
+                message: 'Gagal membuat laporan PDF.', 
+                error: process.env.NODE_ENV === 'development' ? error.message : 'Terjadi kesalahan saat membuat laporan. Silakan coba lagi atau hubungi administrator.'
+            });
+        } else {
+            // If response already sent, just log the error
+            console.error("Response already sent, cannot send error response");
+        }
     }
 };
 

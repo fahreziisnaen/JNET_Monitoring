@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { motion } from '@/components/motion';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
-import { Power, PowerOff, MoreHorizontal, Loader2, Edit, Trash2, ZapOff, Search } from 'lucide-react';
+import { Power, PowerOff, MoreHorizontal, Loader2, Edit, Trash2, ZapOff, Search, ArrowUpDown, ChevronUp, ChevronDown } from 'lucide-react';
 import { useMikrotik } from '@/components/providers/mikrotik-provider';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
 import { Button } from '@/components/ui/button';
@@ -11,6 +11,7 @@ import { Input } from '@/components/ui/input';
 import ConfirmModal from '@/components/ui/confirm-modal';
 import EditPppoeSecretModal from './edit-pppoe-secret-modal';
 import { apiFetch } from '@/utils/api';
+import { formatUptime } from '@/utils/format';
 
 interface PppoeSecret {
   '.id': string;
@@ -33,6 +34,8 @@ const PppoeSecretsTable = ({ refreshTrigger, onActionComplete, initialFilter = '
   const [allSecrets, setAllSecrets] = useState<PppoeSecret[]>([]);
   const [loading, setLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [sortColumn, setSortColumn] = useState<string | null>(null);
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
   
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [secretToDelete, setSecretToDelete] = useState<PppoeSecret | null>(null);
@@ -98,6 +101,17 @@ const PppoeSecretsTable = ({ refreshTrigger, onActionComplete, initialFilter = '
     return secretsUptimeMap.get(secretName) || null;
   }, [secretsUptimeMap]);
   
+  const handleSort = (column: string) => {
+    if (sortColumn === column) {
+      // Toggle direction jika kolom yang sama diklik
+      setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc');
+    } else {
+      // Set kolom baru dan default ke asc
+      setSortColumn(column);
+      setSortDirection('asc');
+    }
+  };
+
   const filteredSecrets = useMemo(() => {
     let filtered = allSecrets;
     
@@ -122,8 +136,106 @@ const PppoeSecretsTable = ({ refreshTrigger, onActionComplete, initialFilter = '
       });
     }
     
+    // Apply sorting
+    if (sortColumn) {
+      filtered = [...filtered].sort((a, b) => {
+        let aValue: any;
+        let bValue: any;
+        
+        switch (sortColumn) {
+          case 'status':
+            // Sort by: disabled first, then active/inactive
+            const aDisabled = a.disabled === 'true' ? 0 : (isSecretActive(a) ? 1 : 2);
+            const bDisabled = b.disabled === 'true' ? 0 : (isSecretActive(b) ? 1 : 2);
+            aValue = aDisabled;
+            bValue = bDisabled;
+            break;
+          case 'name':
+            aValue = a.name.toLowerCase();
+            bValue = b.name.toLowerCase();
+            break;
+          case 'profile':
+            aValue = a.profile.toLowerCase();
+            bValue = b.profile.toLowerCase();
+            break;
+          case 'remote-address':
+            const aAddr = a['remote-address'] || '';
+            const bAddr = b['remote-address'] || '';
+            // Sort empty values last
+            if (!aAddr && !bAddr) {
+              aValue = 0;
+              bValue = 0;
+            } else if (!aAddr) {
+              aValue = Infinity; // Empty values go last
+              bValue = 0;
+            } else if (!bAddr) {
+              aValue = 0;
+              bValue = Infinity; // Empty values go last
+            } else {
+              // Parse IP address untuk sorting numerik
+              const parseIP = (ip: string): number => {
+                // Split IP address menjadi array of numbers
+                const parts = ip.split('.').map(part => parseInt(part, 10) || 0);
+                // Pad dengan 0 jika kurang dari 4 bagian (untuk IPv4)
+                while (parts.length < 4) parts.push(0);
+                // Convert ke single number untuk comparison (setiap bagian max 255)
+                // Format: part1 * 256^3 + part2 * 256^2 + part3 * 256 + part4
+                return parts[0] * 16777216 + parts[1] * 65536 + parts[2] * 256 + parts[3];
+              };
+              
+              // Check if it's a valid IP address format (contains dots and numbers)
+              const isIPFormat = (str: string) => /^\d+\.\d+\.\d+\.\d+$/.test(str);
+              
+              if (isIPFormat(aAddr) && isIPFormat(bAddr)) {
+                // Both are IP addresses, compare numerically
+                aValue = parseIP(aAddr);
+                bValue = parseIP(bAddr);
+              } else {
+                // Not IP addresses, compare as strings
+                aValue = aAddr.toLowerCase();
+                bValue = bAddr.toLowerCase();
+              }
+            }
+            break;
+          case 'uptime':
+            const aUptime = getUptime(a.name);
+            const bUptime = getUptime(b.name);
+            // Parse uptime string to seconds for comparison
+            // Format MikroTik: "1w2d3h4m5s" (w=week, d=day, h=hour, m=minute, s=second)
+            const parseUptime = (uptime: string | null): number => {
+              if (!uptime || uptime === 'N/A' || uptime === '...') return 0;
+              
+              // Match patterns: w (week), d (day), h (hour), m (minute), s (second)
+              const weekMatch = uptime.match(/(\d+)w/);
+              const dayMatch = uptime.match(/(\d+)d/);
+              const hourMatch = uptime.match(/(\d+)h/);
+              const minuteMatch = uptime.match(/(\d+)m/);
+              const secondMatch = uptime.match(/(\d+)s/);
+              
+              let totalSeconds = 0;
+              if (weekMatch) totalSeconds += parseInt(weekMatch[1]) * 7 * 24 * 60 * 60;
+              if (dayMatch) totalSeconds += parseInt(dayMatch[1]) * 24 * 60 * 60;
+              if (hourMatch) totalSeconds += parseInt(hourMatch[1]) * 60 * 60;
+              if (minuteMatch) totalSeconds += parseInt(minuteMatch[1]) * 60;
+              if (secondMatch) totalSeconds += parseInt(secondMatch[1]);
+              
+              return totalSeconds;
+            };
+            aValue = parseUptime(aUptime);
+            bValue = parseUptime(bUptime);
+            break;
+          default:
+            return 0;
+        }
+        
+        if (aValue < bValue) return sortDirection === 'asc' ? -1 : 1;
+        if (aValue > bValue) return sortDirection === 'asc' ? 1 : -1;
+        return 0;
+      });
+    }
+    
     return filtered;
-  }, [allSecrets, isSecretActive, initialFilter, searchQuery]);
+  }, [allSecrets, isSecretActive, initialFilter, searchQuery, sortColumn, sortDirection, getUptime]);
   
   const handleAction = async (action: 'enable' | 'disable' | 'kick', secret: PppoeSecret) => {
     setIsActionLoading(true);
@@ -242,11 +354,71 @@ const PppoeSecretsTable = ({ refreshTrigger, onActionComplete, initialFilter = '
             <table className="w-full text-sm">
               <thead className="text-left bg-secondary sticky top-0 z-10">
                 <tr>
-                  <th className="p-4 font-semibold">Status</th>
-                  <th className="p-4 font-semibold">Nama</th>
-                  <th className="p-4 font-semibold">Profil</th>
-                  <th className="p-4 font-semibold">Remote Address</th>
-                  <th className="p-4 font-semibold">Uptime</th>
+                  <th 
+                    className="p-4 font-semibold cursor-pointer hover:bg-secondary/80 transition-colors select-none"
+                    onClick={() => handleSort('status')}
+                  >
+                    <div className="flex items-center gap-2">
+                      Status
+                      {sortColumn === 'status' ? (
+                        sortDirection === 'asc' ? <ChevronUp size={16} /> : <ChevronDown size={16} />
+                      ) : (
+                        <ArrowUpDown size={16} className="text-muted-foreground opacity-50" />
+                      )}
+                    </div>
+                  </th>
+                  <th 
+                    className="p-4 font-semibold cursor-pointer hover:bg-secondary/80 transition-colors select-none"
+                    onClick={() => handleSort('name')}
+                  >
+                    <div className="flex items-center gap-2">
+                      Nama
+                      {sortColumn === 'name' ? (
+                        sortDirection === 'asc' ? <ChevronUp size={16} /> : <ChevronDown size={16} />
+                      ) : (
+                        <ArrowUpDown size={16} className="text-muted-foreground opacity-50" />
+                      )}
+                    </div>
+                  </th>
+                  <th 
+                    className="p-4 font-semibold cursor-pointer hover:bg-secondary/80 transition-colors select-none"
+                    onClick={() => handleSort('profile')}
+                  >
+                    <div className="flex items-center gap-2">
+                      Profil
+                      {sortColumn === 'profile' ? (
+                        sortDirection === 'asc' ? <ChevronUp size={16} /> : <ChevronDown size={16} />
+                      ) : (
+                        <ArrowUpDown size={16} className="text-muted-foreground opacity-50" />
+                      )}
+                    </div>
+                  </th>
+                  <th 
+                    className="p-4 font-semibold cursor-pointer hover:bg-secondary/80 transition-colors select-none"
+                    onClick={() => handleSort('remote-address')}
+                  >
+                    <div className="flex items-center gap-2">
+                      Remote Address
+                      {sortColumn === 'remote-address' ? (
+                        sortDirection === 'asc' ? <ChevronUp size={16} /> : <ChevronDown size={16} />
+                      ) : (
+                        <ArrowUpDown size={16} className="text-muted-foreground opacity-50" />
+                      )}
+                    </div>
+                  </th>
+                  <th 
+                    className="p-4 font-semibold cursor-pointer hover:bg-secondary/80 transition-colors select-none"
+                    onClick={() => handleSort('uptime')}
+                  >
+                    <div className="flex items-center gap-2">
+                      Uptime
+                      {sortColumn === 'uptime' ? (
+                        sortDirection === 'asc' ? <ChevronUp size={16} /> : <ChevronDown size={16} />
+                      ) : (
+                        <ArrowUpDown size={16} className="text-muted-foreground opacity-50" />
+                      )}
+                    </div>
+                  </th>
                   <th className="p-4 font-semibold text-center">Aksi</th>
                 </tr>
               </thead>
@@ -287,7 +459,7 @@ const PppoeSecretsTable = ({ refreshTrigger, onActionComplete, initialFilter = '
                             )}
                           </td>
                           <td className="p-4 font-mono text-sm">
-                            {uptime || 'N/A'}
+                            {formatUptime(uptime)}
                           </td>
                           <td className="p-4 text-center">
                             <DropdownMenu>

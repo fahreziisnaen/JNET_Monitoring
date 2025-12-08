@@ -5,6 +5,7 @@ import { motion } from '@/components/motion';
 import { useMikrotik } from '@/components/providers/mikrotik-provider';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Loader2 } from 'lucide-react';
+import { formatUptime } from '@/utils/format';
 
 const PppoeTable = () => {
     const { pppoeSecrets, isConnected } = useMikrotik() || { pppoeSecrets: [], isConnected: false };
@@ -49,7 +50,7 @@ const PppoeTable = () => {
                                     >
                                         <td className="p-4 font-medium">{user.name}</td>
                                         <td className="p-4">{user.service || 'pppoe'}</td>
-                                        <td className="p-4">{user.uptime || 'N/A'}</td>
+                                        <td className="p-4">{formatUptime(user.uptime)}</td>
                                         <td className="p-4 font-mono">
                                           {user.currentAddress || user['remote-address'] ? (
                                             <a

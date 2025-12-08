@@ -49,7 +49,15 @@ const EditClientModal = ({ isOpen, onClose, onSuccess, client, assets = [] }: Ed
     const lat = parseFloat(latitude);
     const lon = parseFloat(longitude);
     if (isNaN(lat) || isNaN(lon) || lat < -90 || lat > 90 || lon < -180 || lon > 180) {
-      setError('Koordinat tidak valid.');
+      setError('Koordinat tidak valid. Silakan masukkan ulang.');
+      // Reset koordinat ke nilai awal dari client agar user bisa memasukkan ulang
+      if (client) {
+        setLatitude(client.latitude.toString());
+        setLongitude(client.longitude.toString());
+      } else {
+        setLatitude('');
+        setLongitude('');
+      }
       return;
     }
 
