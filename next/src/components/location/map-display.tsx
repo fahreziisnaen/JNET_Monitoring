@@ -9,6 +9,51 @@ import { Client } from './client-list';
 
 delete (L.Icon.Default.prototype as any)._getIconUrl;
 
+// Component untuk auto-fit bounds menampilkan semua marker
+const FitBoundsHandler = ({ 
+  assets, 
+  clients 
+}: { 
+  assets: Asset[];
+  clients: Client[];
+}) => {
+  const map = useMap();
+  const hasFitted = React.useRef(false);
+  
+  useEffect(() => {
+    // Only fit bounds once when map first loads
+    if (!hasFitted.current && (assets.length > 0 || clients.length > 0)) {
+      const bounds = L.latLngBounds([]);
+      
+      // Add all assets to bounds
+      assets.forEach(asset => {
+        if (asset.latitude && asset.longitude) {
+          bounds.extend([asset.latitude, asset.longitude]);
+        }
+      });
+      
+      // Add all clients to bounds
+      clients.forEach(client => {
+        if (client.latitude && client.longitude) {
+          bounds.extend([client.latitude, client.longitude]);
+        }
+      });
+      
+      // Fit map to bounds if we have any markers
+      if (bounds.isValid()) {
+        map.fitBounds(bounds, { 
+          padding: [50, 50],
+          maxZoom: 17,
+          animate: false
+        });
+        hasFitted.current = true;
+      }
+    }
+  }, [assets, clients, map]);
+  
+  return null;
+};
+
 // Component untuk zoom ke selected asset atau client
 const MapZoomHandler = ({ 
   selectedAssetId, 
@@ -83,8 +128,8 @@ const getClientIcon = (isSelected: boolean = false, isActive: boolean = true) =>
     html: iconHtml,
     className: 'leaflet-custom-icon',
     iconSize: [36, 36],
-    iconAnchor: [18, 36],
-    popupAnchor: [0, -36],
+    iconAnchor: [18, 18],
+    popupAnchor: [0, -18],
   });
 };
 
@@ -95,8 +140,8 @@ const getAssetIcon = (asset: Asset, isSelected: boolean = false) => {
       html: '<div style="width: 36px; height: 36px; background: #6b7280; border-radius: 50%; border: 2px solid white;"></div>',
       className: 'leaflet-custom-icon',
       iconSize: [36, 36],
-      iconAnchor: [18, 36],
-      popupAnchor: [0, -36],
+      iconAnchor: [18, 18],
+      popupAnchor: [0, -18],
     });
   }
 
@@ -143,8 +188,8 @@ const getAssetIcon = (asset: Asset, isSelected: boolean = false) => {
 
   // Gunakan iconSize yang lebih besar jika ada badge
   const iconSize = hasBadge ? [44, 44] : [36, 36];
-  const iconAnchor = hasBadge ? [22, 44] : [18, 36];
-  const popupAnchor = hasBadge ? [0, -44] : [0, -36];
+  const iconAnchor = hasBadge ? [22, 22] : [18, 18];
+  const popupAnchor = hasBadge ? [0, -22] : [0, -18];
 
   // Buat icon HTML - pastikan struktur sederhana dan valid
   const svgIcon = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="36" height="36">
@@ -171,8 +216,8 @@ const getAssetIcon = (asset: Asset, isSelected: boolean = false) => {
       html: `<div style="width: 36px; height: 36px; background: ${color}; border-radius: 50%; border: 2px solid white;"></div>`,
     className: 'leaflet-custom-icon',
     iconSize: [36, 36],
-      iconAnchor: [18, 36],
-      popupAnchor: [0, -36],
+      iconAnchor: [18, 18],
+      popupAnchor: [0, -18],
   });
   }
 };
@@ -355,6 +400,10 @@ const MapDisplay = ({ assets, clients = [], onMarkerClick, onClientClick, showLi
         crossOrigin="anonymous"
       />
       <ZoomControl position="bottomright" />
+      <FitBoundsHandler 
+        assets={validAssets}
+        clients={validClients}
+      />
       <MapZoomHandler 
         selectedAssetId={selectedAssetId} 
         selectedClientId={selectedClientId}

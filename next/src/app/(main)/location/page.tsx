@@ -427,7 +427,7 @@ const LocationPage = () => {
         </div>
         
         <div className="flex-grow grid grid-cols-1 lg:grid-cols-5 gap-6 min-h-0">
-          <div className="lg:col-span-2 min-h-[600px] lg:min-h-[calc(100vh-200px)] flex flex-col gap-4">
+          <div className="lg:col-span-1 min-h-[600px] lg:min-h-[calc(100vh-200px)] flex flex-col gap-4">
             <div className="flex-1 min-h-0">
               <AssetList 
                 assets={filteredAssets} 
@@ -451,7 +451,7 @@ const LocationPage = () => {
               />
             </div>
           </div>
-          <div className="lg:col-span-3 min-h-[600px] lg:min-h-[calc(100vh-200px)] relative z-10">
+          <div className="lg:col-span-4 min-h-[600px] lg:min-h-[calc(100vh-200px)] relative z-10">
             <MapDisplay 
               assets={filteredAssets} 
               clients={showClients ? filteredClients : []}

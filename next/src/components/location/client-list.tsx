@@ -42,32 +42,32 @@ const ClientList = ({ clients, loading, selectedClientId, onClientSelect, onClie
 
   return (
     <Card className="h-full flex flex-col">
-      <CardHeader className="pb-3">
-        <CardTitle className="mb-3">Daftar Client ({filteredClients.length})</CardTitle>
+      <CardHeader className="pb-2">
+        <CardTitle className="mb-2 text-2xl">Daftar Client ({filteredClients.length})</CardTitle>
         {onSearchChange && (
           <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
             <Input
               type="text"
               placeholder="Cari client..."
               value={searchQuery}
               onChange={(e) => onSearchChange(e.target.value)}
-              className="pl-9 bg-input"
+              className="pl-8 bg-input text-sm h-8"
             />
           </div>
         )}
       </CardHeader>
-      <CardContent className="flex-grow overflow-y-auto p-2">
+      <CardContent className="flex-grow overflow-y-auto p-1.5">
         {loading ? (
-          <div className="flex justify-center items-center h-full"><Loader2 className="animate-spin h-8 w-8 text-muted-foreground"/></div>
+          <div className="flex justify-center items-center h-full"><Loader2 className="animate-spin h-6 w-6 text-muted-foreground"/></div>
         ) : filteredClients.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full text-center p-4">
-            <p className="text-muted-foreground">
+            <p className="text-muted-foreground text-sm">
               {searchQuery ? 'Tidak ada client yang sesuai dengan pencarian' : 'Tidak ada client'}
             </p>
           </div>
         ) : (
-          <ul className="space-y-2">
+          <ul className="space-y-1.5">
             {filteredClients.map(client => {
               const isSelected = selectedClientId === client.id;
               return (
@@ -81,11 +81,11 @@ const ClientList = ({ clients, loading, selectedClientId, onClientSelect, onClie
                       <User size={20} />
                     </div>
                     <div className="flex-grow overflow-hidden">
-                      <p className="font-semibold truncate">{client.pppoe_secret_name}</p>
+                      <p className="font-semibold truncate text-base">{client.pppoe_secret_name}</p>
                       {client.odp_name ? (
-                        <p className="text-xs text-muted-foreground">ODP: {client.odp_name}</p>
+                        <p className="text-sm text-muted-foreground">ODP: {client.odp_name}</p>
                       ) : (
-                        <p className="text-xs text-muted-foreground">Belum terhubung ke ODP</p>
+                        <p className="text-sm text-muted-foreground">Belum terhubung ke ODP</p>
                       )}
                     </div>
                   </button>

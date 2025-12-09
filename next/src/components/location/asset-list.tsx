@@ -59,32 +59,32 @@ const AssetList = ({ assets, loading, selectedAssetId, onAssetSelect, onAssetVie
 
   return (
     <Card className="h-full flex flex-col">
-      <CardHeader className="pb-3">
-        <CardTitle className="mb-3">Daftar Aset ({filteredAssets.length})</CardTitle>
+      <CardHeader className="pb-2">
+        <CardTitle className="mb-2 text-2xl">Daftar Aset ({filteredAssets.length})</CardTitle>
         {onSearchChange && (
           <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
             <Input
               type="text"
-              placeholder="Cari aset (nama, tipe, owner)..."
+              placeholder="Cari aset..."
               value={searchQuery}
               onChange={(e) => onSearchChange(e.target.value)}
-              className="pl-9 bg-input"
+              className="pl-8 bg-input text-sm h-8"
             />
           </div>
         )}
       </CardHeader>
-      <CardContent className="flex-grow overflow-y-auto p-2">
+      <CardContent className="flex-grow overflow-y-auto p-1.5">
         {loading ? (
-          <div className="flex justify-center items-center h-full"><Loader2 className="animate-spin h-8 w-8 text-muted-foreground"/></div>
+          <div className="flex justify-center items-center h-full"><Loader2 className="animate-spin h-6 w-6 text-muted-foreground"/></div>
         ) : filteredAssets.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full text-center p-4">
-            <p className="text-muted-foreground">
+            <p className="text-muted-foreground text-sm">
               {searchQuery ? 'Tidak ada aset yang sesuai dengan pencarian' : 'Tidak ada aset'}
             </p>
           </div>
         ) : (
-          <ul className="space-y-2">
+          <ul className="space-y-1.5">
             {filteredAssets.map(asset => {
               const style = getAssetStyle(asset.type);
               const isSelected = selectedAssetId === asset.id;
@@ -95,12 +95,14 @@ const AssetList = ({ assets, loading, selectedAssetId, onAssetSelect, onAssetVie
                     onDoubleClick={() => onAssetView?.(asset)}
                     className={`w-full flex items-center gap-3 p-3 rounded-lg text-left transition-all duration-200 ${isSelected ? 'bg-primary/10 ring-2 ring-primary' : 'hover:bg-secondary'}`}
                   >
-                    <div className={`flex-shrink-0 w-10 h-10 rounded-lg flex items-center justify-center text-white ${style.color}`}>{style.icon}</div>
+                    <div className={`flex-shrink-0 w-10 h-10 rounded-lg flex items-center justify-center text-white ${style.color}`}>
+                      {style.icon}
+                    </div>
                     <div className="flex-grow overflow-hidden">
-                      <p className="font-semibold truncate">{asset.name}</p>
-                      <p className="text-xs text-muted-foreground">{asset.type}</p>
+                      <p className="font-semibold truncate text-base">{asset.name}</p>
+                      <p className="text-sm text-muted-foreground">{asset.type}</p>
                       {asset.owner_name && (
-                        <p className="text-xs text-muted-foreground/70 truncate">Owner: {asset.owner_name}</p>
+                        <p className="text-sm text-muted-foreground/70 truncate">Owner: {asset.owner_name}</p>
                       )}
                     </div>
                   </button>
