@@ -23,7 +23,7 @@ export interface Asset {
 
 const getAssetStyle = (type: Asset['type']) => {
   const styles: Record<Asset['type'], { icon: React.ReactElement; color: string }> = {
-    Mikrotik: { icon: <RadioTower size={20} />, color: 'bg-sky-500' },
+    Mikrotik: { icon: <RadioTower size={20} />, color: 'bg-cyan-500' },
     OLT: { icon: <Server size={20} />, color: 'bg-indigo-500' },
     ODC: { icon: <Box size={20} />, color: 'bg-amber-500' },
     ODP: { icon: <GitBranch size={20} />, color: 'bg-emerald-500' },
@@ -36,11 +36,12 @@ interface AssetListProps {
   loading: boolean;
   selectedAssetId?: number | null;
   onAssetSelect: (asset: Asset) => void;
+  onAssetView?: (asset: Asset) => void;
   searchQuery?: string;
   onSearchChange?: (query: string) => void;
 }
 
-const AssetList = ({ assets, loading, selectedAssetId, onAssetSelect, searchQuery = '', onSearchChange }: AssetListProps) => {
+const AssetList = ({ assets, loading, selectedAssetId, onAssetSelect, onAssetView, searchQuery = '', onSearchChange }: AssetListProps) => {
   // Filter assets berdasarkan search query
   const filteredAssets = React.useMemo(() => {
     if (!searchQuery.trim()) return assets;
@@ -89,7 +90,11 @@ const AssetList = ({ assets, loading, selectedAssetId, onAssetSelect, searchQuer
               const isSelected = selectedAssetId === asset.id;
               return (
                 <li key={asset.id}>
-                  <button onClick={() => onAssetSelect(asset)} className={`w-full flex items-center gap-3 p-3 rounded-lg text-left transition-all duration-200 ${isSelected ? 'bg-primary/10 ring-2 ring-primary' : 'hover:bg-secondary'}`}>
+                  <button 
+                    onClick={() => onAssetSelect(asset)}
+                    onDoubleClick={() => onAssetView?.(asset)}
+                    className={`w-full flex items-center gap-3 p-3 rounded-lg text-left transition-all duration-200 ${isSelected ? 'bg-primary/10 ring-2 ring-primary' : 'hover:bg-secondary'}`}
+                  >
                     <div className={`flex-shrink-0 w-10 h-10 rounded-lg flex items-center justify-center text-white ${style.color}`}>{style.icon}</div>
                     <div className="flex-grow overflow-hidden">
                       <p className="font-semibold truncate">{asset.name}</p>

@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useMemo, useEffect, useRef } from 'react';
-import { MapContainer, TileLayer, Marker, Tooltip, Polyline, useMap } from 'react-leaflet';
+import { MapContainer, TileLayer, Marker, Tooltip, Polyline, useMap, ZoomControl } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
 import { Asset } from './asset-list';
@@ -100,13 +100,28 @@ const getAssetIcon = (asset: Asset, isSelected: boolean = false) => {
     });
   }
 
-  const colorMap: Record<Asset['type'], string> = {
-    Mikrotik: '#0ea5e9', // biru muda
-    OLT: '#6366f1',      // indigo
-    ODC: '#f59e0b',      // oranye
-    ODP: '#10b981',      // hijau
-  };
-  const color = colorMap[asset.type] || '#6b7280';
+  // Tentukan warna berdasarkan tipe asset
+  let color: string;
+  
+  if (asset.type === 'ODP') {
+    // ODP: biru normal, merah jika semua client mati
+    const activeUsers = asset.activeUsers || 0;
+    const totalUsers = asset.totalUsers || 0;
+    // Jika ada client (totalUsers > 0) tapi semua mati (activeUsers === 0), maka merah
+    if (totalUsers > 0 && activeUsers === 0) {
+      color = '#ef4444'; // merah
+    } else {
+      color = '#3b82f6'; // biru
+    }
+  } else if (asset.type === 'ODC') {
+    color = '#a855f7'; // ungu
+  } else if (asset.type === 'Mikrotik') {
+    color = '#06b6d4'; // cyan
+  } else if (asset.type === 'OLT') {
+    color = '#f59e0b'; // oranye
+  } else {
+    color = '#6b7280'; // default gray
+  }
   
   // Jika selected, tambahkan ring highlight dengan shadow yang lebih jelas
   const selectedStyle = isSelected ? `
@@ -277,10 +292,13 @@ const MapDisplay = ({ assets, clients = [], onMarkerClick, onClientClick, showLi
       key={mapKey}
       center={mapCenter} 
       zoom={16} 
+      minZoom={3}
+      maxZoom={22}
       scrollWheelZoom={true} 
       style={{ height: '100%', width: '100%', borderRadius: '0.75rem' }}
     >
-      <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+      <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" maxZoom={22} />
+      <ZoomControl position="bottomright" />
       <MapZoomHandler 
         selectedAssetId={selectedAssetId} 
         selectedClientId={selectedClientId}

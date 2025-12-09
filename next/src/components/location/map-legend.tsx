@@ -15,10 +15,10 @@ const MapLegend = () => {
   const [isMinimized, setIsMinimized] = useState(false);
 
   const equipmentItems: LegendItem[] = [
-    { label: 'Mikrotik', icon: <div className="w-4 h-4 rounded-full bg-sky-500" /> },
-    { label: 'OLT', icon: <div className="w-4 h-4 rounded-full bg-indigo-500" /> },
-    { label: 'ODC', icon: <div className="w-4 h-4 rounded-full bg-amber-500" /> },
-    { label: 'ODP', icon: <div className="w-4 h-4 rounded-full bg-green-500" /> },
+    { label: 'Mikrotik', icon: <div className="w-4 h-4 rounded-full" style={{ backgroundColor: '#06b6d4' }} /> },
+    { label: 'OLT', icon: <div className="w-4 h-4 rounded-full bg-amber-500" /> },
+    { label: 'ODC', icon: <div className="w-4 h-4 rounded-full" style={{ backgroundColor: '#a855f7' }} /> },
+    { label: 'ODP', icon: <div className="w-4 h-4 rounded-full" style={{ backgroundColor: '#3b82f6' }} /> },
   ];
 
   const lineStatusItems: LegendItem[] = [

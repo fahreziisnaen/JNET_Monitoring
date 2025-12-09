@@ -143,13 +143,14 @@ const PppoeSecretsTable = ({ refreshTrigger, onActionComplete, initialFilter = '
         let bValue: any;
         
         switch (sortColumn) {
-          case 'status':
+          case 'status': {
             // Sort by: disabled first, then active/inactive
             const aDisabled = a.disabled === 'true' ? 0 : (isSecretActive(a) ? 1 : 2);
             const bDisabled = b.disabled === 'true' ? 0 : (isSecretActive(b) ? 1 : 2);
             aValue = aDisabled;
             bValue = bDisabled;
             break;
+          }
           case 'name':
             aValue = a.name.toLowerCase();
             bValue = b.name.toLowerCase();
@@ -158,7 +159,7 @@ const PppoeSecretsTable = ({ refreshTrigger, onActionComplete, initialFilter = '
             aValue = a.profile.toLowerCase();
             bValue = b.profile.toLowerCase();
             break;
-          case 'remote-address':
+          case 'remote-address': {
             const aAddr = a['remote-address'] || '';
             const bAddr = b['remote-address'] || '';
             // Sort empty values last
@@ -197,7 +198,8 @@ const PppoeSecretsTable = ({ refreshTrigger, onActionComplete, initialFilter = '
               }
             }
             break;
-          case 'uptime':
+          }
+          case 'uptime': {
             const aUptime = getUptime(a.name);
             const bUptime = getUptime(b.name);
             // Parse uptime string to seconds for comparison
@@ -224,6 +226,7 @@ const PppoeSecretsTable = ({ refreshTrigger, onActionComplete, initialFilter = '
             aValue = parseUptime(aUptime);
             bValue = parseUptime(bUptime);
             break;
+          }
           default:
             return 0;
         }
@@ -266,15 +269,7 @@ const PppoeSecretsTable = ({ refreshTrigger, onActionComplete, initialFilter = '
                 throw new Error(error.message || "Gagal melakukan kick");
             }
         } else if (action === 'disable') {
-            // Jika disable, kick user terlebih dahulu jika sedang aktif
-            // Note: Untuk kick, kita perlu .id dari /ppp/active/print
-            // Tapi karena data sudah merged, kita skip kick dan langsung disable
-            // User akan terputus otomatis saat secret di-disable
-            if (isSecretActive(secret)) {
-                console.log('User aktif akan terputus otomatis saat secret di-disable');
-            }
-            
-            // Setelah kick (jika user aktif), lakukan disable
+            // Disable secret terlebih dahulu untuk mencegah reconnect otomatis
             const encodedId = encodeURIComponent(secret['.id']);
             const res = await apiFetch(`${apiUrl}/api/pppoe/secrets/${encodedId}/status`, {
                 method: 'PUT',
@@ -283,6 +278,25 @@ const PppoeSecretsTable = ({ refreshTrigger, onActionComplete, initialFilter = '
             if(!res.ok) {
                 const errData = await res.json();
                 throw new Error(errData.message || "Aksi gagal");
+            }
+            
+            // Setelah disable, kick user jika masih aktif
+            // Ini memastikan koneksi terputus segera setelah secret di-disable
+            if (isSecretActive(secret) && secret.activeConnectionId) {
+                try {
+                    const encodedActiveId = encodeURIComponent(secret.activeConnectionId);
+                    const kickRes = await apiFetch(`${apiUrl}/api/pppoe/active/${encodedActiveId}/kick`, {
+                        method: 'POST'
+                    });
+                    if (!kickRes.ok) {
+                        const kickErrData = await kickRes.json();
+                        console.warn('Gagal kick user setelah disable:', kickErrData.message);
+                        // Secret sudah di-disable, jadi user tidak bisa reconnect
+                    }
+                } catch (kickError: any) {
+                    console.warn('Error saat kick user setelah disable:', kickError.message);
+                    // Secret sudah di-disable, jadi user tidak bisa reconnect
+                }
             }
         } else {
             // Enable

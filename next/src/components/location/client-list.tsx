@@ -23,11 +23,12 @@ interface ClientListProps {
   loading: boolean;
   selectedClientId?: number | null;
   onClientSelect: (client: Client) => void;
+  onClientView?: (client: Client) => void;
   searchQuery?: string;
   onSearchChange?: (query: string) => void;
 }
 
-const ClientList = ({ clients, loading, selectedClientId, onClientSelect, searchQuery = '', onSearchChange }: ClientListProps) => {
+const ClientList = ({ clients, loading, selectedClientId, onClientSelect, onClientView, searchQuery = '', onSearchChange }: ClientListProps) => {
   const filteredClients = React.useMemo(() => {
     if (!searchQuery.trim()) return clients;
     
@@ -72,7 +73,8 @@ const ClientList = ({ clients, loading, selectedClientId, onClientSelect, search
               return (
                 <li key={client.id}>
                   <button 
-                    onClick={() => onClientSelect(client)} 
+                    onClick={() => onClientSelect(client)}
+                    onDoubleClick={() => onClientView?.(client)}
                     className={`w-full flex items-center gap-3 p-3 rounded-lg text-left transition-all duration-200 ${isSelected ? 'bg-primary/10 ring-2 ring-primary' : 'hover:bg-secondary'}`}
                   >
                     <div className="flex-shrink-0 w-10 h-10 rounded-lg flex items-center justify-center text-white bg-purple-500">

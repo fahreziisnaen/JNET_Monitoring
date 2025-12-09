@@ -20,6 +20,10 @@ interface MapFilterPanelProps {
   onToggleAllOwners?: () => void;
   showClients?: boolean;
   onToggleClients?: (show: boolean) => void;
+  showUp?: boolean;
+  onToggleUp?: (show: boolean) => void;
+  showDown?: boolean;
+  onToggleDown?: (show: boolean) => void;
 }
 
 const MapFilterPanel = ({
@@ -34,6 +38,10 @@ const MapFilterPanel = ({
   onToggleAllOwners,
   showClients = true,
   onToggleClients,
+  showUp = true,
+  onToggleUp,
+  showDown = true,
+  onToggleDown,
 }: MapFilterPanelProps) => {
   const [isMinimized, setIsMinimized] = useState(false);
   const allTypesVisible = assetTypes.every(t => visibleTypes.has(t.id));
@@ -141,6 +149,38 @@ const MapFilterPanel = ({
                   >
                     <User size={12} />
                     Show Clients
+                  </label>
+                </div>
+              )}
+              {onToggleUp && (
+                <div className="flex items-center gap-2">
+                  <Checkbox
+                    id="filter-up"
+                    checked={showUp}
+                    onCheckedChange={onToggleUp}
+                  />
+                  <label
+                    htmlFor="filter-up"
+                    className="text-xs cursor-pointer flex items-center gap-2"
+                  >
+                    <div className="w-3 h-3 rounded-full bg-green-500" />
+                    Perangkat Up
+                  </label>
+                </div>
+              )}
+              {onToggleDown && (
+                <div className="flex items-center gap-2">
+                  <Checkbox
+                    id="filter-down"
+                    checked={showDown}
+                    onCheckedChange={onToggleDown}
+                  />
+                  <label
+                    htmlFor="filter-down"
+                    className="text-xs cursor-pointer flex items-center gap-2"
+                  >
+                    <div className="w-3 h-3 rounded-full bg-red-500" />
+                    Perangkat Down
                   </label>
                 </div>
               )}

@@ -24,6 +24,30 @@ const MapDisplay = dynamic(() => import('@/components/location/map-display'), {
   loading: () => <div className="flex items-center justify-center h-full w-full bg-secondary rounded-xl"><p>Memuat Peta...</p></div> 
 });
 
+// Helper function to determine if asset is Up or Down
+const isAssetUp = (asset: Asset): boolean => {
+  // Check connection status
+  if (asset.connection_status === 'putus') {
+    return false; // Down
+  }
+  
+  // For ODP, also check if all clients are down
+  if (asset.type === 'ODP') {
+    const activeUsers = asset.activeUsers || 0;
+    const totalUsers = asset.totalUsers || 0;
+    // If there are clients but all are down, it's Down
+    if (totalUsers > 0 && activeUsers === 0) {
+      return false; // Down
+    }
+  }
+  
+  // Up if connection_status is 'terpasang' (or other statuses like 'rencana', 'maintenance' are considered Up for now)
+  return asset.connection_status === 'terpasang' || 
+         asset.connection_status === 'rencana' || 
+         asset.connection_status === 'maintenance' ||
+         !asset.connection_status; // Default to Up if no status
+};
+
 const LocationPage = () => {
   const [assets, setAssets] = useState<Asset[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
@@ -39,6 +63,8 @@ const LocationPage = () => {
   const [visibleOwners, setVisibleOwners] = useState<Set<string>>(new Set());
   const [showLines, setShowLines] = useState(true);
   const [showClients, setShowClients] = useState(true);
+  const [showUp, setShowUp] = useState(true);
+  const [showDown, setShowDown] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [clientSearchQuery, setClientSearchQuery] = useState('');
 
@@ -130,30 +156,39 @@ const LocationPage = () => {
       // If not all owners selected, show only assets whose owner is in visibleOwners
       // Assets without owner_name are always shown
       const ownerMatch = allOwnersSelected || !asset.owner_name || visibleOwners.has(asset.owner_name);
-      return typeMatch && ownerMatch;
+      
+      // Status filter
+      const isUp = isAssetUp(asset);
+      const statusMatch = (isUp && showUp) || (!isUp && showDown);
+      
+      return typeMatch && ownerMatch && statusMatch;
     });
-  }, [assets, visibleTypes, visibleOwners, availableOwners]);
+  }, [assets, visibleTypes, visibleOwners, availableOwners, showUp, showDown]);
 
-  // Filter clients berdasarkan owner ODP yang terhubung
+  // Filter clients berdasarkan owner ODP yang terhubung dan status Up/Down
   const filteredClients = useMemo(() => {
     // Check if all owners are selected
     const allOwnersSelected = availableOwners.length > 0 && visibleOwners.size === availableOwners.length;
     
     return clients.filter(client => {
-      // Jika client tidak terhubung ke ODP, selalu tampilkan
-      if (!client.odp_asset_id || !client.odp_owner_name) {
-        return true;
+      // Filter berdasarkan owner
+      let ownerMatch = true;
+      if (client.odp_asset_id && client.odp_owner_name) {
+        // Jika semua owner dipilih, tampilkan semua client
+        if (!allOwnersSelected) {
+          // Tampilkan client jika owner ODP-nya terlihat
+          ownerMatch = visibleOwners.has(client.odp_owner_name);
+        }
       }
       
-      // Jika semua owner dipilih, tampilkan semua client
-      if (allOwnersSelected) {
-        return true;
-      }
+      // Filter berdasarkan status Up/Down
+      // Client aktif (isActive === true) adalah "Up", tidak aktif adalah "Down"
+      const isClientUp = client.isActive === true;
+      const statusMatch = (isClientUp && showUp) || (!isClientUp && showDown);
       
-      // Tampilkan client jika owner ODP-nya terlihat
-      return visibleOwners.has(client.odp_owner_name);
+      return ownerMatch && statusMatch;
     });
-  }, [clients, visibleOwners, availableOwners]);
+  }, [clients, visibleOwners, availableOwners, showUp, showDown]);
 
   const handleToggleType = (type: string) => {
     setVisibleTypes(prev => {
@@ -269,6 +304,12 @@ const LocationPage = () => {
   };
 
   const handleAssetSelect = (asset: Asset) => {
+    // Hanya select asset, tidak buka modal
+    setSelectedAsset(asset);
+  };
+
+  const handleAssetView = (asset: Asset) => {
+    // Buka modal view asset
     setSelectedAsset(asset);
     setIsDetailModalOpen(true);
   };
@@ -292,6 +333,12 @@ const LocationPage = () => {
   };
 
   const handleClientSelect = (client: Client) => {
+    // Hanya select client, tidak buka modal
+    setSelectedClient(client);
+  };
+
+  const handleClientView = (client: Client) => {
+    // Buka modal view client
     setSelectedClient(client);
     setIsClientDetailModalOpen(true);
   };
@@ -387,6 +434,7 @@ const LocationPage = () => {
                 loading={loading} 
                 selectedAssetId={selectedAsset?.id} 
                 onAssetSelect={handleAssetSelect}
+                onAssetView={handleAssetView}
                 searchQuery={searchQuery}
                 onSearchChange={setSearchQuery}
               />
@@ -397,6 +445,7 @@ const LocationPage = () => {
                 loading={clientsLoading}
                 selectedClientId={selectedClient?.id}
                 onClientSelect={handleClientSelect}
+                onClientView={handleClientView}
                 searchQuery={clientSearchQuery}
                 onSearchChange={setClientSearchQuery}
               />
@@ -406,8 +455,8 @@ const LocationPage = () => {
             <MapDisplay 
               assets={filteredAssets} 
               clients={showClients ? filteredClients : []}
-              onMarkerClick={handleAssetSelect}
-              onClientClick={handleClientSelect}
+              onMarkerClick={handleAssetView}
+              onClientClick={handleClientView}
               showLines={showLines}
               visibleTypes={visibleTypes}
               showClients={showClients}
@@ -427,6 +476,10 @@ const LocationPage = () => {
               onToggleAllOwners={handleToggleAllOwners}
               showClients={showClients}
               onToggleClients={setShowClients}
+              showUp={showUp}
+              onToggleUp={setShowUp}
+              showDown={showDown}
+              onToggleDown={setShowDown}
             />
           </div>
         </div>
