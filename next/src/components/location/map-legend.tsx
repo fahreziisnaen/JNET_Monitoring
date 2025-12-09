@@ -29,7 +29,7 @@ const MapLegend = () => {
   ];
 
   return (
-    <Card className="absolute left-4 top-4 z-[1000] w-64 bg-background/95 backdrop-blur-sm shadow-lg">
+    <Card className="absolute right-4 top-4 z-[1000] w-64 bg-background/95 backdrop-blur-sm shadow-lg" style={{ transform: 'translateX(calc(-100% - 1rem))' }}>
       <CardHeader className="pb-3">
         <div className="flex items-center justify-between">
           <CardTitle className="text-sm font-semibold">Legend</CardTitle>

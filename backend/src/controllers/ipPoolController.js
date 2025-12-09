@@ -8,7 +8,11 @@ exports.getPools = async (req, res) => {
             'SELECT * FROM ip_pools WHERE workspace_id = ? ORDER BY profile_name ASC',
             [workspaceId]
         );
-        res.json(pools);
+        // Return pools dengan info apakah database kosong
+        res.json({
+            pools: pools,
+            isEmpty: pools.length === 0
+        });
     } catch (error) {
         res.status(500).json({ message: 'Gagal mengambil data IP Pool.' });
     }

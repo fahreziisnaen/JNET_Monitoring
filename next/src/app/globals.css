@@ -112,3 +112,49 @@
     background-color: hsl(var(--secondary));
   }
 }
+
+/* Remove white grid/border from Leaflet map tiles */
+.leaflet-tile-container img,
+.leaflet-tile,
+.leaflet-tile-pane img,
+.leaflet-map-pane img,
+.leaflet-zoom-animated img,
+.leaflet-tile-loaded {
+  border: none !important;
+  outline: none !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  border-width: 0 !important;
+  box-shadow: none !important;
+}
+
+.leaflet-tile-pane,
+.leaflet-tile-container {
+  border: none !important;
+  outline: none !important;
+  margin: 0 !important;
+  padding: 0 !important;
+}
+
+/* Remove gaps between tiles */
+.leaflet-tile-container {
+  overflow: visible !important;
+}
+
+.leaflet-tile {
+  margin: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+  outline: 0 !important;
+}
+
+/* Map container styling */
+#map {
+  height: 100vh;
+  width: 100%;
+}
+
+.leaflet-container {
+  height: 100%;
+  width: 100%;
+}

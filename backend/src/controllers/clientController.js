@@ -474,7 +474,7 @@ exports.getClient = async (req, res) => {
                         // Query 1: Hitung completed downtime
                         pool.query(`
                             SELECT COALESCE(SUM(duration_seconds), 0) as total_downtime
-                            FROM downtime_events
+                        FROM downtime_events
                             WHERE workspace_id = ? AND pppoe_user = ? AND start_time >= ? AND end_time IS NOT NULL
                         `, [workspace_id, client.pppoe_secret_name, thirtyDaysAgo]),
                         
@@ -487,27 +487,27 @@ exports.getClient = async (req, res) => {
                         
                         // Query 3: Ambil recent events
                         pool.query(`
-                            SELECT 
-                                start_time,
+                        SELECT 
+                            start_time,
                                 CASE 
                                     WHEN end_time IS NULL THEN TIMESTAMPDIFF(SECOND, start_time, NOW())
                                     ELSE duration_seconds 
                                 END as duration_seconds,
-                                end_time,
+                            end_time,
                                 end_time IS NULL as is_ongoing
-                            FROM downtime_events
+                        FROM downtime_events
                             WHERE workspace_id = ? AND pppoe_user = ? AND start_time >= ?
-                            ORDER BY start_time DESC
-                            LIMIT 10
+                        ORDER BY start_time DESC
+                        LIMIT 10
                         `, [workspace_id, client.pppoe_secret_name, thirtyDaysAgo]),
-                        
+                    
                         // Query 4: Get usage data (daily, weekly, monthly)
                         pool.query(`
-                            SELECT 
+                        SELECT 
                                 SUM(CASE WHEN DATE(usage_date) = CURDATE() THEN total_bytes ELSE 0 END) as daily,
                                 SUM(CASE WHEN DATE(usage_date) >= DATE_SUB(CURDATE(), INTERVAL 6 DAY) THEN total_bytes ELSE 0 END) as weekly,
                                 SUM(CASE WHEN DATE(usage_date) >= DATE_SUB(CURDATE(), INTERVAL 29 DAY) THEN total_bytes ELSE 0 END) as monthly
-                            FROM pppoe_usage_logs
+                        FROM pppoe_usage_logs
                             WHERE workspace_id = ? AND pppoe_user = ? AND DATE(usage_date) >= DATE_SUB(CURDATE(), INTERVAL 29 DAY)
                         `, [workspace_id, client.pppoe_secret_name])
                     ]);
@@ -587,7 +587,7 @@ exports.getClient = async (req, res) => {
                     `, [workspace_id, client.pppoe_secret_name, thirtyDaysAgo]).catch(() => [{ ongoing_downtime: 0 }]),
                     
                     pool.query(`
-                        SELECT 
+                    SELECT 
                             start_time,
                             CASE 
                                 WHEN end_time IS NULL THEN TIMESTAMPDIFF(SECOND, start_time, NOW())
@@ -595,18 +595,18 @@ exports.getClient = async (req, res) => {
                             END as duration_seconds,
                             end_time,
                             end_time IS NULL as is_ongoing
-                        FROM downtime_events
+                    FROM downtime_events
                         WHERE workspace_id = ? AND pppoe_user = ? AND start_time >= ?
                         ORDER BY start_time DESC
                         LIMIT 10
                     `, [workspace_id, client.pppoe_secret_name, thirtyDaysAgo]).catch(() => []),
                     
                     pool.query(`
-                        SELECT 
+                    SELECT 
                             SUM(CASE WHEN DATE(usage_date) = CURDATE() THEN total_bytes ELSE 0 END) as daily,
                             SUM(CASE WHEN DATE(usage_date) >= DATE_SUB(CURDATE(), INTERVAL 6 DAY) THEN total_bytes ELSE 0 END) as weekly,
                             SUM(CASE WHEN DATE(usage_date) >= DATE_SUB(CURDATE(), INTERVAL 29 DAY) THEN total_bytes ELSE 0 END) as monthly
-                        FROM pppoe_usage_logs
+                    FROM pppoe_usage_logs
                         WHERE workspace_id = ? AND pppoe_user = ? AND DATE(usage_date) >= DATE_SUB(CURDATE(), INTERVAL 29 DAY)
                     `, [workspace_id, client.pppoe_secret_name]).catch(() => [{ daily: 0, weekly: 0, monthly: 0 }])
                 ]);
@@ -663,7 +663,7 @@ exports.getClient = async (req, res) => {
                 `, [workspace_id, client.pppoe_secret_name, thirtyDaysAgo]).catch(() => [{ total_downtime: 0 }]),
                 
                 pool.query(`
-                    SELECT 
+                SELECT 
                         COALESCE(SUM(TIMESTAMPDIFF(SECOND, start_time, NOW())), 0) as ongoing_downtime,
                         start_time,
                         CASE 
@@ -672,18 +672,18 @@ exports.getClient = async (req, res) => {
                         END as duration_seconds,
                         end_time,
                         end_time IS NULL as is_ongoing
-                    FROM downtime_events
+                FROM downtime_events
                     WHERE workspace_id = ? AND pppoe_user = ? AND start_time >= ?
                     ORDER BY start_time DESC
                     LIMIT 10
                 `, [workspace_id, client.pppoe_secret_name, thirtyDaysAgo]).catch(() => []),
                 
                 pool.query(`
-                    SELECT 
+                SELECT 
                         SUM(CASE WHEN DATE(usage_date) = CURDATE() THEN total_bytes ELSE 0 END) as daily,
                         SUM(CASE WHEN DATE(usage_date) >= DATE_SUB(CURDATE(), INTERVAL 6 DAY) THEN total_bytes ELSE 0 END) as weekly,
                         SUM(CASE WHEN DATE(usage_date) >= DATE_SUB(CURDATE(), INTERVAL 29 DAY) THEN total_bytes ELSE 0 END) as monthly
-                    FROM pppoe_usage_logs
+                FROM pppoe_usage_logs
                     WHERE workspace_id = ? AND pppoe_user = ? AND DATE(usage_date) >= DATE_SUB(CURDATE(), INTERVAL 29 DAY)
                 `, [workspace_id, client.pppoe_secret_name]).catch(() => [{ daily: 0, weekly: 0, monthly: 0 }])
             ]);

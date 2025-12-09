@@ -147,8 +147,8 @@ export const MikrotikProvider = ({ children }: { children: React.ReactNode }) =>
                         // Jika URL tidak valid, close dan reconnect
                         console.warn('[WebSocket] Error parsing URL, menutup koneksi:', urlError);
                         if (ws.current) {
-                            ws.current.close();
-                            ws.current = null;
+                    ws.current.close();
+                    ws.current = null;
                         }
                     }
                 }
@@ -306,7 +306,7 @@ export const MikrotikProvider = ({ children }: { children: React.ReactNode }) =>
             if (ws.current && (!user || !selectedDeviceId)) {
                 console.log('[WebSocket] Cleanup: Menutup WebSocket karena user atau deviceId tidak ada');
                 if (ws.current.readyState === WebSocket.OPEN || ws.current.readyState === WebSocket.CONNECTING) {
-                    ws.current.close();
+                ws.current.close();
                 }
                 ws.current = null;
             }
@@ -355,9 +355,9 @@ export const MikrotikProvider = ({ children }: { children: React.ReactNode }) =>
                 setTimeout(() => {
                     if (ws.current && ws.current.readyState === WebSocket.CONNECTING) {
                         console.warn('[MikrotikProvider] WebSocket masih CONNECTING setelah 5 detik, force close');
-                        ws.current.close();
-                        ws.current = null;
-                    }
+            ws.current.close();
+            ws.current = null;
+        }
                 }, 5000);
                 
                 // Mulai check setelah 200ms

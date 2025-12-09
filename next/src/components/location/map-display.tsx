@@ -200,6 +200,52 @@ const MapDisplay = ({ assets, clients = [], onMarkerClick, onClientClick, showLi
     }
   }, [assets]);
 
+  // Hilangkan border/grid pada tile map
+  React.useEffect(() => {
+    const styleId = 'leaflet-remove-grid';
+    // Hapus style lama jika ada
+    const existingStyle = document.getElementById(styleId);
+    if (existingStyle) {
+      existingStyle.remove();
+    }
+    
+    const style = document.createElement('style');
+    style.id = styleId;
+    style.textContent = `
+      .leaflet-tile {
+        border: none !important;
+        outline: none !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        border-width: 0 !important;
+        box-shadow: none !important;
+      }
+      .leaflet-tile-container img {
+        border: none !important;
+        outline: none !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        display: block !important;
+      }
+      .leaflet-tile-container {
+        overflow: visible !important;
+      }
+      .leaflet-zoom-animated img {
+        border: none !important;
+        outline: none !important;
+        margin: 0 !important;
+        padding: 0 !important;
+      }
+    `;
+    document.head.appendChild(style);
+    return () => {
+      const styleToRemove = document.getElementById(styleId);
+      if (styleToRemove) {
+        styleToRemove.remove();
+      }
+    };
+  }, []);
+
   // Pastikan assets adalah array valid
   const validAssets = Array.isArray(assets) ? assets : [];
   
@@ -288,16 +334,26 @@ const MapDisplay = ({ assets, clients = [], onMarkerClick, onClientClick, showLi
   }, [validAssets]);
 
   return (
+    <div id="map" style={{ height: '100%', width: '100%' }}>
     <MapContainer 
       key={mapKey}
       center={mapCenter} 
-      zoom={16} 
+      zoom={19} 
       minZoom={3}
-      maxZoom={22}
+      maxZoom={21}
       scrollWheelZoom={true} 
       style={{ height: '100%', width: '100%', borderRadius: '0.75rem' }}
     >
-      <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" maxZoom={22} />
+      <TileLayer 
+        url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" 
+        maxZoom={21}
+        attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+        noWrap={false}
+        tileSize={256}
+        zoomOffset={0}
+        className="leaflet-tile-no-border"
+        crossOrigin="anonymous"
+      />
       <ZoomControl position="bottomright" />
       <MapZoomHandler 
         selectedAssetId={selectedAssetId} 
@@ -427,6 +483,7 @@ const MapDisplay = ({ assets, clients = [], onMarkerClick, onClientClick, showLi
         }
       })}
     </MapContainer>
+    </div>
   );
 };
 export default MapDisplay;

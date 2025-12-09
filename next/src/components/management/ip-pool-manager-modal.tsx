@@ -29,7 +29,7 @@ const IpPoolManagerModal = ({ isOpen, onClose }: IpPoolManagerModalProps) => {
   const apiUrl = process.env.NEXT_PUBLIC_API_BASE_URL;
   const [formData, setFormData] = useState({ profile_name: '', gateway: '', ip_start: '', ip_end: '' });
 
-  const fetchData = async () => {
+  const fetchData = async (skipAutoSync = false) => {
     setLoading(true);
     setError('');
     try {
@@ -38,10 +38,90 @@ const IpPoolManagerModal = ({ isOpen, onClose }: IpPoolManagerModalProps) => {
         apiFetch(`${apiUrl}/api/pppoe/profiles`)
       ]);
       if (!poolsRes.ok || !profilesRes.ok) throw new Error("Gagal memuat data.");
-      const poolsData = await poolsRes.json();
+      const poolsResponse = await poolsRes.json();
       const profilesData = await profilesRes.json();
+      
+      // Handle response format baru (dengan pools dan isEmpty) atau format lama (array langsung)
+      let poolsData: IpPool[];
+      
+      if (Array.isArray(poolsResponse)) {
+        // Format lama: array langsung (backward compatibility)
+        poolsData = poolsResponse;
+      } else {
+        // Format baru: object dengan pools dan isEmpty
+        poolsData = poolsResponse.pools || [];
+      }
+      
+      // Cek apakah database benar-benar kosong
+      const isEmpty = poolsData.length === 0;
+      
+      console.log('[IP Pool] Data loaded:', { 
+        poolsCount: poolsData.length, 
+        isEmpty, 
+        skipAutoSync,
+        responseType: Array.isArray(poolsResponse) ? 'array' : 'object',
+        willSync: isEmpty && !skipAutoSync,
+        poolsData: poolsData.length > 0 ? poolsData.map(p => p.profile_name) : 'empty'
+      });
+      
       // Pastikan profiles terurut (untuk safety, meskipun backend sudah sort)
       const sortedProfiles = [...profilesData].sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()));
+      
+      // Jika database kosong (tidak ada data) dan belum skip auto sync, lakukan sync otomatis
+      // Hanya sync jika benar-benar tidak ada data di database (poolsData.length === 0)
+      if (poolsData.length === 0 && !skipAutoSync) {
+        console.log('[IP Pool] Database kosong, melakukan sync otomatis...');
+        console.log('[IP Pool] Database kosong, melakukan sync otomatis...');
+        try {
+          const syncUrl = selectedDeviceId 
+            ? `${apiUrl}/api/ip-pools/sync?deviceId=${selectedDeviceId}`
+            : `${apiUrl}/api/ip-pools/sync`;
+          
+          const syncRes = await apiFetch(syncUrl, {
+            method: 'POST'
+          });
+          
+          if (syncRes.ok) {
+            // Setelah sync berhasil, fetch ulang data
+            const [newPoolsRes] = await Promise.all([
+              apiFetch(`${apiUrl}/api/ip-pools`)
+            ]);
+            if (newPoolsRes.ok) {
+              const newPoolsResponse = await newPoolsRes.json();
+              const newPoolsData = Array.isArray(newPoolsResponse) ? newPoolsResponse : newPoolsResponse.pools || [];
+              setPools(newPoolsData);
+              setProfiles(sortedProfiles);
+              
+              // Update form dengan data yang baru di-sync
+              if (newPoolsData.length > 0 && sortedProfiles.length > 0) {
+                const firstProfile = sortedProfiles[0];
+                const existingPool = newPoolsData.find((pool: IpPool) => pool.profile_name === firstProfile);
+                if (existingPool) {
+                  setFormData({
+                    profile_name: firstProfile,
+                    ip_start: existingPool.ip_start,
+                    ip_end: existingPool.ip_end,
+                    gateway: existingPool.gateway
+                  });
+                } else {
+                  setFormData({
+                    profile_name: firstProfile,
+                    ip_start: '',
+                    ip_end: '',
+                    gateway: ''
+                  });
+                }
+              }
+              return; // Exit early setelah sync otomatis
+            }
+          }
+        } catch (syncError: any) {
+          console.warn('[IP Pool] Sync otomatis gagal:', syncError.message);
+          // Tetap lanjutkan dengan data kosong jika sync gagal
+        }
+      }
+      
+      // Jika sudah ada data atau sync otomatis tidak dilakukan, gunakan data yang ada
       setPools(poolsData);
       setProfiles(sortedProfiles);
       
@@ -149,7 +229,8 @@ const IpPoolManagerModal = ({ isOpen, onClose }: IpPoolManagerModalProps) => {
         apiFetch(`${apiUrl}/api/ip-pools`)
       ]);
       if (poolsRes.ok) {
-        const poolsData = await poolsRes.json();
+        const poolsResponse = await poolsRes.json();
+        const poolsData = Array.isArray(poolsResponse) ? poolsResponse : poolsResponse.pools || [];
         setPools(poolsData);
         
         // Update form dengan data yang baru saja disimpan
@@ -199,7 +280,8 @@ const IpPoolManagerModal = ({ isOpen, onClose }: IpPoolManagerModalProps) => {
       const data = await res.json();
       if (!res.ok) throw new Error(data.message || 'Gagal sinkronisasi');
       alert(data.message || 'Sinkronisasi berhasil!');
-      fetchData();
+      // Skip auto sync karena ini adalah sync manual
+      fetchData(true);
     } catch (err: any) {
       setError(err.message || 'Gagal sinkronisasi IP Pool dari Mikrotik.');
     } finally {

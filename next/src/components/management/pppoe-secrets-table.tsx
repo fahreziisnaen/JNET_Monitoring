@@ -111,7 +111,7 @@ const PppoeSecretsTable = ({ refreshTrigger, onActionComplete, initialFilter = '
       setSortDirection('asc');
     }
   };
-
+  
   const filteredSecrets = useMemo(() => {
     let filtered = allSecrets;
     
