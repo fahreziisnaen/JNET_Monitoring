@@ -43,19 +43,21 @@ const ClientList = ({ clients, loading, selectedClientId, onClientSelect, onClie
   return (
     <Card className="h-full flex flex-col">
       <CardHeader className="pb-2">
-        <CardTitle className="mb-2 text-2xl">Daftar Client ({filteredClients.length})</CardTitle>
-        {onSearchChange && (
-          <div className="relative">
-            <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
-            <Input
-              type="text"
-              placeholder="Cari client..."
-              value={searchQuery}
-              onChange={(e) => onSearchChange(e.target.value)}
-              className="pl-8 bg-input text-sm h-8"
-            />
-          </div>
-        )}
+        <div className="flex items-center justify-between gap-3">
+          <CardTitle className="text-lg whitespace-nowrap">Daftar Client ({filteredClients.length})</CardTitle>
+          {onSearchChange && (
+            <div className="relative flex-1">
+              <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+              <Input
+                type="text"
+                placeholder="Cari client..."
+                value={searchQuery}
+                onChange={(e) => onSearchChange(e.target.value)}
+                className="pl-8 bg-input text-sm h-8"
+              />
+            </div>
+          )}
+        </div>
       </CardHeader>
       <CardContent className="flex-grow overflow-y-auto p-1.5">
         {loading ? (
