@@ -3,7 +3,20 @@
 -- =====================================================
 -- This file contains the complete database setup
 -- including schema, migrations, and initial seeder
--- Run this file for initial deployment
+-- 
+-- USAGE:
+-- For FRESH INSTALL (new deployment):
+--   mysql -u root -p < database_setup.sql
+-- 
+-- For UPGRADE (existing database):
+--   mysql -u root -p < fix_database_migration.sql
+-- 
+-- This setup includes:
+-- ✅ All tables with complete schema
+-- ✅ device_id column in resource_logs (required for multi-device support)
+-- ✅ Indexes and foreign keys for optimal performance
+-- ✅ Default admin user (username: admin, password: admin123)
+-- ✅ Timezone configuration (Asia/Jakarta UTC+7)
 -- =====================================================
 
 -- Create database if it doesn't exist
@@ -370,18 +383,38 @@ WHERE `profile_picture_url` = '/public/uploads/avatars/default.png'
    OR `profile_picture_url` LIKE '%default.png%';
 
 -- =====================================================
--- Database Setup Complete
+-- Database Setup Complete ✅
 -- =====================================================
 -- All tables, migrations, and indexes have been created
 -- Timezone has been set to Asia/Jakarta (UTC+7)
 -- Default avatar paths have been fixed
+-- device_id column is included in resource_logs table
+-- 
+-- Default Admin Credentials:
+-- Username: admin
+-- Password: admin123
+-- ⚠️ IMPORTANT: Change password after first login!
 -- 
 -- Next steps:
 -- 1. Configure backend .env file
 -- 2. Configure frontend .env.production file
--- 3. Start backend server: pm2 start server.js --name "jnet-backend"
--- 4. Build and start frontend: npm run build && pm2 start npm --name "jnet-monitoring" -- start
--- 5. Configure Apache2 reverse proxy
--- 6. Create public/uploads/avatars directory and place default.jpg file
+-- 3. Create public/uploads/avatars directory and place default.jpg file
+-- 4. Start backend server with memory optimization:
+--    pm2 start server.js --name backend --max-memory-restart 1G --node-args="--max-old-space-size=2048 --expose-gc"
+-- 5. Build and start frontend:
+--    cd next && npm run build
+--    pm2 start npm --name frontend -- start
+-- 6. Save PM2 configuration:
+--    pm2 save
+--    pm2 startup
+-- 7. Configure Apache2/Nginx reverse proxy (optional)
+-- 
+-- Automatic Features (Already Configured):
+-- ✅ Database cleanup cron job (daily at 02:00 AM)
+-- ✅ Resource logs cleanup (older than 30 days)
+-- ✅ Downtime events cleanup (older than 90 days)
+-- ✅ PPPoE usage logs cleanup (older than 90 days)
+-- ✅ Automatic table optimization
+-- ✅ Garbage collection (if --expose-gc flag is used)
 -- =====================================================
 

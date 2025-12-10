@@ -670,11 +670,56 @@ server.listen(PORT, '0.0.0.0', () => {
         timezone: "Asia/Jakarta"
     });
     
+    // Database cleanup - setiap hari jam 02:00 (menghapus log lama untuk menghemat storage dan memory)
+    cron.schedule('0 2 * * *', async () => {
+        try {
+            console.log('[Cleanup] Memulai cleanup data lama...');
+            
+            // Delete resource logs older than 30 days
+            const resourceResult = await pool.query(
+                'DELETE FROM resource_logs WHERE timestamp < DATE_SUB(NOW(), INTERVAL 30 DAY)'
+            );
+            console.log(`[Cleanup] ✅ Dihapus ${resourceResult[0].affectedRows} resource log entries lama`);
+            
+            // Delete downtime events older than 90 days
+            const downtimeResult = await pool.query(
+                'DELETE FROM downtime_events WHERE start_time < DATE_SUB(NOW(), INTERVAL 90 DAY)'
+            );
+            console.log(`[Cleanup] ✅ Dihapus ${downtimeResult[0].affectedRows} downtime event entries lama`);
+            
+            // Delete pppoe usage logs older than 90 days
+            const usageResult = await pool.query(
+                'DELETE FROM pppoe_usage_logs WHERE usage_date < DATE_SUB(NOW(), INTERVAL 90 DAY)'
+            );
+            console.log(`[Cleanup] ✅ Dihapus ${usageResult[0].affectedRows} pppoe usage log entries lama`);
+            
+            // Optimize tables to reclaim space
+            await pool.query('OPTIMIZE TABLE resource_logs');
+            await pool.query('OPTIMIZE TABLE downtime_events');
+            await pool.query('OPTIMIZE TABLE pppoe_usage_logs');
+            console.log('[Cleanup] ✅ Tabel berhasil di-optimize');
+            
+            // Force garbage collection if available
+            if (global.gc) {
+                const before = process.memoryUsage().heapUsed / 1024 / 1024;
+                global.gc();
+                const after = process.memoryUsage().heapUsed / 1024 / 1024;
+                console.log(`[Cleanup] ✅ Garbage collection selesai. Memory freed: ${(before - after).toFixed(2)} MB`);
+            }
+            
+        } catch (error) {
+            console.error('[Cleanup] ❌ Error saat cleanup:', error.message);
+        }
+    }, {
+        timezone: "Asia/Jakarta"
+    });
+    
     console.log('[Cron Jobs] Background logging: setiap 3 detik');
     console.log('[Cron Jobs] SLA & Notifikasi monitoring: setiap 3 detik');
     console.log('[Cron Jobs] Dashboard snapshot: setiap 3 detik');
     console.log('[Cron Jobs] Downtime notifications: setiap 30 detik');
     console.log('[Cron Jobs] Daily reports: setiap hari jam 00:00');
+    console.log('[Cron Jobs] Database cleanup: setiap hari jam 02:00');
 });
 
 startWhatsApp(handleCommand).catch(err => {
