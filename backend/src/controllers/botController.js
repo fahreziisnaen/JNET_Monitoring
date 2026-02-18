@@ -4,7 +4,19 @@ const path = require('path');
 const { sendWhatsAppMessage, isWhatsAppConnected, getParticipatingGroups, getLatestQR } = require('../services/whatsappService');
 const { generateSingleReport } = require('../bot/reportGenerator');
 
+// Hardcoded Super Admin IDs (Owner)
+const SUPER_ADMIN_IDS = process.env.SUPER_ADMIN_IDS
+    ? process.env.SUPER_ADMIN_IDS.split(',').map(id => parseInt(id.trim()))
+    : [1];
+
 exports.toggleBotStatus = async (req, res) => {
+    // Security Check: Hanya Super Admin
+    if (!SUPER_ADMIN_IDS.includes(req.user.id)) {
+        return res.status(403).json({
+            message: 'Akses ditolak. Fitur ini hanya untuk Super Admin (Pemilik Server) karena berdampak global ke semua workspace.'
+        });
+    }
+
     const { isEnabled } = req.body;
     const workspaceId = req.user.workspace_id;
     const { whatsapp_number: waNumber, displayName } = req.user;
@@ -43,6 +55,13 @@ exports.getQRStatus = async (req, res) => {
 };
 
 exports.requestResetOtp = async (req, res) => {
+    // Security Check: Hanya Super Admin
+    if (!SUPER_ADMIN_IDS.includes(req.user.id)) {
+        return res.status(403).json({
+            message: 'Akses ditolak. Fitur ini hanya untuk Super Admin (Pemilik Server).'
+        });
+    }
+
     const workspaceId = req.user.workspace_id;
     const userId = req.user.id;
     const waNumber = req.user.whatsapp_number;
@@ -83,6 +102,13 @@ exports.requestResetOtp = async (req, res) => {
 };
 
 exports.resetSession = async (req, res) => {
+    // Security Check: Hanya Super Admin
+    if (!SUPER_ADMIN_IDS.includes(req.user.id)) {
+        return res.status(403).json({
+            message: 'Akses ditolak. Fitur ini hanya untuk Super Admin (Pemilik Server).'
+        });
+    }
+
     const { otp } = req.body;
     const userId = req.user.id;
     const authPath = path.join(process.cwd(), 'whatsapp_auth_info');

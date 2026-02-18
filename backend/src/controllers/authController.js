@@ -48,11 +48,20 @@ exports.requestLoginOtp = async (req, res) => {
             };
             res.cookie('token', token, cookieOptions);
 
+            const superAdminIds = process.env.SUPER_ADMIN_IDS
+                ? process.env.SUPER_ADMIN_IDS.split(',').map(id => parseInt(id.trim()))
+                : [1];
+
             const profilePictureUrl = user.profile_picture_url || '/public/uploads/avatars/default.jpg';
             return res.status(200).json({
                 message: 'Login berhasil (OTP Bypass)!',
                 otpRequired: false,
-                user: { id: user.id, displayName: user.display_name, profile_picture_url: profilePictureUrl },
+                user: {
+                    id: user.id,
+                    displayName: user.display_name,
+                    profile_picture_url: profilePictureUrl,
+                    is_super_admin: superAdminIds.includes(user.id)
+                },
                 token: token
             });
         }
@@ -127,10 +136,19 @@ exports.verifyLoginOtp = async (req, res) => {
         // Return token di response body juga sebagai fallback jika cookie tidak bekerja
         // Frontend bisa simpan di localStorage dan kirim sebagai Authorization header
         // Set default avatar jika tidak ada
+        const superAdminIds = process.env.SUPER_ADMIN_IDS
+            ? process.env.SUPER_ADMIN_IDS.split(',').map(id => parseInt(id.trim()))
+            : [1];
+
         const profilePictureUrl = user.profile_picture_url || '/public/uploads/avatars/default.jpg';
         res.status(200).json({
             message: 'Login berhasil!',
-            user: { id: user.id, displayName: user.display_name, profile_picture_url: profilePictureUrl },
+            user: {
+                id: user.id,
+                displayName: user.display_name,
+                profile_picture_url: profilePictureUrl,
+                is_super_admin: superAdminIds.includes(user.id)
+            },
             token: token // Return token untuk fallback
         });
 
@@ -160,7 +178,16 @@ exports.getMe = (req, res) => {
         console.warn(`[GetMe] User ${req.user.id} tidak punya workspace_id, middleware seharusnya sudah handle ini.`);
     }
 
-    res.status(200).json({ user: req.user });
+    const superAdminIds = process.env.SUPER_ADMIN_IDS
+        ? process.env.SUPER_ADMIN_IDS.split(',').map(id => parseInt(id.trim()))
+        : [1];
+
+    res.status(200).json({
+        user: {
+            ...req.user,
+            is_super_admin: superAdminIds.includes(req.user.id)
+        }
+    });
 };
 
 exports.requestPasswordReset = async (req, res) => {

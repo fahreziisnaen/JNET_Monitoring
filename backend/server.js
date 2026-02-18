@@ -135,10 +135,37 @@ function broadcastToWorkspace(workspaceId, data) {
     // Log WS monitoring disabled
 }
 
-function stopWorkspaceMonitoring(connectionKey) {
+function stopWorkspaceMonitoring(connectionKey, reason = 'Koneksi terputus') {
     const connection = getConnection(connectionKey);
     if (connection) {
-        clearInterval(connection.intervalId);
+        // Broadcast notifikasi disconnect ke workspace
+        // Extract workspaceId from connectionKey (format: ws-{workspaceId}-{deviceId})
+        // Tapi kita tidak punya workspaceId langsung di parameter, jadi kita ambil dari connectionKey
+        const parts = connectionKey.split('-');
+        if (parts.length >= 2) {
+            const workspaceId = parts[1];
+            const deviceId = parts[2] ? parseInt(parts[2]) : null;
+
+            console.log(`[WebSocket] Stopping monitoring for workspace ${workspaceId}, device ${deviceId}. Reason: ${reason}`);
+
+            try {
+                broadcastToWorkspace(workspaceId, {
+                    type: 'connection-status',
+                    payload: {
+                        status: 'disconnected',
+                        deviceId: deviceId,
+                        message: reason,
+                        timestamp: Date.now()
+                    }
+                });
+            } catch (e) {
+                console.error('[WebSocket] Gagal broadcast disconnect status:', e.message);
+            }
+        }
+
+        if (connection.intervalId) {
+            clearInterval(connection.intervalId);
+        }
         removeConnection(connectionKey);
     }
 }
@@ -154,12 +181,23 @@ async function startWorkspaceMonitoring(workspaceId, connectionKey, deviceId = n
         const WS_TIMEOUT = 24 * 60 * 60 * 1000;
         client = await getOrCreateConnection(workspaceId, WS_TIMEOUT, connectionKey, deviceId);
 
+        // Broadcast status connected
+        broadcastToWorkspace(workspaceId, {
+            type: 'connection-status',
+            payload: {
+                status: 'connected',
+                deviceId: deviceId,
+                message: 'Terhubung ke perangkat Mikrotik',
+                timestamp: Date.now()
+            }
+        });
+
         // Tambahkan error handler pada client untuk menangkap error yang tidak terduga
         if (client && client.on) {
             client.on('error', (error) => {
                 // Log WS monitoring disabled
                 // Hapus koneksi dari cache jika terjadi error
-                stopWorkspaceMonitoring(connectionKey);
+                stopWorkspaceMonitoring(connectionKey, `Error pada koneksi: ${error.message || 'Unknown error'}`);
             });
         }
 
@@ -178,7 +216,7 @@ async function startWorkspaceMonitoring(workspaceId, connectionKey, deviceId = n
             isRunning = true;
             lastCycleTime = now;
             if (!client?.connected) {
-                return stopWorkspaceMonitoring(connectionKey);
+                return stopWorkspaceMonitoring(connectionKey, 'Koneksi ke perangkat Mikrotik terputus (Client not connected)');
             }
             try {
                 // Wrap setiap command dengan error handling dan timeout yang lebih panjang
@@ -340,7 +378,7 @@ async function startWorkspaceMonitoring(workspaceId, connectionKey, deviceId = n
                         broadcastToWorkspace(workspaceId, { type: 'batch-update', payload: emptyPayload });
                         return; // Lanjutkan monitoring
                     }
-                    stopWorkspaceMonitoring(connectionKey);
+                    stopWorkspaceMonitoring(connectionKey, `Gagal mendapatkan respon dari perangkat: ${cycleError.message}`);
                     return;
                 }
                 // Jangan stop monitoring untuk error lain, coba kirim data kosong dulu
@@ -352,7 +390,7 @@ async function startWorkspaceMonitoring(workspaceId, connectionKey, deviceId = n
                 }
                 // Hanya stop jika error fatal
                 if (cycleError.message?.includes('not connected') || cycleError.message?.includes('connection closed')) {
-                    stopWorkspaceMonitoring(connectionKey);
+                    stopWorkspaceMonitoring(connectionKey, `Connection error detected: ${cycleError.message}`);
                 }
             } finally {
                 isRunning = false; // Reset flag setelah cycle selesai

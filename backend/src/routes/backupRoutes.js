@@ -8,5 +8,6 @@ const upload = multer({ storage: multer.memoryStorage() });
 
 router.get('/export', protect, authorizeAdmin, backupController.exportBackup);
 router.post('/restore', protect, authorizeAdmin, upload.single('backupFile'), backupController.restoreBackup);
+router.post('/factory-reset', protect, authorizeAdmin, backupController.factoryReset);
 
 module.exports = router;

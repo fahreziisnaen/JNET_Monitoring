@@ -113,4 +113,18 @@ const authorizeAdmin = (req, res, next) => {
     }
 };
 
-module.exports = { protect, authorizeAdmin };
+const authorizeSuperAdmin = (req, res, next) => {
+    // Hardcoded Super Admin IDs (Owner)
+    // Ambil dari environment variable atau default ke ID 1
+    const superAdminIds = process.env.SUPER_ADMIN_IDS
+        ? process.env.SUPER_ADMIN_IDS.split(',').map(id => parseInt(id.trim()))
+        : [1];
+
+    if (req.user && superAdminIds.includes(req.user.id)) {
+        next();
+    } else {
+        res.status(403).json({ message: 'Akses ditolak. Fitur ini hanya untuk Super Admin (Pemilik Server).' });
+    }
+};
+
+module.exports = { protect, authorizeAdmin, authorizeSuperAdmin };

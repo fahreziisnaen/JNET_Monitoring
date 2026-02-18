@@ -187,3 +187,32 @@ exports.removeMember = async (req, res) => {
         conn.release();
     }
 };
+
+exports.getAllWorkspaces = async (req, res) => {
+    try {
+        const [workspaces] = await pool.query(
+            'SELECT id, name, whatsapp_group_id, owner_id FROM workspaces ORDER BY name ASC'
+        );
+        res.json(workspaces);
+    } catch (error) {
+        console.error("GET ALL WORKSPACES ERROR:", error);
+        res.status(500).json({ message: 'Gagal mengambil data semua workspace.' });
+    }
+};
+
+exports.adminUpdateWhatsAppGroupId = async (req, res) => {
+    const { workspaceId } = req.params;
+    const { whatsapp_group_id } = req.body;
+
+    if (whatsapp_group_id && !whatsapp_group_id.endsWith('@g.us')) {
+        return res.status(400).json({ message: 'Format WhatsApp Group ID tidak valid. Harus berakhiran @g.us' });
+    }
+
+    try {
+        await pool.query('UPDATE workspaces SET whatsapp_group_id = ? WHERE id = ?', [whatsapp_group_id || null, workspaceId]);
+        res.status(200).json({ message: 'WhatsApp Group ID berhasil diperbarui oleh Admin.' });
+    } catch (error) {
+        console.error("ADMIN UPDATE WHATSAPP GROUP ID ERROR:", error);
+        res.status(500).json({ message: 'Gagal memperbarui WhatsApp Group ID.' });
+    }
+};
