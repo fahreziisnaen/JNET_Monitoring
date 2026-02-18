@@ -8,6 +8,8 @@ import DeviceManagementCard from '@/components/settings/device-management-card';
 import ActiveSessionsCard from '@/components/settings/active-sessions-card';
 import WhatsappBotCard from '@/components/settings/whatsapp-bot-card';
 import JoinWorkspaceCard from '@/components/settings/join-workspace-card';
+import WorkspaceMembersCard from '@/components/settings/workspace-members-card';
+import BackupRestoreCard from '@/components/settings/backup-restore-card';
 
 const SettingsPage = () => {
   return (
@@ -29,9 +31,11 @@ const SettingsPage = () => {
         <h2 className="text-xl font-semibold text-primary border-b pb-2">Perangkat & Konektivitas</h2>
         <DeviceManagementCard />
         <JoinWorkspaceCard />
+        <WorkspaceMembersCard />
         <WhatsappBotCard />
+        <BackupRestoreCard />
       </section>
-      
+
       <section className="space-y-6">
         <h2 className="text-xl font-semibold text-primary border-b pb-2">Keamanan Lanjutan</h2>
         <ActiveSessionsCard />

@@ -1,5 +1,5 @@
 const pool = require('../config/database');
-const { runCommandForWorkspace, getOrCreateConnection, getDeviceConnectionKey} = require('../utils/apiConnection');
+const { runCommandForWorkspace, getOrCreateConnection, getDeviceConnectionKey } = require('../utils/apiConnection');
 const { sendWhatsAppMessage, getWorkspaceWhatsAppTarget } = require('../services/whatsappService');
 const crypto = require('crypto');
 
@@ -12,18 +12,18 @@ function formatDuration(totalSeconds) {
     if (!totalSeconds || totalSeconds < 0) {
         return '0 detik';
     }
-    
+
     const days = Math.floor(totalSeconds / 86400);
     const hours = Math.floor((totalSeconds % 86400) / 3600);
     const minutes = Math.floor((totalSeconds % 3600) / 60);
     const seconds = totalSeconds % 60;
-    
+
     const parts = [];
     if (days > 0) parts.push(`${days} hari`);
     if (hours > 0) parts.push(`${hours} jam`);
     if (minutes > 0) parts.push(`${minutes} menit`);
     if (seconds > 0 || parts.length === 0) parts.push(`${seconds} detik`);
-    
+
     return parts.join(' ');
 }
 
@@ -44,9 +44,9 @@ async function checkAlarms(workspaceId, device) {
     try {
         const [resource] = await runCommandForWorkspace(workspaceId, '/system/resource/print');
         if (state.offlineCooldown !== 0) {
-             const message = `✅ *PERANGKAT ONLINE* ✅\n\nKoneksi ke perangkat *${device.name}* telah pulih.`;
-             await sendWhatsAppMessage(whatsappTarget, message);
-             state.offlineCooldown = 0;
+            const message = `✅ *PERANGKAT ONLINE* ✅\n\nKoneksi ke perangkat *${device.name}* telah pulih.`;
+            await sendWhatsAppMessage(whatsappTarget, message);
+            state.offlineCooldown = 0;
         }
 
         const [alarms] = await pool.query('SELECT * FROM alarms WHERE workspace_id = ? AND type = "CPU_LOAD"', [workspaceId]);
@@ -71,20 +71,37 @@ async function checkAlarms(workspaceId, device) {
     alarmState.set(workspaceId, state);
 }
 
-async function processSlaEvents(workspaceId, currentActiveUsers, deviceId = null, broadcastCallback = null) {
+async function processSlaEvents(workspaceId, currentActiveUsers, deviceId, broadcastCallback = null) {
+    if (!deviceId) {
+        console.warn(`[SLA] Warning: deviceId is missing for workspace ${workspaceId}`);
+        return;
+    }
+
     const dbConnection = await pool.getConnection();
     try {
-        const [usersFromDb] = await dbConnection.query('SELECT pppoe_user, is_active FROM pppoe_user_status WHERE workspace_id = ?', [workspaceId]);
+        const [usersFromDb] = await dbConnection.query(
+            'SELECT pppoe_user, is_active FROM pppoe_user_status WHERE workspace_id = ? AND device_id = ?',
+            [workspaceId, deviceId]
+        );
         const dbStatusMap = new Map(usersFromDb.map(u => [u.pppoe_user, u.is_active]));
         const currentActiveUserSet = new Set(currentActiveUsers.map(u => u.name));
 
         for (const user of usersFromDb) {
             if (user.is_active && !currentActiveUserSet.has(user.pppoe_user)) {
-                const [openEvents] = await dbConnection.query('SELECT id FROM downtime_events WHERE workspace_id = ? AND pppoe_user = ? AND end_time IS NULL', [workspaceId, user.pppoe_user]);
+                const [openEvents] = await dbConnection.query(
+                    'SELECT id FROM downtime_events WHERE workspace_id = ? AND device_id = ? AND pppoe_user = ? AND end_time IS NULL',
+                    [workspaceId, deviceId, user.pppoe_user]
+                );
                 if (openEvents.length === 0) {
-                    await dbConnection.query('INSERT INTO downtime_events (workspace_id, pppoe_user, start_time) VALUES (?, ?, NOW())', [workspaceId, user.pppoe_user]);
+                    await dbConnection.query(
+                        'INSERT INTO downtime_events (workspace_id, device_id, pppoe_user, start_time) VALUES (?, ?, ?, NOW())',
+                        [workspaceId, deviceId, user.pppoe_user]
+                    );
                 }
-                await dbConnection.query('UPDATE pppoe_user_status SET is_active = FALSE WHERE workspace_id = ? AND pppoe_user = ?', [workspaceId, user.pppoe_user]);
+                await dbConnection.query(
+                    'UPDATE pppoe_user_status SET is_active = FALSE WHERE workspace_id = ? AND device_id = ? AND pppoe_user = ?',
+                    [workspaceId, deviceId, user.pppoe_user]
+                );
             }
         }
 
@@ -93,15 +110,15 @@ async function processSlaEvents(workspaceId, currentActiveUsers, deviceId = null
 
         for (const user of currentActiveUserSet) {
             const lastDbStatus = dbStatusMap.get(user);
-            
+
             // Cek apakah ada downtime event yang masih open untuk user ini
             const [openDowntimeEvents] = await dbConnection.query(
                 `SELECT id, start_time, notification_sent FROM downtime_events 
-                 WHERE workspace_id = ? AND pppoe_user = ? AND end_time IS NULL 
+                 WHERE workspace_id = ? AND device_id = ? AND pppoe_user = ? AND end_time IS NULL 
                  ORDER BY start_time DESC LIMIT 1`,
-                [workspaceId, user]
+                [workspaceId, deviceId, user]
             );
-            
+
             // Jika user sekarang aktif dan ada downtime event yang masih open, tutup event tersebut
             if (openDowntimeEvents.length > 0) {
                 const openEvent = openDowntimeEvents[0];
@@ -111,52 +128,45 @@ async function processSlaEvents(workspaceId, currentActiveUsers, deviceId = null
                      WHERE id = ?`,
                     [openEvent.id]
                 );
-                
-                // Jika berhasil update, ambil data event untuk notifikasi
-                // Kirim notifikasi reconnect jika event tersebut sudah pernah dikirim disconnect notification
-                // (notification_sent = TRUE berarti sudah pernah dikirim disconnect notification setelah 2 menit)
+
                 if (updateResult.affectedRows > 0) {
                     const [eventData] = await dbConnection.query(
                         `SELECT duration_seconds, notification_sent FROM downtime_events WHERE id = ?`,
                         [openEvent.id]
                     );
-                    
-                    // Kirim reconnect notification jika:
-                    // 1. Event sudah pernah dikirim disconnect notification (notification_sent = TRUE)
-                    //    ATAU
-                    // 2. Durasi downtime >= 2 menit (untuk kasus edge case dimana notification_sent belum diupdate)
+
                     if (eventData.length > 0 && eventData[0].duration_seconds) {
                         const shouldNotify = eventData[0].notification_sent === 1 || eventData[0].duration_seconds >= 120;
-                        
+
                         if (shouldNotify) {
-                        reconnectedUsers.push(user);
-                        reconnectDurations.push(eventData[0].duration_seconds);
+                            reconnectedUsers.push(user);
+                            reconnectDurations.push(eventData[0].duration_seconds);
                         }
                     }
                 }
             }
-            
+
             // Update status user menjadi aktif
             await dbConnection.query(
-                `INSERT INTO pppoe_user_status (workspace_id, pppoe_user, is_active, last_seen_active) 
-                 VALUES (?, ?, TRUE, NOW()) 
-                 ON DUPLICATE KEY UPDATE is_active = TRUE, last_seen_active = NOW()`, 
-                [workspaceId, user]
+                `INSERT INTO pppoe_user_status (workspace_id, device_id, pppoe_user, is_active, last_seen_active) 
+                 VALUES (?, ?, ?, TRUE, NOW()) 
+                 ON DUPLICATE KEY UPDATE is_active = TRUE, last_seen_active = NOW()`,
+                [workspaceId, deviceId, user]
             );
         }
-        
+
         // Kirim notifikasi reconnect jika ada user yang reconnect
         // Hanya kirim jika downtime sebelumnya >= 2 menit (konsisten dengan disconnect notification)
         if (reconnectedUsers.length > 0) {
             try {
                 // Ambil WhatsApp target (group atau individual) dari workspace
                 const whatsappTarget = await getWorkspaceWhatsAppTarget(workspaceId);
-                
+
                 if (whatsappTarget) {
                     const reconnectTime = new Date().toLocaleString('id-ID');
                     let message = `✅ *PPPoE User Reconnected* ✅\n\n`;
                     message += `Waktu: ${reconnectTime}\n\n`;
-                    
+
                     if (reconnectedUsers.length === 1) {
                         message += `User yang reconnect:\n`;
                         message += `• *${reconnectedUsers[0]}*\n`;
@@ -174,7 +184,7 @@ async function processSlaEvents(workspaceId, currentActiveUsers, deviceId = null
                         });
                     }
                     message += `\nKoneksi telah pulih. User dapat menggunakan layanan kembali.`;
-                    
+
                     await sendWhatsAppMessage(whatsappTarget, message);
                 }
 
@@ -186,7 +196,7 @@ async function processSlaEvents(workspaceId, currentActiveUsers, deviceId = null
                             duration: reconnectDurations[index],
                             reconnectTime: new Date().toISOString()
                         }));
-                        
+
                         broadcastCallback(workspaceId, {
                             type: 'reconnect-notification',
                             payload: {
@@ -250,7 +260,7 @@ async function sendDowntimeNotifications(broadcastCallback = null) {
         for (const [workspaceId, group] of workspaceGroups) {
             try {
                 const whatsappTarget = await getWorkspaceWhatsAppTarget(workspaceId);
-                
+
                 if (!whatsappTarget) {
                     // Skip jika tidak ada WhatsApp target, tapi tetap mark sebagai sent
                     const eventIds = group.events.map(e => e.id);
@@ -295,7 +305,7 @@ async function sendDowntimeNotifications(broadcastCallback = null) {
                             duration: event.duration_seconds,
                             startTime: event.start_time
                         }));
-                        
+
                         broadcastCallback(workspaceId, {
                             type: 'downtime-notification',
                             payload: {
@@ -339,27 +349,27 @@ async function groupDevicesByCredentials() {
         FROM mikrotik_devices d
         JOIN workspaces w ON d.workspace_id = w.id
     `);
-    
+
     // Group devices berdasarkan credentials
     const deviceGroups = new Map();
-    
+
     for (const device of devices) {
         const credentials = `${device.host}:${device.port}:${device.user}:${device.password || ''}`;
         const groupKey = crypto.createHash('md5').update(credentials).digest('hex');
-        
+
         if (!deviceGroups.has(groupKey)) {
             deviceGroups.set(groupKey, {
                 credentials: { host: device.host, user: device.user, password: device.password, port: device.port },
                 devices: []
             });
         }
-        
+
         deviceGroups.get(groupKey).devices.push({
             device_id: device.device_id,
             workspace_id: device.workspace_id
         });
     }
-    
+
     return deviceGroups;
 }
 
@@ -374,26 +384,26 @@ async function monitorSlaAndNotifications(broadcastCallback = null) {
     try {
         // Group devices berdasarkan credentials
         const deviceGroups = await groupDevicesByCredentials();
-        
+
         // Polling sekali per device fisik
         for (const [groupKey, group] of deviceGroups) {
             if (group.devices.length === 0) continue;
-            
+
             // Gunakan device pertama dari group sebagai representasi
             const firstDevice = group.devices[0];
-            
+
             try {
                 // Gunakan timeout lebih lama untuk cron jobs (10 menit)
                 // Karena cron job berjalan setiap 3 detik, koneksi akan selalu digunakan
                 // Jadi tidak perlu ditutup setelah 30 detik
                 const CRON_TIMEOUT = 10 * 60 * 1000; // 10 menit timeout untuk cron jobs
                 const client = await getOrCreateConnection(firstDevice.workspace_id, CRON_TIMEOUT, null, firstDevice.device_id);
-                
+
                 // Cek apakah client terhubung
                 if (!client || !client.connected) {
                     continue; // Skip jika tidak terhubung
                 }
-                
+
                 // Ambil PPPoE active users (polling sekali)
                 let pppoeActive = [];
                 try {
@@ -411,7 +421,7 @@ async function monitorSlaAndNotifications(broadcastCallback = null) {
                         continue;
                     }
                 }
-                
+
                 // Share hasil ke semua workspace yang menggunakan device ini
                 for (const device of group.devices) {
                     try {
@@ -420,7 +430,7 @@ async function monitorSlaAndNotifications(broadcastCallback = null) {
                         console.error(`[SLA Monitor] Gagal memproses SLA events untuk workspace ${device.workspace_id}, device ${device.device_id}:`, error.message);
                     }
                 }
-                
+
             } catch (error) {
                 // Handle error dengan lebih baik, jangan crash aplikasi
                 if (error.errno === 'UNKNOWNREPLY' || error.message?.includes('UNKNOWNREPLY')) {
@@ -443,13 +453,18 @@ async function monitorSlaAndNotifications(broadcastCallback = null) {
     }
 }
 
-async function logPppoeUsage(workspaceId, client) {
+async function logPppoeUsage(workspaceId, client, deviceId) {
     try {
+        if (!deviceId) {
+            console.warn(`[Usage Logger] Warning: deviceId is missing for workspace ${workspaceId}`);
+            return;
+        }
+
         // Cek apakah client masih terhubung
         if (!client || !client.connected) {
             throw new Error('Client tidak terhubung');
         }
-        
+
         let allQueues;
         try {
             allQueues = await client.write('/queue/simple/print');
@@ -460,7 +475,7 @@ async function logPppoeUsage(workspaceId, client) {
             }
             throw err;
         }
-        
+
         if (!allQueues || allQueues.length === 0) return;
 
         const today = new Date().toISOString().slice(0, 10);
@@ -477,22 +492,49 @@ async function logPppoeUsage(workspaceId, client) {
 
             if (uploadBytes === 0n && downloadBytes === 0n) continue;
 
-            const totalBytes = uploadBytes + downloadBytes;
+            // 1. Ambil counter terakhir yang tersimpan
+            const [statusRows] = await pool.query(
+                'SELECT last_upload_bytes, last_download_bytes FROM pppoe_user_status WHERE workspace_id = ? AND device_id = ? AND pppoe_user = ?',
+                [workspaceId, deviceId, userName]
+            );
 
-            const sql = `
-                INSERT INTO pppoe_usage_logs (workspace_id, pppoe_user, usage_date, upload_bytes, download_bytes, total_bytes)
-                VALUES (?, ?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE
-                upload_bytes = VALUES(upload_bytes), download_bytes = VALUES(download_bytes), total_bytes = VALUES(total_bytes);
+            let lastUpload = statusRows.length > 0 ? BigInt(statusRows[0].last_upload_bytes || 0) : 0n;
+            let lastDownload = statusRows.length > 0 ? BigInt(statusRows[0].last_download_bytes || 0) : 0n;
+
+            // 2. Hitung Selisih (Delta)
+            // Jika counter saat ini < counter terakhir (restart router atau reset), delta adalah full counter saat ini
+            let deltaUpload = uploadBytes < lastUpload ? uploadBytes : uploadBytes - lastUpload;
+            let deltaDownload = downloadBytes < lastDownload ? downloadBytes : downloadBytes - lastDownload;
+            let deltaTotal = deltaUpload + deltaDownload;
+
+            // Jangan catat jika tidak ada penambahan pemakaian
+            if (deltaTotal === 0n) continue;
+
+            const logSql = `
+                INSERT INTO pppoe_usage_logs (workspace_id, device_id, pppoe_user, usage_date, upload_bytes, download_bytes, total_bytes)
+                VALUES (?, ?, ?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE
+                upload_bytes = upload_bytes + VALUES(upload_bytes),
+                download_bytes = download_bytes + VALUES(download_bytes),
+                total_bytes = total_bytes + VALUES(total_bytes);
             `;
-            await pool.query(sql, [
-                workspaceId, userName, today,
-                uploadBytes.toString(), downloadBytes.toString(), totalBytes.toString(),
-                uploadBytes.toString(), downloadBytes.toString(), totalBytes.toString()
+            await pool.query(logSql, [
+                workspaceId, deviceId, userName, today,
+                deltaUpload.toString(), deltaDownload.toString(), deltaTotal.toString()
             ]);
+
+            // 3. Update counter terakhir di status
+            await pool.query(
+                `INSERT INTO pppoe_user_status (workspace_id, device_id, pppoe_user, last_upload_bytes, last_download_bytes)
+                 VALUES (?, ?, ?, ?, ?)
+                 ON DUPLICATE KEY UPDATE
+                 last_upload_bytes = VALUES(last_upload_bytes),
+                 last_download_bytes = VALUES(last_download_bytes)`,
+                [workspaceId, deviceId, userName, uploadBytes.toString(), downloadBytes.toString()]
+            );
         }
     } catch (error) {
         // Jangan throw error untuk UNKNOWNREPLY atau error koneksi, hanya log
-        if (error.errno === 'UNKNOWNREPLY' || error.message?.includes('UNKNOWNREPLY') || 
+        if (error.errno === 'UNKNOWNREPLY' || error.message?.includes('UNKNOWNREPLY') ||
             error.message?.includes('not connected') || error.message?.includes('connection')) {
             console.warn(`[Usage Logger] Error koneksi untuk workspace ${workspaceId}, akan diabaikan:`, error.message || error);
             return; // Jangan throw, biarkan proses lanjut
@@ -510,46 +552,46 @@ async function logAllActiveWorkspaces() {
     try {
         // Group devices berdasarkan credentials
         const deviceGroups = await groupDevicesByCredentials();
-        
+
         if (deviceGroups.size === 0) {
             console.log(`[Data Logger] ⚠️ Tidak ada device yang terdaftar untuk logging`);
             return;
         }
-        
+
         console.log(`[Data Logger] 🔄 Memulai logging untuk ${deviceGroups.size} device group(s)`);
-        
+
         // Polling sekali per device fisik
         for (const [groupKey, group] of deviceGroups) {
             if (group.devices.length === 0) continue;
-            
+
             // Gunakan device pertama dari group sebagai representasi
             const firstDevice = group.devices[0];
-            
+
             console.log(`[Data Logger] 📡 Processing device group ${groupKey} (${group.devices.length} workspace(s))`);
-            
+
             // Ambil main_interface dari workspace pertama (biasanya sama untuk device yang sama)
             const [workspaceConfig] = await pool.query('SELECT main_interface FROM workspaces WHERE id = ?', [firstDevice.workspace_id]);
             const mainInterface = workspaceConfig[0]?.main_interface || null;
-            
+
             try {
                 const CRON_TIMEOUT = 10 * 60 * 1000;
                 const client = await getOrCreateConnection(firstDevice.workspace_id, CRON_TIMEOUT, null, firstDevice.device_id);
-                
+
                 // Cek apakah client terhubung
                 if (!client || !client.connected) {
                     console.warn(`[Data Logger] ⚠️ Client tidak terhubung untuk device group ${groupKey}, skip`);
                     continue; // Skip jika tidak terhubung
                 }
-                
+
                 console.log(`[Data Logger] ✅ Client terhubung untuk device group ${groupKey}`);
-                
+
                 // Polling sekali untuk device fisik ini
                 await Promise.all([
                     // Log PPPoE usage - share ke semua workspace
                     (async () => {
                         try {
                             for (const device of group.devices) {
-                                await logPppoeUsage(device.workspace_id, client);
+                                await logPppoeUsage(device.workspace_id, client, device.device_id);
                             }
                         } catch (e) {
                             console.error(`[Data Logger] ❌ Error logging PPPoE usage untuk device group ${groupKey}:`, e.message);
@@ -570,7 +612,7 @@ async function logAllActiveWorkspaces() {
                     })()
                 ]);
 
-            } catch(e) {
+            } catch (e) {
                 // Handle error dengan lebih baik, jangan crash aplikasi
                 if (e.errno === 'UNKNOWNREPLY' || e.message?.includes('UNKNOWNREPLY')) {
                     console.warn(`[Data Logger] Error UNKNOWNREPLY untuk device group ${groupKey}, akan diabaikan:`, e.message);
@@ -593,7 +635,7 @@ async function logMainInterfaceTraffic(workspaceId, client, workspaceConfig) {
         if (!client || !client.connected) {
             throw new Error('Client tidak terhubung');
         }
-        
+
         let interfaceData;
         try {
             const interfaces = await client.write('/interface/print', [`?name=${workspaceConfig.main_interface}`]);
@@ -605,7 +647,7 @@ async function logMainInterfaceTraffic(workspaceId, client, workspaceConfig) {
             }
             throw err;
         }
-        
+
         if (!interfaceData) return;
 
         const workspaceKey = `${workspaceId}-${interfaceData.name}`;
@@ -626,7 +668,7 @@ async function logMainInterfaceTraffic(workspaceId, client, workspaceConfig) {
         lastTrafficData.set(workspaceKey, { tx: currentTx, rx: currentRx });
     } catch (error) {
         // Jangan throw error untuk UNKNOWNREPLY atau error koneksi, hanya log
-        if (error.errno === 'UNKNOWNREPLY' || error.message?.includes('UNKNOWNREPLY') || 
+        if (error.errno === 'UNKNOWNREPLY' || error.message?.includes('UNKNOWNREPLY') ||
             error.message?.includes('not connected') || error.message?.includes('connection')) {
             console.warn(`[Traffic Logger] Error koneksi untuk interface ${workspaceConfig.main_interface}, akan diabaikan:`, error.message || error);
             return; // Jangan throw, biarkan proses lanjut
@@ -643,13 +685,13 @@ async function logMainInterfaceTraffic(workspaceId, client, workspaceConfig) {
 async function logAllInterfacesTraffic(workspaceId, client) {
     try {
         console.log(`[Traffic Logger] 🚀 Memulai logAllInterfacesTraffic untuk workspace ${workspaceId}`);
-        
+
         // Cek apakah client masih terhubung
         if (!client || !client.connected) {
             console.warn(`[Traffic Logger] ⚠️ Client tidak terhubung untuk workspace ${workspaceId}`);
             throw new Error('Client tidak terhubung');
         }
-        
+
         // Ambil semua interface
         let allInterfaces;
         try {
@@ -667,7 +709,7 @@ async function logAllInterfacesTraffic(workspaceId, client) {
             console.error(`[Traffic Logger] ❌ Error mengambil interface untuk workspace ${workspaceId}:`, err.message);
             throw err;
         }
-        
+
         // Filter hanya interface yang running dan bukan PPPoE
         const runningInterfaces = allInterfaces.filter(i => {
             const running = i.running === 'true' || i.running === true || i.running === 'yes';
@@ -675,20 +717,20 @@ async function logAllInterfacesTraffic(workspaceId, client) {
             // Exclude PPPoE interfaces
             return running && !type.includes('pppoe');
         });
-        
+
         if (runningInterfaces.length === 0) {
             console.log(`[Traffic Logger] Tidak ada interface yang running untuk workspace ${workspaceId}`);
             return;
         }
-        
+
         console.log(`[Traffic Logger] Found ${runningInterfaces.length} running interfaces untuk workspace ${workspaceId}:`, runningInterfaces.map(i => i.name).join(', '));
-        
+
         // Ambil active users sekali untuk semua interface
         // Gunakan sequential dengan timeout lebih panjang untuk menghindari hang/race condition
         console.log(`[Traffic Logger] 📊 Mengambil active users untuk workspace ${workspaceId}...`);
         let activePppoe = 0;
         let activeHotspot = 0;
-        
+
         try {
             // Ambil secara sequential untuk menghindari race condition
             // Gunakan timeout 10 detik karena bisa ada banyak data
@@ -706,7 +748,7 @@ async function logAllInterfacesTraffic(workspaceId, client) {
                 }
                 activePppoe = 0;
             }
-            
+
             console.log(`[Traffic Logger] 📡 Mengambil Hotspot active (timeout 10s)...`);
             try {
                 const hotspotResult = await client.write('/ip/hotspot/active/print', [], 10000);
@@ -721,7 +763,7 @@ async function logAllInterfacesTraffic(workspaceId, client) {
                 }
                 activeHotspot = 0;
             }
-            
+
             console.log(`[Traffic Logger] ✅ Selesai mengambil active users`);
         } catch (err) {
             console.error(`[Traffic Logger] ❌ Error fatal saat mengambil active users:`, err.message);
@@ -730,35 +772,35 @@ async function logAllInterfacesTraffic(workspaceId, client) {
             activePppoe = 0;
             activeHotspot = 0;
         }
-        
+
         console.log(`[Traffic Logger] 📊 Total active users: PPPoE=${activePppoe}, Hotspot=${activeHotspot}`);
         console.log(`[Traffic Logger] 🔄 Memulai proses logging untuk ${runningInterfaces.length} interfaces...`);
-        
+
         // Log traffic untuk setiap interface
         const logPromises = runningInterfaces.map(async (interfaceData) => {
             try {
                 const interfaceName = interfaceData.name;
                 const workspaceKey = `${workspaceId}-${interfaceName}`;
                 const lastData = lastTrafficData.get(workspaceKey);
-                
+
                 // Gunakan /interface/print untuk mendapatkan data kumulatif (total bytes sejak boot)
                 // Ini diperlukan untuk menghitung usage (selisih dengan data sebelumnya)
                 // Field dari /interface/print bisa berbeda tergantung versi RouterOS
                 let currentTx = 0;
                 let currentRx = 0;
-                
+
                 // Cari field yang mengandung 'tx' dan 'rx' (case insensitive)
                 const allKeys = Object.keys(interfaceData);
                 const txKey = allKeys.find(k => k.toLowerCase().includes('tx') && (k.toLowerCase().includes('byte') || k.toLowerCase().includes('bytes')));
                 const rxKey = allKeys.find(k => k.toLowerCase().includes('rx') && (k.toLowerCase().includes('byte') || k.toLowerCase().includes('bytes')));
-                
+
                 if (txKey) {
                     currentTx = parseInt(interfaceData[txKey], 10) || 0;
                 }
                 if (rxKey) {
                     currentRx = parseInt(interfaceData[rxKey], 10) || 0;
                 }
-                
+
                 // Debug: log field yang ditemukan
                 if (txKey || rxKey) {
                     console.log(`[Traffic Logger] 🔍 Interface ${interfaceName}: txKey=${txKey || 'NOT FOUND'}, rxKey=${rxKey || 'NOT FOUND'}, tx=${currentTx}, rx=${currentRx}`);
@@ -771,15 +813,15 @@ async function logAllInterfacesTraffic(workspaceId, client) {
                     // Skip interface ini jika tidak ada data
                     return;
                 }
-                
+
                 let txUsage = 0;
                 let rxUsage = 0;
-                
+
                 if (lastData) {
                     txUsage = (currentTx < lastData.tx) ? currentTx : currentTx - lastData.tx;
                     rxUsage = (currentRx < lastData.rx) ? currentRx : currentRx - lastData.rx;
                 }
-                
+
                 // Simpan data sekarang ke memory untuk next iteration (untuk tracking, tidak disimpan ke database)
                 lastTrafficData.set(workspaceKey, { tx: currentTx, rx: currentRx });
             } catch (err) {
@@ -788,7 +830,7 @@ async function logAllInterfacesTraffic(workspaceId, client) {
                 console.error(`[Traffic Logger] Full error untuk interface ${interfaceData.name}:`, err);
             }
         });
-        
+
         console.log(`[Traffic Logger] ⏳ Menunggu semua log promises selesai (${logPromises.length} promises)...`);
         try {
             await Promise.all(logPromises);
@@ -797,10 +839,10 @@ async function logAllInterfacesTraffic(workspaceId, client) {
             console.error(`[Traffic Logger] ❌ Error dalam Promise.all(logPromises):`, promiseError.message);
             console.error(`[Traffic Logger] Full Promise.all error:`, promiseError);
         }
-        
+
     } catch (error) {
         // Jangan throw error untuk UNKNOWNREPLY atau error koneksi, hanya log
-        if (error.errno === 'UNKNOWNREPLY' || error.message?.includes('UNKNOWNREPLY') || 
+        if (error.errno === 'UNKNOWNREPLY' || error.message?.includes('UNKNOWNREPLY') ||
             error.message?.includes('not connected') || error.message?.includes('connection')) {
             console.warn(`[Traffic Logger] Error koneksi untuk logging interfaces, akan diabaikan:`, error.message || error);
             return; // Jangan throw, biarkan proses lanjut
@@ -818,32 +860,32 @@ async function logAllInterfacesTraffic(workspaceId, client) {
 async function updateDashboardSnapshot(workspaceId, deviceId) {
     try {
         console.log(`[Dashboard Snapshot] 🚀 Memulai updateDashboardSnapshot untuk workspace ${workspaceId}, device ${deviceId}`);
-        
+
         // Gunakan timeout lebih lama untuk cron jobs (10 menit)
         // Karena cron job berjalan setiap 3 detik, koneksi akan selalu digunakan
         // Jadi tidak perlu ditutup setelah 30 detik
         const CRON_TIMEOUT = 10 * 60 * 1000; // 10 menit timeout untuk cron jobs
         const client = await getOrCreateConnection(workspaceId, CRON_TIMEOUT, null, deviceId);
-        
+
         // Cek apakah client terhubung
         if (!client || !client.connected) {
             console.warn(`[Dashboard Snapshot] ⚠️ Client tidak terhubung untuk workspace ${workspaceId}, device ${deviceId}`);
             return; // Skip jika tidak terhubung
         }
-        
+
         console.log(`[Dashboard Snapshot] ✅ Client terhubung untuk workspace ${workspaceId}, device ${deviceId}`);
-        
+
         // Ambil data dari Mikrotik
         let resource = {};
         let pppoeActive = [];
         let interfaces = [];
         let traffic = {};
-        
+
         try {
             // Ambil resource
             const resourceResult = await client.write('/system/resource/print', [], 10000).catch(() => []);
             resource = resourceResult && resourceResult[0] ? resourceResult[0] : {};
-            
+
             // Simpan resource log ke database untuk historical tracking
             if (resource && Object.keys(resource).length > 0) {
                 const cpuLoad = parseInt(resource['cpu-load'], 10) || null;
@@ -851,7 +893,7 @@ async function updateDashboardSnapshot(workspaceId, deviceId) {
                 // Total memory = free-memory + used-memory (jika ada)
                 const totalMemory = resource['total-memory'] ? parseInt(resource['total-memory'], 10) : null;
                 const usedMemory = totalMemory && memoryUsage ? totalMemory - memoryUsage : null;
-                
+
                 try {
                     await pool.query(
                         'INSERT INTO resource_logs (workspace_id, device_id, cpu_load, memory_usage) VALUES (?, ?, ?, ?)',
@@ -867,7 +909,7 @@ async function updateDashboardSnapshot(workspaceId, deviceId) {
                 console.warn(`[Dashboard Snapshot] Error mengambil resource untuk workspace ${workspaceId}:`, err.message);
             }
         }
-        
+
         try {
             // Ambil PPPoE active
             pppoeActive = await client.write('/ppp/active/print', [], 10000).catch(() => []);
@@ -881,20 +923,20 @@ async function updateDashboardSnapshot(workspaceId, deviceId) {
                 console.warn(`[Dashboard Snapshot] Error mengambil PPPoE active untuk workspace ${workspaceId}:`, err.message);
             }
         }
-        
+
         try {
             // Ambil interfaces
             interfaces = await client.write('/interface/print', [], 10000).catch(() => []);
             if (!Array.isArray(interfaces)) {
                 interfaces = [];
             }
-            
+
             // Filter hanya interface yang running dan bukan PPPoE
-            const runningInterfaces = interfaces.filter(i => 
-                i.running === true && 
+            const runningInterfaces = interfaces.filter(i =>
+                i.running === true &&
                 !i.type?.toLowerCase().includes('pppoe')
             );
-            
+
             // Ambil traffic untuk interface yang running
             const trafficPromises = runningInterfaces.map(async (iface) => {
                 try {
@@ -904,27 +946,27 @@ async function updateDashboardSnapshot(workspaceId, deviceId) {
                     return null;
                 }
             });
-            
+
             const trafficResults = await Promise.all(trafficPromises);
             trafficResults.forEach(result => {
                 if (result && result.name) {
                     traffic[result.name] = result;
                 }
             });
-            
+
             // Simpan active interfaces (hanya yang running dan bukan PPPoE)
             interfaces = runningInterfaces.map(i => ({
                 name: i.name,
                 type: i.type || '',
                 running: i.running || false
             }));
-            
+
         } catch (err) {
             if (!err.message?.includes('!empty') && !err.message?.includes('unknown reply: !empty')) {
                 console.warn(`[Dashboard Snapshot] Error mengambil interfaces untuk workspace ${workspaceId}:`, err.message);
             }
         }
-        
+
         // Simpan ke database (update atau insert)
         await pool.query(`
             INSERT INTO dashboard_snapshot (workspace_id, device_id, resource, traffic, pppoe_active, active_interfaces, updated_at)
@@ -943,7 +985,7 @@ async function updateDashboardSnapshot(workspaceId, deviceId) {
             JSON.stringify(pppoeActive),
             JSON.stringify(interfaces)
         ]);
-        
+
     } catch (error) {
         // Handle error dengan lebih baik, jangan crash aplikasi
         if (error.errno === 'UNKNOWNREPLY' || error.message?.includes('UNKNOWNREPLY')) {
@@ -972,52 +1014,52 @@ async function updateAllDashboardSnapshots() {
         console.log(`[Dashboard Snapshot] ⏭️ Update sudah berjalan, skip execution ini`);
         return;
     }
-    
+
     isUpdatingSnapshots = true;
-    
+
     try {
         console.log(`[Dashboard Snapshot] 🔄 Memulai updateAllDashboardSnapshots`);
-        
+
         // Group devices berdasarkan credentials
         const deviceGroups = await groupDevicesByCredentials();
-        
+
         if (deviceGroups.size === 0) {
             console.log(`[Dashboard Snapshot] ⚠️ Tidak ada device yang terdaftar untuk snapshot`);
             return;
         }
-        
+
         console.log(`[Dashboard Snapshot] 📡 Processing ${deviceGroups.size} device group(s)`);
-        
+
         // Polling sekali per device fisik
         for (const [groupKey, group] of deviceGroups) {
             if (group.devices.length === 0) continue;
-            
+
             // Gunakan device pertama dari group sebagai representasi
             const firstDevice = group.devices[0];
-            
+
             console.log(`[Dashboard Snapshot] 📡 Processing device group ${groupKey} (${group.devices.length} workspace(s))`);
-            
+
             try {
                 // Gunakan timeout lebih lama untuk cron jobs (10 menit)
                 // Karena cron job berjalan setiap 3 detik, koneksi akan selalu digunakan
                 // Jadi tidak perlu ditutup setelah 30 detik
                 const CRON_TIMEOUT = 10 * 60 * 1000; // 10 menit timeout untuk cron jobs
                 const client = await getOrCreateConnection(firstDevice.workspace_id, CRON_TIMEOUT, null, firstDevice.device_id);
-                
+
                 // Cek apakah client terhubung
                 if (!client || !client.connected) {
                     console.warn(`[Dashboard Snapshot] ⚠️ Client tidak terhubung untuk device group ${groupKey}, skip`);
                     continue; // Skip jika tidak terhubung
                 }
-                
+
                 console.log(`[Dashboard Snapshot] ✅ Client terhubung untuk device group ${groupKey}`);
-                
+
                 // Ambil data dari Mikrotik (polling sekali)
                 let resource = {};
                 let pppoeActive = [];
                 let interfaces = [];
                 let traffic = {};
-                
+
                 try {
                     // Ambil resource
                     console.log(`[Dashboard Snapshot] 📡 Mengambil resource untuk device group ${groupKey}...`);
@@ -1027,14 +1069,14 @@ async function updateAllDashboardSnapshots() {
                     });
                     resource = resourceResult && resourceResult[0] ? resourceResult[0] : {};
                     console.log(`[Dashboard Snapshot] ✅ Resource berhasil diambil untuk device group ${groupKey}, keys:`, Object.keys(resource).length);
-                    
+
                     // Simpan resource log ke database untuk semua device di group ini
                     if (resource && Object.keys(resource).length > 0) {
                         const cpuLoad = parseInt(resource['cpu-load'], 10) || null;
                         const memoryUsage = resource['free-memory'] ? parseInt(resource['free-memory'], 10) : null;
                         const totalMemory = resource['total-memory'] ? parseInt(resource['total-memory'], 10) : null;
                         const usedMemory = totalMemory && memoryUsage ? totalMemory - memoryUsage : null;
-                        
+
                         console.log(`[Resource Logger] 💾 Menyimpan resource logs untuk ${group.devices.length} device(s)...`);
                         // Log untuk setiap device di group (karena mereka share device fisik yang sama)
                         for (const device of group.devices) {
@@ -1058,7 +1100,7 @@ async function updateAllDashboardSnapshots() {
                         console.log(`[Dashboard Snapshot] ℹ️ Resource empty (normal)`);
                     }
                 }
-                
+
                 try {
                     // Ambil PPPoE active
                     console.log(`[Dashboard Snapshot] 📡 Mengambil PPPoE active untuk device group ${groupKey}...`);
@@ -1079,7 +1121,7 @@ async function updateAllDashboardSnapshots() {
                         console.error(`[Dashboard Snapshot] Full error:`, err);
                     }
                 }
-                
+
                 try {
                     // Ambil interfaces
                     console.log(`[Dashboard Snapshot] 📡 Mengambil interface list untuk device group ${groupKey}`);
@@ -1088,7 +1130,7 @@ async function updateAllDashboardSnapshots() {
                         interfaces = [];
                     }
                     console.log(`[Dashboard Snapshot] 📋 Ditemukan ${interfaces.length} total interfaces untuk device group ${groupKey}`);
-                    
+
                     // Filter hanya interface yang running dan bukan PPPoE
                     // Gunakan logika yang sama dengan logAllInterfacesTraffic
                     const runningInterfaces = interfaces.filter(i => {
@@ -1097,14 +1139,14 @@ async function updateAllDashboardSnapshots() {
                         // Exclude PPPoE interfaces
                         return running && !type.includes('pppoe');
                     });
-                    
+
                     console.log(`[Dashboard Snapshot] ✅ Found ${runningInterfaces.length} running interfaces untuk device group ${groupKey}:`, runningInterfaces.map(i => i.name).join(', '));
-                    
+
                     // Ambil traffic untuk interface yang running
                     // Gunakan data dari /interface/print untuk dashboard snapshot
                     console.log(`[Dashboard Snapshot] 📊 Mengambil traffic data untuk ${runningInterfaces.length} interfaces dari /interface/print...`);
                     let validResults = [];
-                    
+
                     // Gunakan data dari interfaces yang sudah diambil sebelumnya (dari /interface/print)
                     // Ini lebih reliable daripada /interface/monitor-traffic yang sering timeout
                     for (let index = 0; index < runningInterfaces.length; index++) {
@@ -1112,16 +1154,16 @@ async function updateAllDashboardSnapshots() {
                         try {
                             // Cari interface data dari interfaces array yang sudah diambil
                             const interfaceData = interfaces.find(i => i.name === iface.name);
-                            
+
                             if (interfaceData) {
                                 // Cari field yang benar dari /interface/print
                                 const allKeys = Object.keys(interfaceData);
                                 const txKey = allKeys.find(k => k.toLowerCase().includes('tx') && (k.toLowerCase().includes('byte') || k.toLowerCase().includes('bytes')));
                                 const rxKey = allKeys.find(k => k.toLowerCase().includes('rx') && (k.toLowerCase().includes('byte') || k.toLowerCase().includes('bytes')));
-                                
+
                                 const txBytes = txKey ? parseInt(interfaceData[txKey], 10) || 0 : 0;
                                 const rxBytes = rxKey ? parseInt(interfaceData[rxKey], 10) || 0 : 0;
-                                
+
                                 if (txKey && rxKey) {
                                     validResults.push({
                                         name: iface.name,
@@ -1134,17 +1176,17 @@ async function updateAllDashboardSnapshots() {
                                 }
                             } else {
                                 console.warn(`[Dashboard Snapshot] ⚠️ [${index + 1}/${runningInterfaces.length}] Interface ${iface.name} tidak ditemukan di interfaces array`);
-                        }
+                            }
                         } catch (err) {
                             console.error(`[Dashboard Snapshot] ❌ [${index + 1}/${runningInterfaces.length}] Error memproses interface ${iface.name}:`, err.message);
                             // Continue dengan interface berikutnya, jangan stop
                         }
                     }
-                    
+
                     console.log(`[Dashboard Snapshot] ✅ Mendapat ${validResults.length}/${runningInterfaces.length} traffic results dari /interface/print`);
-                    
+
                     traffic = {};
-                    
+
                     // Build traffic object dari validResults
                     validResults.forEach(t => {
                         if (t && t.name) {
@@ -1152,10 +1194,10 @@ async function updateAllDashboardSnapshots() {
                             const allKeys = Object.keys(t);
                             const rxKey = allKeys.find(k => k.toLowerCase().includes('rx') && (k.toLowerCase().includes('byte') || k.toLowerCase().includes('bytes')));
                             const txKey = allKeys.find(k => k.toLowerCase().includes('tx') && (k.toLowerCase().includes('byte') || k.toLowerCase().includes('bytes')));
-                            
+
                             const rxBytes = rxKey ? parseInt(t[rxKey], 10) || 0 : 0;
                             const txBytes = txKey ? parseInt(t[txKey], 10) || 0 : 0;
-                            
+
                             traffic[t.name] = {
                                 tx: txBytes,
                                 rx: rxBytes
@@ -1170,7 +1212,7 @@ async function updateAllDashboardSnapshots() {
                         console.log(`[Dashboard Snapshot] ℹ️ Interfaces empty (normal)`);
                     }
                 }
-                
+
                 // Share hasil ke semua workspace yang menggunakan device ini
                 console.log(`[Dashboard Snapshot] 💾 Menyimpan snapshot untuk ${group.devices.length} workspace(s) di device group ${groupKey}...`);
                 for (const device of group.devices) {
@@ -1200,7 +1242,7 @@ async function updateAllDashboardSnapshots() {
                     }
                 }
                 console.log(`[Dashboard Snapshot] ✅ Selesai memproses device group ${groupKey}`);
-                
+
             } catch (error) {
                 // Handle error dengan lebih baik, jangan crash aplikasi
                 if (error.errno === 'UNKNOWNREPLY' || error.message?.includes('UNKNOWNREPLY')) {
@@ -1224,4 +1266,4 @@ async function updateAllDashboardSnapshots() {
     }
 }
 
-module.exports = { logAllActiveWorkspaces, processSlaEvents, monitorSlaAndNotifications, updateAllDashboardSnapshots, sendDowntimeNotifications };
+module.exports = { monitorSlaAndNotifications, sendDowntimeNotifications };

@@ -54,16 +54,30 @@ exports.updateAvatar = async (req, res) => {
 exports.deleteUserAccount = async (req, res) => {
     const userId = req.user.id;
     const workspaceId = req.user.workspace_id;
+    const userRole = req.user.role;
     const conn = await pool.getConnection();
 
     try {
         await conn.beginTransaction();
+
+        // Hapus session selalu
         await conn.query('DELETE FROM user_sessions WHERE user_id = ?', [userId]);
-        await conn.query('DELETE FROM mikrotik_devices WHERE workspace_id = ?', [workspaceId]);
-        await conn.query('DELETE FROM odp_user_connections WHERE workspace_id = ?', [workspaceId]);
-        await conn.query('DELETE FROM network_assets WHERE workspace_id = ?', [workspaceId]);
-        await conn.query('DELETE FROM workspaces WHERE id = ?', [workspaceId]);
+
+        // Cari tahu apakah user ini adalah owner dari workspace-nya
+        const [workspaces] = await conn.query('SELECT owner_id FROM workspaces WHERE id = ?', [workspaceId]);
+        const isOwner = workspaces.length > 0 && workspaces[0].owner_id === userId;
+
+        // Jika User adalah OWNER, hapus seluruh infrastruktur workspace
+        if (isOwner) {
+            await conn.query('DELETE FROM mikrotik_devices WHERE workspace_id = ?', [workspaceId]);
+            await conn.query('DELETE FROM odp_user_connections WHERE workspace_id = ?', [workspaceId]);
+            await conn.query('DELETE FROM network_assets WHERE workspace_id = ?', [workspaceId]);
+            await conn.query('DELETE FROM workspaces WHERE id = ?', [workspaceId]);
+        }
+
+        // Hapus user record
         await conn.query('DELETE FROM users WHERE id = ?', [userId]);
+
         await conn.commit();
         conn.release();
         res.clearCookie('token');

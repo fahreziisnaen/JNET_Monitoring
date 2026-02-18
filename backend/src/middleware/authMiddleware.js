@@ -33,16 +33,16 @@ const protect = async (req, res, next) => {
                 console.log(`[Auth Middleware] Token ditemukan dan valid untuk user ${decoded.id}`);
             }
             const [users] = await pool.query(
-                'SELECT id, username, display_name, profile_picture_url, workspace_id, whatsapp_number FROM users WHERE id = ?',
+                'SELECT id, username, display_name, profile_picture_url, workspace_id, whatsapp_number, role FROM users WHERE id = ?',
                 [decoded.id]
             );
 
             if (users.length === 0) {
                 return res.status(401).json({ message: 'Tidak terotorisasi, user tidak ditemukan.' });
             }
-            
+
             let dbUser = users[0];
-            
+
             // Safeguard: Jika user tidak punya workspace_id, buat workspace otomatis
             if (!dbUser.workspace_id) {
                 console.log(`[Auth Middleware] User ${dbUser.id} tidak punya workspace_id, membuat workspace otomatis...`);
@@ -64,10 +64,10 @@ const protect = async (req, res, next) => {
                     }
                 }
             }
-            
+
             // Set default avatar jika tidak ada
             const profilePictureUrl = dbUser.profile_picture_url || '/public/uploads/avatars/default.jpg';
-            
+
             req.user = {
                 id: dbUser.id,
                 username: dbUser.username,
@@ -75,6 +75,7 @@ const protect = async (req, res, next) => {
                 profile_picture_url: profilePictureUrl,
                 workspace_id: dbUser.workspace_id,
                 whatsapp_number: dbUser.whatsapp_number,
+                role: dbUser.role || 'user',
                 jti: decoded.jti
             };
 
@@ -89,7 +90,7 @@ const protect = async (req, res, next) => {
             return res.status(401).json({ message: 'Tidak terotorisasi, token tidak valid.' });
         }
     }
-    
+
     if (!token) {
         // Log untuk debugging
         console.warn('[Auth Middleware] Tidak ada token ditemukan.');
@@ -104,4 +105,12 @@ const protect = async (req, res, next) => {
     }
 };
 
-module.exports = { protect };
+const authorizeAdmin = (req, res, next) => {
+    if (req.user && req.user.role === 'admin') {
+        next();
+    } else {
+        res.status(403).json({ message: 'Akses ditolak. Fitur ini hanya untuk Admin.' });
+    }
+};
+
+module.exports = { protect, authorizeAdmin };

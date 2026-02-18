@@ -11,11 +11,12 @@ import { apiFetch } from '@/utils/api';
 
 const DeviceManagementCard = () => {
     const { user } = useAuth();
+    const isAdmin = user?.role === 'admin';
     const [devices, setDevices] = useState<Device[]>([]);
     const [activeDeviceId, setActiveDeviceId] = useState<number | null>(null);
     const [loading, setLoading] = useState(true);
     const [isActionLoading, setIsActionLoading] = useState(false);
-    
+
     const [isDeviceModalOpen, setIsDeviceModalOpen] = useState(false);
     const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
     const [deviceToProcess, setDeviceToProcess] = useState<Device | null>(null);
@@ -36,7 +37,7 @@ const DeviceManagementCard = () => {
 
             const devicesData = await devicesRes.json();
             const workspaceData = await workspaceRes.json();
-            
+
             setDevices(devicesData);
             setActiveDeviceId(workspaceData.active_device_id);
 
@@ -69,12 +70,12 @@ const DeviceManagementCard = () => {
         setDeviceToProcess(device);
         setIsDeleteModalOpen(true);
     };
-    
+
     const handleDeleteConfirm = async () => {
         if (!deviceToProcess?.id) return;
         setIsActionLoading(true);
         try {
-            await apiFetch(`${apiUrl}/api/devices/${deviceToProcess.id}`, { 
+            await apiFetch(`${apiUrl}/api/devices/${deviceToProcess.id}`, {
                 method: 'DELETE'
             });
             handleSuccess();
@@ -107,10 +108,12 @@ const DeviceManagementCard = () => {
             <Card>
                 <CardHeader className="flex flex-row items-center justify-between">
                     <CardTitle>Manajemen Perangkat</CardTitle>
-                    <Button onClick={handleAddClick}>
-                        <Plus size={16} className="mr-2" />
-                        Tambah
-                    </Button>
+                    {isAdmin && (
+                        <Button onClick={handleAddClick}>
+                            <Plus size={16} className="mr-2" />
+                            Tambah
+                        </Button>
+                    )}
                 </CardHeader>
                 <CardContent className="space-y-3">
                     {loading ? (
@@ -128,20 +131,24 @@ const DeviceManagementCard = () => {
                                         <CheckCircle size={14} /> Aktif
                                     </span>
                                 ) : (
-                                    <Button onClick={() => { if (device.id) { handleSetActive(device.id) } }} disabled={isActionLoading || !device.id} variant="outline" className="text-xs h-auto py-1 px-2">Jadikan Aktif</Button>
+                                    <Button onClick={() => { if (device.id) { handleSetActive(device.id) } }} disabled={isActionLoading || !device.id || !isAdmin} variant="outline" className="text-xs h-auto py-1 px-2">Jadikan Aktif</Button>
                                 )}
-                                <div className="flex gap-1">
-                                    <button onClick={() => handleEditClick(device)} className="p-2 rounded-md hover:bg-muted" title="Edit"><Edit size={16} /></button>
-                                    <button onClick={() => handleDeleteClick(device)} className="p-2 rounded-md hover:bg-destructive/10 text-muted-foreground hover:text-destructive" title="Hapus"><Trash2 size={16} /></button>
-                                </div>
+                                {isAdmin && (
+                                    <div className="flex gap-1">
+                                        <button onClick={() => handleEditClick(device)} className="p-2 rounded-md hover:bg-muted" title="Edit"><Edit size={16} /></button>
+                                        <button onClick={() => handleDeleteClick(device)} className="p-2 rounded-md hover:bg-destructive/10 text-muted-foreground hover:text-destructive" title="Hapus"><Trash2 size={16} /></button>
+                                    </div>
+                                )}
                             </div>
                         ))
                     ) : (
                         <div className="text-center py-6">
                             <p className="text-muted-foreground mb-4">Belum ada perangkat, nih.</p>
-                            <Button variant="outline" onClick={handleAddClick}>
-                                <Plus size={16} className="mr-2"/> Tambahkan MikroTik
-                            </Button>
+                            {isAdmin && (
+                                <Button variant="outline" onClick={handleAddClick}>
+                                    <Plus size={16} className="mr-2" /> Tambahkan MikroTik
+                                </Button>
+                            )}
                         </div>
                     )}
                 </CardContent>
@@ -153,7 +160,7 @@ const DeviceManagementCard = () => {
                 onSuccess={handleSuccess}
                 deviceToEdit={deviceToProcess}
             />
-            
+
             <ConfirmModal
                 isOpen={isDeleteModalOpen}
                 onClose={() => setIsDeleteModalOpen(false)}

@@ -20,6 +20,14 @@ export const metadata: Metadata = {
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode; }) {
+  // Global Logger Control - Mendiamkan log di browser production
+  if (typeof window !== 'undefined' && process.env.NODE_ENV === 'production') {
+    console.log = () => { };
+    console.debug = () => { };
+    console.info = () => { };
+    console.warn = () => { };
+  }
+
   return (
     <html lang="en" suppressHydrationWarning>
       <body className={`${inter.className} bg-background text-foreground`}>
@@ -27,7 +35,7 @@ export default function RootLayout({ children }: { children: React.ReactNode; })
           <ThemeProvider>
             <MikrotikProvider>
               <NotificationProvider>
-              {children}
+                {children}
               </NotificationProvider>
             </MikrotikProvider>
           </ThemeProvider>

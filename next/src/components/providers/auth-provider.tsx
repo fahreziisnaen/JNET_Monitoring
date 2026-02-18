@@ -22,7 +22,7 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | null>(null);
 
-const publicPaths = ["/login", "/register"];
+const publicPaths = ["/login", "/register", "/forgot-password"];
 
 export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
@@ -37,11 +37,11 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     try {
       // Gunakan helper function yang sudah ada untuk mendapatkan token dari localStorage atau cookie
       const token = getAuthToken();
-      
+
       const headers: HeadersInit = {
         'Content-Type': 'application/json',
       };
-      
+
       // SELALU kirim Authorization header jika token ada (dari localStorage atau cookie)
       // Ini memastikan request tetap berhasil meskipun cookie tidak terkirim
       if (token) {
@@ -51,14 +51,14 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
           console.log('[Auth Provider] Menggunakan token untuk Authorization header');
         }
       }
-      
+
       // Use apiFetch untuk konsistensi, tapi tetap perlu manual header karena sudah di-set di atas
       const response = await fetch(`${apiUrl}/api/auth/me`, {
         credentials: "include",
         cache: 'no-store',
         headers,
       });
-      
+
       if (response.ok) {
         const data = await response.json();
         setIsLoggedIn(true);
@@ -96,7 +96,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       setLoading(false);
     }
   }, [apiUrl]);
-  
+
   const logout = useCallback(async () => {
     if (typeof window !== 'undefined') {
       try {

@@ -48,26 +48,26 @@ exports.getAvailableInterfaces = async (req, res) => {
 exports.getInterfacesByDevice = async (req, res) => {
     const workspaceId = req.user.workspace_id;
     const { deviceId } = req.query;
-    
+
     if (!deviceId) {
         return res.status(400).json({ message: 'Device ID harus diisi.' });
     }
-    
+
     try {
         // Verify device belongs to workspace
         const [devices] = await pool.query(
             'SELECT id, name FROM mikrotik_devices WHERE id = ? AND workspace_id = ?',
             [deviceId, workspaceId]
         );
-        
+
         if (devices.length === 0) {
             return res.status(404).json({ message: 'Device tidak ditemukan.' });
         }
-        
+
         // Get interfaces from the device
         const { runCommandForWorkspace } = require('../utils/apiConnection');
         const interfaces = await runCommandForWorkspace(workspaceId, '/interface/print', [], parseInt(deviceId));
-        
+
         // Filter only running interfaces and exclude PPPoE
         const availableInterfaces = interfaces
             .filter(iface => {
@@ -79,7 +79,7 @@ exports.getInterfacesByDevice = async (req, res) => {
                 name: iface.name,
                 type: iface.type || 'unknown'
             }));
-        
+
         res.status(200).json(availableInterfaces);
     } catch (error) {
         console.error("GET INTERFACES BY DEVICE ERROR:", error);
@@ -87,37 +87,103 @@ exports.getInterfacesByDevice = async (req, res) => {
     }
 };
 
-exports.setMainInterface = async (req, res) => {
-    const { interfaceName } = req.body;
-    const workspaceId = req.user.workspace_id;
-    if (!interfaceName) {
-        return res.status(400).json({ message: 'Nama interface tidak boleh kosong.' });
-    }
-    try {
-        await pool.query('UPDATE workspaces SET main_interface = ? WHERE id = ?', [interfaceName, workspaceId]);
-        res.status(200).json({ message: 'Interface utama berhasil disimpan.' });
-    } catch (error) {
-        console.error("SET MAIN INTERFACE ERROR:", error);
-        res.status(500).json({ message: 'Gagal menyimpan interface utama.' });
-    }
-};
 
 exports.updateWhatsAppGroupId = async (req, res) => {
     const { whatsapp_group_id } = req.body;
     const workspaceId = req.user.workspace_id;
-    
+
     // Validasi format WhatsApp Group JID (harus berakhiran @g.us)
     if (whatsapp_group_id && !whatsapp_group_id.endsWith('@g.us')) {
         return res.status(400).json({ message: 'Format WhatsApp Group ID tidak valid. Harus berakhiran @g.us' });
     }
-    
+
     try {
         await pool.query('UPDATE workspaces SET whatsapp_group_id = ? WHERE id = ?', [whatsapp_group_id || null, workspaceId]);
-        res.status(200).json({ 
-            message: whatsapp_group_id ? 'WhatsApp Group ID berhasil disimpan.' : 'WhatsApp Group ID berhasil dihapus.' 
+        res.status(200).json({
+            message: whatsapp_group_id ? 'WhatsApp Group ID berhasil disimpan.' : 'WhatsApp Group ID berhasil dihapus.'
         });
     } catch (error) {
         console.error("UPDATE WHATSAPP GROUP ID ERROR:", error);
         res.status(500).json({ message: 'Gagal menyimpan WhatsApp Group ID.' });
+    }
+};
+
+exports.getMembers = async (req, res) => {
+    const workspaceId = req.user.workspace_id;
+    try {
+        const [members] = await pool.query(
+            `SELECT u.id, u.username, u.display_name, u.role, u.profile_picture_url, 
+             (w.owner_id = u.id) as is_owner
+             FROM users u
+             JOIN workspaces w ON u.workspace_id = w.id
+             WHERE u.workspace_id = ?`,
+            [workspaceId]
+        );
+        res.status(200).json(members);
+    } catch (error) {
+        console.error("GET MEMBERS ERROR:", error);
+        res.status(500).json({ message: 'Gagal mengambil daftar anggota.' });
+    }
+};
+
+exports.removeMember = async (req, res) => {
+    const { userId: targetUserId } = req.params;
+    const adminUserId = req.user.id;
+    const workspaceId = req.user.workspace_id;
+
+    if (parseInt(targetUserId) === adminUserId) {
+        return res.status(400).json({ message: 'Anda tidak bisa mengeluarkan diri sendiri.' });
+    }
+
+    const conn = await pool.getConnection();
+    try {
+        await conn.beginTransaction();
+
+        // 1. Pastikan workspace ada dan ambil owner_id
+        const [workspaces] = await conn.query('SELECT owner_id, name FROM workspaces WHERE id = ?', [workspaceId]);
+        if (workspaces.length === 0) {
+            await conn.rollback();
+            return res.status(404).json({ message: 'Workspace tidak ditemukan.' });
+        }
+        const workspace = workspaces[0];
+
+        // 2. Pastikan target user ada di workspace ini
+        const [targetUsers] = await conn.query('SELECT id, display_name FROM users WHERE id = ? AND workspace_id = ?', [targetUserId, workspaceId]);
+        if (targetUsers.length === 0) {
+            await conn.rollback();
+            return res.status(404).json({ message: 'User tidak ditemukan di workspace ini.' });
+        }
+        const targetUser = targetUsers[0];
+
+        // 3. Jangan biarkan kick owner
+        if (workspace.owner_id === parseInt(targetUserId)) {
+            await conn.rollback();
+            return res.status(403).json({ message: 'Pemilik workspace tidak bisa dikeluarkan.' });
+        }
+
+        // 4. Buat workspace baru untuk user yang di-kick agar tidak error (homeless)
+        const [newWsResult] = await conn.query(
+            'INSERT INTO workspaces (name, owner_id) VALUES (?, ?)',
+            [`${targetUser.display_name}'s Private Workspace`, targetUserId]
+        );
+        const newWorkspaceId = newWsResult.insertId;
+
+        // 5. Update user ke workspace baru dan set jadi admin di sana
+        await conn.query(
+            'UPDATE users SET workspace_id = ?, role = "admin" WHERE id = ?',
+            [newWorkspaceId, targetUserId]
+        );
+
+        // 6. Hapus semua session user tersebut agar dia dipaksa login ulang atau refresh state
+        await conn.query('DELETE FROM user_sessions WHERE user_id = ?', [targetUserId]);
+
+        await conn.commit();
+        res.status(200).json({ message: `Berhasil mengeluarkan ${targetUser.display_name} dari workspace.` });
+    } catch (error) {
+        await conn.rollback();
+        console.error("REMOVE MEMBER ERROR:", error);
+        res.status(500).json({ message: 'Gagal mengeluarkan anggota.' });
+    } finally {
+        conn.release();
     }
 };

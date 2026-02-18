@@ -1,18 +1,18 @@
 const express = require('express');
 const router = express.Router();
 const ipPoolController = require('../controllers/ipPoolController');
-const { protect } = require('../middleware/authMiddleware');
+const { protect, authorizeAdmin } = require('../middleware/authMiddleware');
 
 router.use(protect);
 
 router.route('/')
     .get(ipPoolController.getPools)
-    .post(ipPoolController.addPool);
+    .post(authorizeAdmin, ipPoolController.addPool);
 
 router.route('/sync')
-    .post(ipPoolController.syncPoolsFromMikrotik);
+    .post(authorizeAdmin, ipPoolController.syncPoolsFromMikrotik);
 
 router.route('/:id')
-    .delete(ipPoolController.deletePool);
+    .delete(authorizeAdmin, ipPoolController.deletePool);
 
 module.exports = router;

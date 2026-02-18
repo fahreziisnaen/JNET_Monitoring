@@ -6,12 +6,25 @@ const cors = require('cors');
 const cookieParser = require('cookie-parser');
 const jwt = require('jsonwebtoken');
 require('dotenv').config();
+
+// Global Logger Control - Mendiamkan log di mode production kecuali error
+if (process.env.NODE_ENV === 'production') {
+    console.log('--- LOGGING DISABLED (PRODUCTION MODE) ---');
+    console.log = function () { };
+    console.debug = function () { };
+    console.info = function () { };
+    console.warn = function () {
+        // Tetap tampilkan warn tapi lebih bersih atau bisa dimatikan juga
+        // console.warn('WARNING SILENCED');
+    };
+    // console.error tetap diaktifkan untuk troubleshooting kritis
+}
+
 const cron = require('node-cron');
 
 const { startWhatsApp } = require('./src/services/whatsappService');
-const { handleCommand } = require('./src/bot/commandHandler');
 const { generateAndSendDailyReports } = require('./src/bot/reportGenerator');
-const { logAllActiveWorkspaces, processSlaEvents, monitorSlaAndNotifications, updateAllDashboardSnapshots, sendDowntimeNotifications } = require('./src/bot/dataLogger');
+const { monitorSlaAndNotifications, sendDowntimeNotifications } = require('./src/bot/dataLogger');
 
 let RouterOSAPI = require('node-routeros');
 if (RouterOSAPI.RouterOSAPI) {
@@ -40,6 +53,7 @@ const notificationRoutes = require('./src/routes/notificationRoutes');
 const dashboardRoutes = require('./src/routes/dashboardRoutes');
 const clientRoutes = require('./src/routes/clientRoutes');
 const reportRoutes = require('./src/routes/reportRoutes');
+const backupRoutes = require('./src/routes/backupRoutes');
 
 const app = express();
 const server = http.createServer(app);
@@ -47,36 +61,36 @@ const server = http.createServer(app);
 app.use(helmet({ crossOriginResourcePolicy: { policy: "cross-origin" } }));
 
 // CORS configuration - allow specific origins or use environment variable
-const allowedOrigins = process.env.CORS_ORIGINS 
-  ? process.env.CORS_ORIGINS.split(',').map(origin => origin.trim())
-  : [
-      'http://localhost:3000',
-      'http://172.27.0.10:3000'
+const allowedOrigins = process.env.CORS_ORIGINS
+    ? process.env.CORS_ORIGINS.split(',').map(origin => origin.trim())
+    : [
+        'http://localhost:3000',
+        'http://172.27.0.10:3000'
     ];
 
 const corsOptions = {
-  origin: function (origin, callback) {
-    // Allow requests with no origin (like mobile apps or curl requests)
-    if (!origin) return callback(null, true);
-    
-    // In development, allow all origins OR check against allowed list
-    if (process.env.NODE_ENV !== 'production') {
-      // Allow all origins in development, or check against allowed list
-      if (allowedOrigins.length === 0 || allowedOrigins.indexOf(origin) !== -1) {
-        return callback(null, true);
-      }
-    }
-    
-    // In production, check against allowed origins
-    if (allowedOrigins.indexOf(origin) !== -1) {
-      callback(null, true);
-    } else {
-      callback(new Error('Not allowed by CORS'));
-    }
-  },
-  credentials: true,
-  exposedHeaders: ['Set-Cookie'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'Cookie']
+    origin: function (origin, callback) {
+        // Allow requests with no origin (like mobile apps or curl requests)
+        if (!origin) return callback(null, true);
+
+        // In development, allow all origins OR check against allowed list
+        if (process.env.NODE_ENV !== 'production') {
+            // Allow all origins in development, or check against allowed list
+            if (allowedOrigins.length === 0 || allowedOrigins.indexOf(origin) !== -1) {
+                return callback(null, true);
+            }
+        }
+
+        // In production, check against allowed origins
+        if (allowedOrigins.indexOf(origin) !== -1) {
+            callback(null, true);
+        } else {
+            callback(new Error('Not allowed by CORS'));
+        }
+    },
+    credentials: true,
+    exposedHeaders: ['Set-Cookie'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'Cookie']
 };
 
 app.use(cors(corsOptions));
@@ -102,6 +116,7 @@ app.use('/api/notifications', notificationRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/clients', clientRoutes);
 app.use('/api/reports', reportRoutes);
+app.use('/api/backup', backupRoutes);
 
 const wss = new WebSocket.Server({ server, path: "/ws" });
 
@@ -130,15 +145,15 @@ function stopWorkspaceMonitoring(connectionKey) {
 
 async function startWorkspaceMonitoring(workspaceId, connectionKey, deviceId = null) {
     if (getConnection(connectionKey)?.client?.connected) return;
-    
+
     let client;
     let isRunning = false; // Flag untuk mencegah multiple cycle bersamaan
     let lastCycleTime = 0; // Track waktu cycle terakhir
-    
+
     try {
         const WS_TIMEOUT = 24 * 60 * 60 * 1000;
         client = await getOrCreateConnection(workspaceId, WS_TIMEOUT, connectionKey, deviceId);
-        
+
         // Tambahkan error handler pada client untuk menangkap error yang tidak terduga
         if (client && client.on) {
             client.on('error', (error) => {
@@ -153,13 +168,13 @@ async function startWorkspaceMonitoring(workspaceId, connectionKey, deviceId = n
             if (isRunning) {
                 return;
             }
-            
+
             // Prevent cycle terlalu cepat (minimal 2 detik antara cycle)
             const now = Date.now();
             if (now - lastCycleTime < 2000) {
                 return;
             }
-            
+
             isRunning = true;
             lastCycleTime = now;
             if (!client?.connected) {
@@ -181,27 +196,27 @@ async function startWorkspaceMonitoring(workspaceId, connectionKey, deviceId = n
                                 throw err;
                             }
                         })(),
-                        new Promise((_, reject) => 
+                        new Promise((_, reject) =>
                             setTimeout(() => reject(new Error(`Timeout setelah ${timeoutMs}ms untuk command ${command}`)), timeoutMs)
                         )
                     ]);
                 };
-                
+
                 // Jalankan command secara sequential dengan timeout lebih panjang (10 detik)
                 const resource = await safeWrite('/system/resource/print', [], 10000).then(r => r[0] || {}).catch(err => {
                     return {};
                 });
-                
+
                 const pppoeActive = await safeWrite('/ppp/active/print', [], 10000).catch(err => {
                     return [];
                 });
-                
+
                 // Ambil total secrets untuk summary (dengan timeout lebih panjang karena bisa banyak)
                 // Ini akan digunakan untuk summary total dan inactive count
                 const pppoeSecrets = await safeWrite('/ppp/secret/print', [], 25000).catch(err => {
                     return [];
                 });
-                
+
                 // Merge pppoeActive ke pppoeSecrets: tambahkan info aktif (isActive, uptime, currentAddress)
                 // Buat Map untuk lookup cepat dari pppoeActive
                 const activeUserMap = new Map();
@@ -215,28 +230,28 @@ async function startWorkspaceMonitoring(workspaceId, connectionKey, deviceId = n
                         });
                     }
                 });
-                
+
                 // Enrich pppoeSecrets dengan data dari pppoeActive
                 const enrichedSecrets = pppoeSecrets.map(secret => {
                     const activeInfo = activeUserMap.get(secret.name);
                     const isActive = !!activeInfo;
-                    
+
                     // Build enriched secret object
                     const enriched = Object.assign({}, secret);
-                    
+
                     // Tambahkan field isActive
                     enriched.isActive = isActive;
-                    
+
                     // Tambahkan uptime jika aktif
                     if (isActive && activeInfo.uptime) {
                         enriched.uptime = activeInfo.uptime;
                     }
-                    
+
                     // Tambahkan .id dari active connection untuk keperluan kick
                     if (isActive && activeInfo['.id']) {
                         enriched.activeConnectionId = activeInfo['.id'];
                     }
-                    
+
                     // Untuk remote-address: prioritas 1) dari active connection, 2) dari secret, 3) null
                     if (isActive && activeInfo.address) {
                         enriched.currentAddress = activeInfo.address;
@@ -245,18 +260,18 @@ async function startWorkspaceMonitoring(workspaceId, connectionKey, deviceId = n
                             enriched['remote-address'] = activeInfo.address;
                         }
                     }
-                    
+
                     return enriched;
                 });
-                
+
                 // Catatan: processSlaEvents TIDAK dipanggil di sini untuk menghindari duplikasi notifikasi
                 // processSlaEvents sudah dijalankan oleh cron job monitorSlaAndNotifications setiap 3 detik
                 // yang berjalan terus menerus tanpa bergantung pada user login
-                
+
                 const allInterfaces = await safeWrite('/interface/print', [], 10000).catch(err => {
                     return [];
                 });
-                
+
                 // Filter interface yang aktif (running) untuk ditampilkan di frontend
                 const activeInterfacesList = allInterfaces
                     .filter(iface => {
@@ -268,27 +283,27 @@ async function startWorkspaceMonitoring(workspaceId, connectionKey, deviceId = n
                         type: iface.type || 'unknown',
                         running: iface.running
                     }));
-                
+
                 // Filter interface yang akan di-monitor traffic-nya
                 // Exclude interface yang tidak bisa di-monitor traffic-nya dan PPPoE
                 const interfacesToMonitor = allInterfaces
                     .filter(iface => {
                         const type = (iface.type || '').toLowerCase();
                         const running = iface.running === 'true' || iface.running === true || iface.running === 'yes';
-                        
+
                         // Exclude interface yang tidak bisa di-monitor traffic-nya dan PPPoE
                         const excludeTypes = ['loopback', 'pppoe-in', 'pppoe-out', 'pptp-in', 'l2tp-in'];
-                        
+
                         // Exclude semua interface yang mengandung 'pppoe' di type-nya
                         if (type.includes('pppoe')) return false;
-                        
+
                         // Include jika running dan tidak di exclude list
                         return running && !excludeTypes.includes(type);
                     })
                     .map(iface => iface.name);
 
                 // Ambil traffic data dengan timeout lebih pendek (3 detik per interface)
-                const trafficPromises = interfacesToMonitor.map(name => 
+                const trafficPromises = interfacesToMonitor.map(name =>
                     safeWrite('/interface/monitor-traffic', [`=interface=${name}`, '=once='], 3000)
                         .then(r => r[0])
                         .catch(err => {
@@ -303,18 +318,18 @@ async function startWorkspaceMonitoring(workspaceId, connectionKey, deviceId = n
                         trafficUpdateBatch[result.name] = result;
                     }
                 });
-                
+
                 // Pastikan resource selalu ada, meskipun kosong
                 const finalResource = resource && Object.keys(resource).length > 0 ? resource : {};
-                
-                const batchPayload = { 
-                    resource: finalResource, 
+
+                const batchPayload = {
+                    resource: finalResource,
                     pppoeSecrets: enrichedSecrets || [], // Secrets yang sudah di-enrich dengan info aktif (isActive, uptime, currentAddress)
                     activeInterfaces: activeInterfacesList || [], // Kirim list interface aktif
-                    traffic: trafficUpdateBatch 
+                    traffic: trafficUpdateBatch
                 };
                 broadcastToWorkspace(workspaceId, { type: 'batch-update', payload: batchPayload });
-                
+
             } catch (cycleError) {
                 // Handle error khusus untuk UNKNOWNREPLY
                 if (cycleError.errno === 'UNKNOWNREPLY' || cycleError.message?.includes('UNKNOWNREPLY')) {
@@ -351,13 +366,13 @@ async function startWorkspaceMonitoring(workspaceId, connectionKey, deviceId = n
                 isRunning = false;
             });
         }, 1000); // Tunggu 1 detik sebelum mulai
-        
+
         const intervalId = setInterval(() => {
             runMonitoringCycle().catch(err => {
                 isRunning = false; // Reset flag jika error
             });
         }, 3000); // Interval 3 detik
-        
+
         const connection = getConnection(connectionKey);
         if (connection) {
             connection.intervalId = intervalId;
@@ -387,7 +402,7 @@ wss.on('connection', (ws, req) => {
             }
         }
     }, 15000); // 15 detik timeout untuk setup connection
-    
+
     // Cek apakah WebSocket sudah di-close sebelum setup selesai
     const checkIfClosed = () => {
         if (ws.readyState === WebSocket.CLOSED || ws.readyState === WebSocket.CLOSING) {
@@ -400,212 +415,212 @@ wss.on('connection', (ws, req) => {
         }
         return false;
     };
-    
+
     // Handle connection setup secara async tapi jangan block
     (async () => {
-    try {
-        // Cek apakah sudah di-close sebelum mulai
-        if (checkIfClosed()) return;
-        let token = null;
-        let decoded = null;
-        
-        // Parse URL untuk mendapatkan query parameters
-        console.log('[WebSocket] Request URL:', req.url);
-        console.log('[WebSocket] Request headers:', {
-            cookie: req.headers.cookie ? 'Ada' : 'Tidak ada',
-            authorization: req.headers.authorization ? 'Ada' : 'Tidak ada',
-            host: req.headers.host
-        });
-        
-        // Parse query string manual karena WebSocket URL mungkin tidak standard
-        let urlParams = new URLSearchParams();
-        if (req.url.includes('?')) {
-            const queryString = req.url.split('?')[1];
-            urlParams = new URLSearchParams(queryString);
-        }
-        console.log('[WebSocket] Query params:', Object.fromEntries(urlParams));
-        
-        // Prioritas 1: Cek token di query parameter (untuk WebSocket yang tidak bisa kirim cookie dengan mudah)
-        const tokenParam = urlParams.get('token');
-        console.log('[WebSocket] Token dari query param:', tokenParam ? `Ada (${tokenParam.substring(0, 20)}...)` : 'Tidak ada');
-        if (tokenParam) {
-            try {
-                decoded = jwt.verify(tokenParam, process.env.JWT_SECRET);
-                token = tokenParam;
-                console.log('[WebSocket] Menggunakan token dari query parameter, user:', decoded.id);
-            } catch (e) {
-                console.warn('[WebSocket] Token di query param tidak valid:', e.message);
-            }
-        }
-        
-        // Prioritas 2: Cek cookie jika token dari query param tidak ada atau tidak valid
-        if (!token) {
-            const cookie = (req.headers.cookie || '').split('; ').find(c => c.startsWith('token='));
-            if (cookie) {
-                token = cookie.split('=')[1];
-                try {
-                    decoded = jwt.verify(token, process.env.JWT_SECRET);
-                    console.log('[WebSocket] Menggunakan token dari cookie');
-                } catch (e) {
-                    console.warn('[WebSocket] Token di cookie tidak valid:', e.message);
-                    token = null;
-                }
-            }
-        }
-        
-        // Prioritas 3: Cek Authorization header sebagai fallback terakhir
-        if (!token && req.headers.authorization) {
-            const authHeader = req.headers.authorization;
-            if (authHeader.startsWith('Bearer ')) {
-                token = authHeader.substring(7);
-                try {
-                    decoded = jwt.verify(token, process.env.JWT_SECRET);
-                    console.log('[WebSocket] Menggunakan token dari Authorization header');
-                } catch (e) {
-                    console.warn('[WebSocket] Token di Authorization header tidak valid:', e.message);
-                    token = null;
-                }
-            }
-        }
-        
-        if (!token || !decoded) {
-            if (connectionTimeout) {
-                clearTimeout(connectionTimeout);
-                connectionTimeout = null;
-            }
-            console.warn('[WebSocket] Tidak ada token ditemukan, menutup koneksi');
-            console.warn('[WebSocket] URL:', req.url);
-            console.warn('[WebSocket] Cookies:', req.headers.cookie);
-            console.warn('[WebSocket] Authorization:', req.headers.authorization);
-            if (!checkIfClosed()) {
-                try {
-                    ws.close(1008, 'Unauthorized: No token provided');
-                } catch (e) {
-                    // Ignore jika sudah closed
-                }
-            }
-            return;
-        }
-        
-        // Cek lagi apakah sudah di-close
-        if (checkIfClosed()) return;
-        
-        const [users] = await pool.query('SELECT workspace_id FROM users WHERE id = ?', [decoded.id]);
-        if (!users[0]?.workspace_id) {
-            if (connectionTimeout) {
-                clearTimeout(connectionTimeout);
-                connectionTimeout = null;
-            }
-            console.warn(`[WebSocket] User ${decoded.id} tidak punya workspace_id`);
-            if (!checkIfClosed()) {
-                try {
-                    ws.close(1008, 'Unauthorized: No workspace');
-                } catch (e) {
-                    // Ignore jika sudah closed
-                }
-            }
-            return;
-        }
-
-        // Cek lagi apakah sudah di-close
-        if (checkIfClosed()) return;
-
-        ws.workspaceId = users[0].workspace_id;
-        
-        // Parse deviceId dari query string
-        const deviceIdParam = urlParams.get('deviceId');
-        const deviceId = deviceIdParam ? parseInt(deviceIdParam) : null;
-        console.log('[WebSocket] DeviceId dari query param:', deviceId);
-        
-        // Jika deviceId tidak diberikan, gunakan active_device_id
-        let finalDeviceId = deviceId;
-        if (!finalDeviceId) {
-            const [workspaces] = await pool.query('SELECT active_device_id FROM workspaces WHERE id = ?', [ws.workspaceId]);
-            finalDeviceId = workspaces[0]?.active_device_id || null;
-        }
-        
-        if (!finalDeviceId) {
-            if (connectionTimeout) {
-                clearTimeout(connectionTimeout);
-                connectionTimeout = null;
-            }
-            console.warn(`[WebSocket] Tidak ada device untuk workspace ${ws.workspaceId}`);
-            if (!checkIfClosed()) {
-                try {
-                    ws.close(1008, 'No device configured');
-                } catch (e) {
-                    // Ignore jika sudah closed
-                }
-            }
-            return;
-        }
-        
-        // Cek lagi apakah sudah di-close sebelum start monitoring
-        if (checkIfClosed()) return;
-        
-        ws.deviceId = finalDeviceId;
-        const connectionKey = `ws-${ws.workspaceId}-${finalDeviceId}`;
-
-        let connection = getConnection(connectionKey);
-        if (!connection) {
-            // Cek lagi sebelum start monitoring (ini bisa lama)
+        try {
+            // Cek apakah sudah di-close sebelum mulai
             if (checkIfClosed()) return;
-            
-            await startWorkspaceMonitoring(ws.workspaceId, connectionKey, finalDeviceId);
-            
-            // Cek lagi setelah start monitoring
-            if (checkIfClosed()) return;
-            
-            connection = getConnection(connectionKey);
-        }
+            let token = null;
+            let decoded = null;
 
-        if (connection) {
-            connection.userCount = (connection.userCount || 0) + 1;
-        }
-        
-        // Clear connection timeout setelah setup berhasil
-        if (connectionTimeout) {
-            clearTimeout(connectionTimeout);
-            connectionTimeout = null;
-        }
-        
-        // Final check sebelum log success
-        if (checkIfClosed()) return;
-        
-        console.log(`[WebSocket] Koneksi berhasil di-setup untuk workspace ${ws.workspaceId}, device ${finalDeviceId}`);
-        
-        ws.on('close', () => {
-            const currentConnection = getConnection(connectionKey);
-            if (currentConnection) {
-                currentConnection.userCount--;
-                if (currentConnection.userCount <= 0) {
-                    stopWorkspaceMonitoring(connectionKey);
+            // Parse URL untuk mendapatkan query parameters
+            console.log('[WebSocket] Request URL:', req.url);
+            console.log('[WebSocket] Request headers:', {
+                cookie: req.headers.cookie ? 'Ada' : 'Tidak ada',
+                authorization: req.headers.authorization ? 'Ada' : 'Tidak ada',
+                host: req.headers.host
+            });
+
+            // Parse query string manual karena WebSocket URL mungkin tidak standard
+            let urlParams = new URLSearchParams();
+            if (req.url.includes('?')) {
+                const queryString = req.url.split('?')[1];
+                urlParams = new URLSearchParams(queryString);
+            }
+            console.log('[WebSocket] Query params:', Object.fromEntries(urlParams));
+
+            // Prioritas 1: Cek token di query parameter (untuk WebSocket yang tidak bisa kirim cookie dengan mudah)
+            const tokenParam = urlParams.get('token');
+            console.log('[WebSocket] Token dari query param:', tokenParam ? `Ada (${tokenParam.substring(0, 20)}...)` : 'Tidak ada');
+            if (tokenParam) {
+                try {
+                    decoded = jwt.verify(tokenParam, process.env.JWT_SECRET);
+                    token = tokenParam;
+                    console.log('[WebSocket] Menggunakan token dari query parameter, user:', decoded.id);
+                } catch (e) {
+                    console.warn('[WebSocket] Token di query param tidak valid:', e.message);
                 }
             }
-        });
-        
-        ws.on('error', (error) => {
-            console.error('[WebSocket] Error pada koneksi:', error);
+
+            // Prioritas 2: Cek cookie jika token dari query param tidak ada atau tidak valid
+            if (!token) {
+                const cookie = (req.headers.cookie || '').split('; ').find(c => c.startsWith('token='));
+                if (cookie) {
+                    token = cookie.split('=')[1];
+                    try {
+                        decoded = jwt.verify(token, process.env.JWT_SECRET);
+                        console.log('[WebSocket] Menggunakan token dari cookie');
+                    } catch (e) {
+                        console.warn('[WebSocket] Token di cookie tidak valid:', e.message);
+                        token = null;
+                    }
+                }
+            }
+
+            // Prioritas 3: Cek Authorization header sebagai fallback terakhir
+            if (!token && req.headers.authorization) {
+                const authHeader = req.headers.authorization;
+                if (authHeader.startsWith('Bearer ')) {
+                    token = authHeader.substring(7);
+                    try {
+                        decoded = jwt.verify(token, process.env.JWT_SECRET);
+                        console.log('[WebSocket] Menggunakan token dari Authorization header');
+                    } catch (e) {
+                        console.warn('[WebSocket] Token di Authorization header tidak valid:', e.message);
+                        token = null;
+                    }
+                }
+            }
+
+            if (!token || !decoded) {
+                if (connectionTimeout) {
+                    clearTimeout(connectionTimeout);
+                    connectionTimeout = null;
+                }
+                console.warn('[WebSocket] Tidak ada token ditemukan, menutup koneksi');
+                console.warn('[WebSocket] URL:', req.url);
+                console.warn('[WebSocket] Cookies:', req.headers.cookie);
+                console.warn('[WebSocket] Authorization:', req.headers.authorization);
+                if (!checkIfClosed()) {
+                    try {
+                        ws.close(1008, 'Unauthorized: No token provided');
+                    } catch (e) {
+                        // Ignore jika sudah closed
+                    }
+                }
+                return;
+            }
+
+            // Cek lagi apakah sudah di-close
+            if (checkIfClosed()) return;
+
+            const [users] = await pool.query('SELECT workspace_id FROM users WHERE id = ?', [decoded.id]);
+            if (!users[0]?.workspace_id) {
+                if (connectionTimeout) {
+                    clearTimeout(connectionTimeout);
+                    connectionTimeout = null;
+                }
+                console.warn(`[WebSocket] User ${decoded.id} tidak punya workspace_id`);
+                if (!checkIfClosed()) {
+                    try {
+                        ws.close(1008, 'Unauthorized: No workspace');
+                    } catch (e) {
+                        // Ignore jika sudah closed
+                    }
+                }
+                return;
+            }
+
+            // Cek lagi apakah sudah di-close
+            if (checkIfClosed()) return;
+
+            ws.workspaceId = users[0].workspace_id;
+
+            // Parse deviceId dari query string
+            const deviceIdParam = urlParams.get('deviceId');
+            const deviceId = deviceIdParam ? parseInt(deviceIdParam) : null;
+            console.log('[WebSocket] DeviceId dari query param:', deviceId);
+
+            // Jika deviceId tidak diberikan, gunakan active_device_id
+            let finalDeviceId = deviceId;
+            if (!finalDeviceId) {
+                const [workspaces] = await pool.query('SELECT active_device_id FROM workspaces WHERE id = ?', [ws.workspaceId]);
+                finalDeviceId = workspaces[0]?.active_device_id || null;
+            }
+
+            if (!finalDeviceId) {
+                if (connectionTimeout) {
+                    clearTimeout(connectionTimeout);
+                    connectionTimeout = null;
+                }
+                console.warn(`[WebSocket] Tidak ada device untuk workspace ${ws.workspaceId}`);
+                if (!checkIfClosed()) {
+                    try {
+                        ws.close(1008, 'No device configured');
+                    } catch (e) {
+                        // Ignore jika sudah closed
+                    }
+                }
+                return;
+            }
+
+            // Cek lagi apakah sudah di-close sebelum start monitoring
+            if (checkIfClosed()) return;
+
+            ws.deviceId = finalDeviceId;
+            const connectionKey = `ws-${ws.workspaceId}-${finalDeviceId}`;
+
+            let connection = getConnection(connectionKey);
+            if (!connection) {
+                // Cek lagi sebelum start monitoring (ini bisa lama)
+                if (checkIfClosed()) return;
+
+                await startWorkspaceMonitoring(ws.workspaceId, connectionKey, finalDeviceId);
+
+                // Cek lagi setelah start monitoring
+                if (checkIfClosed()) return;
+
+                connection = getConnection(connectionKey);
+            }
+
+            if (connection) {
+                connection.userCount = (connection.userCount || 0) + 1;
+            }
+
+            // Clear connection timeout setelah setup berhasil
             if (connectionTimeout) {
                 clearTimeout(connectionTimeout);
                 connectionTimeout = null;
             }
-        });
-    } catch (error) {
-        if (connectionTimeout) {
-            clearTimeout(connectionTimeout);
-            connectionTimeout = null;
+
+            // Final check sebelum log success
+            if (checkIfClosed()) return;
+
+            console.log(`[WebSocket] Koneksi berhasil di-setup untuk workspace ${ws.workspaceId}, device ${finalDeviceId}`);
+
+            ws.on('close', () => {
+                const currentConnection = getConnection(connectionKey);
+                if (currentConnection) {
+                    currentConnection.userCount--;
+                    if (currentConnection.userCount <= 0) {
+                        stopWorkspaceMonitoring(connectionKey);
+                    }
+                }
+            });
+
+            ws.on('error', (error) => {
+                console.error('[WebSocket] Error pada koneksi:', error);
+                if (connectionTimeout) {
+                    clearTimeout(connectionTimeout);
+                    connectionTimeout = null;
+                }
+            });
+        } catch (error) {
+            if (connectionTimeout) {
+                clearTimeout(connectionTimeout);
+                connectionTimeout = null;
+            }
+            console.error('[WebSocket] Error:', error);
+            // Hanya close jika connection masih dalam state yang valid
+            if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) {
+                try {
+                    ws.close(1011, 'Internal server error');
+                } catch (closeError) {
+                    console.error('[WebSocket] Error saat menutup koneksi:', closeError);
+                }
+            }
         }
-        console.error('[WebSocket] Error:', error);
-        // Hanya close jika connection masih dalam state yang valid
-        if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) {
-            try {
-                ws.close(1011, 'Internal server error');
-            } catch (closeError) {
-                console.error('[WebSocket] Error saat menutup koneksi:', closeError);
-    }
-        }
-    }
     })(); // End async IIFE
 });
 
@@ -645,60 +660,59 @@ process.on('unhandledRejection', (reason, promise) => {
 const PORT = process.env.PORT || 9494;
 server.listen(PORT, '0.0.0.0', () => {
     console.log(`Server backend berjalan di port ${PORT} dan terbuka untuk jaringan`);
-    
-    // Background logging - setiap 3 detik (untuk logging usage)
-    cron.schedule('*/3 * * * * *', logAllActiveWorkspaces);
-    
+
+    // Background logging - DISABLED as per user request to save storage
+    // cron.schedule('*/3 * * * * *', logAllActiveWorkspaces);
+
     // SLA & Notifikasi monitoring - setiap 3 detik (untuk update SLA dan notifikasi)
     // Berjalan terus menerus, tidak bergantung pada user login
     cron.schedule('*/3 * * * * *', () => {
         monitorSlaAndNotifications(broadcastToWorkspace);
     });
-    
-    // Dashboard snapshot - setiap 3 detik (untuk instant load dashboard)
-    // Berjalan terus menerus, tidak bergantung pada user login
-    cron.schedule('*/3 * * * * *', updateAllDashboardSnapshots);
-    
+
+    // Dashboard snapshot - DISABLED as per user request to save storage
+    // cron.schedule('*/3 * * * * *', updateAllDashboardSnapshots);
+
     // Downtime notifications - setiap 30 detik (cek downtime > 2 menit dan kirim notifikasi)
     // Berjalan terus menerus, tidak bergantung pada user login
     cron.schedule('*/30 * * * * *', () => {
         sendDowntimeNotifications(broadcastToWorkspace);
     });
-    
+
     // Daily reports - setiap hari jam 00:00
     cron.schedule('0 0 * * *', generateAndSendDailyReports, {
         timezone: "Asia/Jakarta"
     });
-    
+
     // Database cleanup - setiap hari jam 02:00 (menghapus log lama untuk menghemat storage dan memory)
     cron.schedule('0 2 * * *', async () => {
         try {
             console.log('[Cleanup] Memulai cleanup data lama...');
-            
+
             // Delete resource logs older than 30 days
             const resourceResult = await pool.query(
                 'DELETE FROM resource_logs WHERE timestamp < DATE_SUB(NOW(), INTERVAL 30 DAY)'
             );
             console.log(`[Cleanup] ✅ Dihapus ${resourceResult[0].affectedRows} resource log entries lama`);
-            
+
             // Delete downtime events older than 90 days
             const downtimeResult = await pool.query(
                 'DELETE FROM downtime_events WHERE start_time < DATE_SUB(NOW(), INTERVAL 90 DAY)'
             );
             console.log(`[Cleanup] ✅ Dihapus ${downtimeResult[0].affectedRows} downtime event entries lama`);
-            
+
             // Delete pppoe usage logs older than 90 days
             const usageResult = await pool.query(
                 'DELETE FROM pppoe_usage_logs WHERE usage_date < DATE_SUB(NOW(), INTERVAL 90 DAY)'
             );
             console.log(`[Cleanup] ✅ Dihapus ${usageResult[0].affectedRows} pppoe usage log entries lama`);
-            
+
             // Optimize tables to reclaim space
             await pool.query('OPTIMIZE TABLE resource_logs');
             await pool.query('OPTIMIZE TABLE downtime_events');
             await pool.query('OPTIMIZE TABLE pppoe_usage_logs');
             console.log('[Cleanup] ✅ Tabel berhasil di-optimize');
-            
+
             // Force garbage collection if available
             if (global.gc) {
                 const before = process.memoryUsage().heapUsed / 1024 / 1024;
@@ -706,22 +720,22 @@ server.listen(PORT, '0.0.0.0', () => {
                 const after = process.memoryUsage().heapUsed / 1024 / 1024;
                 console.log(`[Cleanup] ✅ Garbage collection selesai. Memory freed: ${(before - after).toFixed(2)} MB`);
             }
-            
+
         } catch (error) {
             console.error('[Cleanup] ❌ Error saat cleanup:', error.message);
         }
     }, {
         timezone: "Asia/Jakarta"
     });
-    
-    console.log('[Cron Jobs] Background logging: setiap 3 detik');
+
+    console.log('[Cron Jobs] Background logging: DISABLED');
     console.log('[Cron Jobs] SLA & Notifikasi monitoring: setiap 3 detik');
-    console.log('[Cron Jobs] Dashboard snapshot: setiap 3 detik');
+    console.log('[Cron Jobs] Dashboard snapshot: DISABLED');
     console.log('[Cron Jobs] Downtime notifications: setiap 30 detik');
     console.log('[Cron Jobs] Daily reports: setiap hari jam 00:00');
     console.log('[Cron Jobs] Database cleanup: setiap hari jam 02:00');
 });
 
-startWhatsApp(handleCommand).catch(err => {
+startWhatsApp().catch(err => {
     console.error("Gagal memulai WhatsApp Service:", err);
 });

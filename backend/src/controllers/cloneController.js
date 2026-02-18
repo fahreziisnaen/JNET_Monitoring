@@ -8,7 +8,7 @@ exports.generateCode = async (req, res) => {
     }
 
     const code = crypto.randomBytes(3).toString('hex').toUpperCase();
-    const expiresAt = new Date(Date.now() + 10 * 60 * 1000); 
+    const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
 
     try {
         await pool.query(
@@ -35,13 +35,14 @@ exports.useCode = async (req, res) => {
         if (invites.length === 0) {
             return res.status(400).json({ message: 'Kode tidak valid atau sudah kedaluwarsa.' });
         }
-        
+
         const workspaceIdToJoin = invites[0].workspace_id;
-        
-        await pool.query('UPDATE users SET workspace_id = ? WHERE id = ?', [workspaceIdToJoin, targetUserId]);
-        
+
+        // Update workspace_id and set role to 'user'
+        await pool.query('UPDATE users SET workspace_id = ?, role = ? WHERE id = ?', [workspaceIdToJoin, 'user', targetUserId]);
+
         await pool.query('DELETE FROM workspace_invites WHERE code = ?', [code]);
-        
+
         res.status(200).json({ message: 'Berhasil bergabung dengan workspace!' });
     } catch (error) {
         console.error("USE INVITE CODE ERROR:", error);

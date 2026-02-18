@@ -71,9 +71,10 @@ CREATE TABLE `users` (
   `workspace_id` int DEFAULT NULL,
   `username` varchar(50) NOT NULL,
   `display_name` varchar(100) DEFAULT NULL,
-  `password_hash` varchar(255) NOT NULL,
+   `password_hash` varchar(255) NOT NULL,
   `whatsapp_number` varchar(20) DEFAULT NULL,
   `profile_picture_url` varchar(255) DEFAULT NULL,
+  `role` enum('admin','user') DEFAULT 'admin',
   `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
   UNIQUE KEY `username` (`username`),
@@ -221,6 +222,8 @@ CREATE TABLE `pppoe_user_status` (
   `pppoe_user` varchar(100) NOT NULL,
   `is_active` tinyint(1) DEFAULT '0',
   `last_seen_active` datetime DEFAULT NULL,
+  `last_upload_bytes` BIGINT UNSIGNED DEFAULT 0,
+  `last_download_bytes` BIGINT UNSIGNED DEFAULT 0,
   PRIMARY KEY (`workspace_id`, `pppoe_user`),
   CONSTRAINT `fk_pppoe_status_workspace` FOREIGN KEY (`workspace_id`) REFERENCES `workspaces` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -330,6 +333,7 @@ INSERT INTO `users` (
     `password_hash`,
     `whatsapp_number`,
     `profile_picture_url`,
+    `role`,
     `created_at`
 )
 SELECT 
@@ -338,6 +342,7 @@ SELECT
     '$2b$10$L3bZT40YYqqb4RmADDKkkuvrj9Ok4ZOeEC2MMQyssNM9Ne/JB4cK6',
     NULL,
     '/public/uploads/avatars/default.jpg',
+    'admin',
     NOW()
 WHERE @admin_exists = 0;
 

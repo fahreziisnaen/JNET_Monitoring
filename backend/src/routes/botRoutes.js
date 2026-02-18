@@ -1,10 +1,13 @@
 const express = require('express');
 const router = express.Router();
 const botController = require('../controllers/botController');
-const { protect } = require('../middleware/authMiddleware');
+const { protect, authorizeAdmin } = require('../middleware/authMiddleware');
 
 router.use(protect);
-router.post('/toggle', botController.toggleBotStatus);
-router.post('/test-report', botController.sendTestReport);
+router.post('/toggle', authorizeAdmin, botController.toggleBotStatus);
+router.post('/request-reset', authorizeAdmin, botController.requestResetOtp);
+router.post('/reset-session', authorizeAdmin, botController.resetSession);
+router.get('/groups', botController.getGroups);
+router.get('/qr', botController.getQRStatus);
 
 module.exports = router;

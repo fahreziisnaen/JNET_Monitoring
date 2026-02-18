@@ -2,7 +2,7 @@ const pool = require('../config/database');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
-const { sendWhatsAppMessage } = require('../services/whatsappService');
+const { sendWhatsAppMessage, isWhatsAppConnected } = require('../services/whatsappService');
 
 const generateOtp = () => Math.floor(100000 + Math.random() * 900000).toString();
 
@@ -22,6 +22,41 @@ exports.requestRegisterOtp = async (req, res) => {
         const hashedPassword = await bcrypt.hash(password, salt);
         const otp = generateOtp();
         const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
+
+        // --- SMART BYPASS LOGIC ---
+        const authPath = require('path').join(process.cwd(), 'whatsapp_auth_info');
+        const hasSession = require('fs').existsSync(require('path').join(authPath, 'creds.json'));
+        const isActive = isWhatsAppConnected();
+
+        // Jika WA tidak aktif/error atau belum terdaftar
+        // Maka bypass OTP dan registrasi langsung
+        if (!isActive || !hasSession) {
+            console.log(`[Register Bypass] Melakukan bypass OTP untuk registrasi ${username} (WA Inactive/Unregistered)`);
+
+            const conn = await pool.getConnection();
+            await conn.beginTransaction();
+            try {
+                const [result] = await conn.query(
+                    'INSERT INTO users (username, display_name, password_hash, whatsapp_number, profile_picture_url) VALUES (?, ?, ?, ?, ?)',
+                    [username, displayName, hashedPassword, whatsappNumber, '/public/uploads/avatars/default.jpg']
+                );
+                const [wsResult] = await conn.query('INSERT INTO workspaces (name, owner_id) VALUES (?, ?)', [`${displayName}'s Workspace`, result.insertId]);
+                await conn.query('UPDATE users SET workspace_id = ? WHERE id = ?', [wsResult.insertId, result.insertId]);
+                await conn.commit();
+                conn.release();
+
+                return res.status(201).json({
+                    message: 'Registrasi berhasil (OTP Bypass)! Silakan login.',
+                    otpRequired: false
+                });
+            } catch (regError) {
+                await conn.rollback();
+                conn.release();
+                throw regError;
+            }
+        }
+        // --- END SMART BYPASS ---
+
         await pool.query(
             `INSERT INTO pending_registrations (whatsapp_number, username, display_name, password_hash, otp_code, expires_at) VALUES (?, ?, ?, ?, ?, ?)
              ON DUPLICATE KEY UPDATE username=VALUES(username), display_name=VALUES(display_name), password_hash=VALUES(password_hash), otp_code=VALUES(otp_code), expires_at=VALUES(expires_at)`,
@@ -30,11 +65,14 @@ exports.requestRegisterOtp = async (req, res) => {
 
         await sendWhatsAppMessage(whatsappNumber, `Halo ${displayName}! Kode verifikasi JNET Monitoring Anda adalah: *${otp}*. Kode ini berlaku selama 10 menit.`);
 
-        res.status(200).json({ message: 'OTP telah dikirim ke nomor WhatsApp Anda.' });
+        res.status(200).json({
+            message: 'OTP telah dikirim ke nomor WhatsApp Anda.',
+            otpRequired: true
+        });
 
     } catch (error) {
         console.error("REQUEST REGISTER OTP ERROR:", error);
-        res.status(500).json({ message: 'Gagal mengirim OTP.' });
+        res.status(500).json({ message: 'Gagal memproses registrasi. Silakan hubungi admin.' });
     }
 };
 
@@ -85,13 +123,13 @@ exports.verifyAndRegister = async (req, res) => {
                 sameSite: 'lax',
                 path: '/',
             };
-            
+
             res.cookie('token', token, cookieOptions);
-            
+
             // Juga set header Set-Cookie secara eksplisit
             const cookieString = `token=${token}; HttpOnly; Path=/; Max-Age=${7 * 24 * 60 * 60}; SameSite=Lax${process.env.NODE_ENV === 'production' ? '; Secure' : ''}`;
             res.setHeader('Set-Cookie', cookieString);
-            
+
             console.log(`[Registration] Token cookie set untuk user ${result.insertId}`);
             console.log(`[Registration] Cookie options:`, cookieOptions);
 
@@ -101,13 +139,13 @@ exports.verifyAndRegister = async (req, res) => {
             // Set default avatar jika tidak ada
             const userProfilePicture = user.profile_picture_url || '/public/uploads/avatars/default.jpg';
 
-            res.status(201).json({ 
-                message: 'Registrasi berhasil!', 
+            res.status(201).json({
+                message: 'Registrasi berhasil!',
                 userId: result.insertId,
-                user: { 
-                    id: user.id, 
-                    displayName: user.display_name, 
-                    profile_picture_url: userProfilePicture 
+                user: {
+                    id: user.id,
+                    displayName: user.display_name,
+                    profile_picture_url: userProfilePicture
                 },
                 token: token // Return token untuk fallback
             });

@@ -19,24 +19,30 @@ const formatPeakBandwidth = (bytesPerMinute) => {
 async function generateSingleReport(workspace) {
     console.log(`[Laporan Harian] Memproses workspace: ${workspace.name} (ID: ${workspace.id})`);
     try {
-        if (!workspace.main_interface) {
-            console.log(`[Laporan Harian] Melewatkan workspace ${workspace.id} karena tidak ada main_interface.`);
-            return;
-        }
 
-        // Traffic logs sudah dihapus, set nilai default
-        const totalDataUsed = '0 B';
-        const peakHour = 'N/A';
+        // Calculate usage for today
+        const todayStr = new Date().toISOString().slice(0, 10);
+        const [usageStats] = await pool.query(
+            'SELECT SUM(total_bytes) as total_usage FROM pppoe_usage_logs WHERE workspace_id = ? AND usage_date = ?',
+            [workspace.id, todayStr]
+        );
+
+        const totalDataUsed = formatDataSize(usageStats[0]?.total_usage || 0);
+        const peakHour = 'N/A'; // Peak hour tracking would require more granular logs
         const usersAtPeak = 0;
-        const peakBandwidth = '0 Mbps';
-        const [snapshotPppoe, snapshotHotspot] = await Promise.all([
-            runCommandForWorkspace(workspace.id, '/ppp/active/print').then(r => r.length),
-            runCommandForWorkspace(workspace.id, '/ip/hotspot/active/print').then(r => r.length)
-        ]);
+        const peakBandwidth = 'N/A';
+
+        // Ambil jumlah user aktif dari snapshot terbaru di database (lebih efisien)
+        const [snapshotPppoe] = await pool.query(
+            'SELECT SUM(JSON_LENGTH(pppoe_active)) as total_active FROM dashboard_snapshot WHERE workspace_id = ?',
+            [workspace.id]
+        );
+        const activeUsersCount = snapshotPppoe[0]?.total_active || 0;
+        const snapshotHotspot = 0; // Hotspot stats not yet fully implemented in snapshots
 
         const today = new Date();
         const date = today.toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long' });
-        
+
         let report = `*Laporan Harian JNET Monitoring* 📈\n_Ringkasan untuk ${date}_\n\n`;
         report += `Berikut adalah analisis jaringan untuk *${workspace.name}*:\n\n`;
         report += `*📊 Analisis 24 Jam Terakhir:*\n`;
@@ -44,7 +50,7 @@ async function generateSingleReport(workspace) {
         report += `> Puncak Bandwidth: *${peakBandwidth}* (sekitar jam ${peakHour})\n`;
         report += `> dengan *${usersAtPeak}* pengguna terhubung\n\n`;
         report += `*📊 Snapshot Saat Ini:*\n`;
-        report += `> PPPoE Aktif: *${snapshotPppoe}* pengguna\n`;
+        report += `> PPPoE Aktif: *${activeUsersCount}* pengguna\n`;
         report += `> Hotspot Aktif: *${snapshotHotspot}* pengguna\n\n`;
         report += `_Semoga harimu lancar!_\n- Bot Analis JNET Monitoring`;
 
@@ -64,12 +70,11 @@ async function generateAndSendDailyReports() {
     console.log(`[Scheduler] Memulai proses laporan harian...`);
     try {
         const [workspaces] = await pool.query(`
-            SELECT w.id, w.name, w.main_interface, w.whatsapp_group_id, u.whatsapp_number 
+            SELECT w.id, w.name, w.whatsapp_group_id, u.whatsapp_number 
             FROM workspaces w 
             LEFT JOIN users u ON w.owner_id = u.id 
             WHERE w.whatsapp_bot_enabled = TRUE 
-            AND (w.whatsapp_group_id IS NOT NULL OR u.whatsapp_number IS NOT NULL)`
-        );
+            AND (w.whatsapp_group_id IS NOT NULL OR u.whatsapp_number IS NOT NULL)`);
         for (const workspace of workspaces) {
             await generateSingleReport(workspace);
         }
