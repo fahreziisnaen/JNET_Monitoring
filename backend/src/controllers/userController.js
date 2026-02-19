@@ -2,14 +2,21 @@ const pool = require('../config/database');
 const bcrypt = require('bcryptjs');
 
 exports.updateUserDetails = async (req, res) => {
-    const { displayName } = req.body;
+    const { displayName, whatsapp_number } = req.body;
     if (!displayName) {
         return res.status(400).json({ message: 'Nama Display tidak boleh kosong.' });
     }
     try {
-        await pool.query('UPDATE users SET display_name = ? WHERE id = ?', [displayName, req.user.id]);
+        await pool.query(
+            'UPDATE users SET display_name = ?, whatsapp_number = ? WHERE id = ?',
+            [displayName, whatsapp_number || null, req.user.id]
+        );
         res.status(200).json({ message: 'Profil berhasil diperbarui.' });
     } catch (error) {
+        // Handle unique constraint error for whatsapp_number
+        if (error.code === 'ER_DUP_ENTRY') {
+            return res.status(400).json({ message: 'Nomor WhatsApp sudah digunakan oleh akun lain.' });
+        }
         res.status(500).json({ message: 'Server error.' });
     }
 };

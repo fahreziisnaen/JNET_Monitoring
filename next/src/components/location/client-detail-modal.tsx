@@ -61,12 +61,13 @@ interface ClientDetailModalProps {
   onClose: () => void;
   onEdit: (_client: Client) => void;
   onDelete: (_client: Client) => void;
+  onEditPath?: (_client: Client) => void;
 }
 
 const formatDate = (dateString: string) => {
-  return new Date(dateString).toLocaleString('id-ID', { 
-    dateStyle: 'medium', 
-    timeStyle: 'short' 
+  return new Date(dateString).toLocaleString('id-ID', {
+    dateStyle: 'medium',
+    timeStyle: 'short'
   });
 };
 
@@ -97,6 +98,7 @@ const ClientDetailModal = ({
   onClose,
   onEdit,
   onDelete,
+  onEditPath,
 }: ClientDetailModalProps) => {
   const { pppoeSecrets } = useMikrotik() || {};
   const [slaData, setSlaData] = useState<SlaData | null>(null);
@@ -109,12 +111,12 @@ const ClientDetailModal = ({
   // Get PPPoE details from WebSocket data (sama seperti management page)
   const pppoeDetails = useMemo(() => {
     if (!pppoeSecrets || !client) return null;
-    
+
     const secretsArray = Array.isArray(pppoeSecrets) ? pppoeSecrets : [];
     const secret = secretsArray.find((s: any) => s.name === client.pppoe_secret_name);
-    
+
     if (!secret) return null;
-    
+
     return {
       name: secret.name || client.pppoe_secret_name,
       profile: secret.profile || 'N/A',
@@ -129,20 +131,20 @@ const ClientDetailModal = ({
   // Fetch hanya SLA dan usage (tidak perlu fetch basic client data karena sudah ada di props)
   const fetchClientData = React.useCallback(async (isInitial = false) => {
     if (!client) return;
-    
+
     if (isInitial) {
       setLoading(true);
     } else {
       setIsRefreshing(true);
     }
-    
+
     try {
       // Fetch hanya SLA dan usage secara parallel (tidak perlu basic client data)
       const [slaRes, usageRes] = await Promise.all([
         apiFetch(`${apiUrl}/api/pppoe/secrets/${client.pppoe_secret_name}/sla`).catch(() => null),
         apiFetch(`${apiUrl}/api/pppoe/secrets/${client.pppoe_secret_name}/usage`).catch(() => null)
       ]);
-      
+
       // Process SLA data
       if (slaRes && slaRes.ok) {
         const sla = await slaRes.json();
@@ -151,13 +153,13 @@ const ClientDetailModal = ({
           recent_events: sla.recent_events || []
         });
       }
-      
+
       // Process usage data
       if (usageRes && usageRes.ok) {
         const usage = await usageRes.json();
         setUsageData(usage);
       }
-      
+
       setError(null);
     } catch (err: any) {
       console.error('Error fetching client details:', err);
@@ -176,12 +178,12 @@ const ClientDetailModal = ({
       setError(null);
       // Fetch initial data with loading (hanya SLA dan usage)
       fetchClientData(true);
-      
+
       // Set up polling for real-time updates (every 5 seconds untuk SLA/usage)
       const intervalId = setInterval(() => {
         fetchClientData(false);
       }, 5000);
-      
+
       return () => {
         clearInterval(intervalId);
       };
@@ -254,7 +256,7 @@ const ClientDetailModal = ({
                     <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
                       Informasi Client
                     </h3>
-                    
+
                     <div className="flex items-center gap-3">
                       <MapPin size={16} className="text-muted-foreground" />
                       <span className="text-sm">
@@ -357,12 +359,12 @@ const ClientDetailModal = ({
                       <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-4">
                         Informasi SLA & Usage
                       </h3>
-                      
+
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         {/* SLA Chart */}
                         <div className="flex flex-col items-center justify-center space-y-4">
                           <div className="relative h-32 w-32">
-                            <Doughnut 
+                            <Doughnut
                               data={{
                                 datasets: [{
                                   data: [
@@ -370,8 +372,8 @@ const ClientDetailModal = ({
                                     100 - parseFloat(slaData.sla_percentage || '0')
                                   ],
                                   backgroundColor: [
-                                    parseFloat(slaData.sla_percentage || '0') >= 99.9 ? '#22c55e' : 
-                                    parseFloat(slaData.sla_percentage || '0') >= 99.0 ? '#facc15' : '#ef4444',
+                                    parseFloat(slaData.sla_percentage || '0') >= 99.9 ? '#22c55e' :
+                                      parseFloat(slaData.sla_percentage || '0') >= 99.0 ? '#facc15' : '#ef4444',
                                     '#374151'
                                   ],
                                   borderColor: 'transparent',
@@ -395,7 +397,7 @@ const ClientDetailModal = ({
                               <span className="text-xs text-muted-foreground mt-1">Uptime</span>
                             </div>
                           </div>
-                          
+
                           {/* Usage Data */}
                           <div className="w-full pt-4 mt-2 border-t text-sm space-y-2">
                             <div className="flex justify-between items-center">
@@ -429,9 +431,8 @@ const ClientDetailModal = ({
                               slaData.recent_events.map((event, i) => (
                                 <div
                                   key={i}
-                                  className={`text-sm p-2 bg-background rounded-md flex justify-between items-center ${
-                                    event.is_ongoing ? 'border-l-4 border-l-red-500' : ''
-                                  }`}
+                                  className={`text-sm p-2 bg-background rounded-md flex justify-between items-center ${event.is_ongoing ? 'border-l-4 border-l-red-500' : ''
+                                    }`}
                                 >
                                   <div>
                                     <p className="font-semibold text-xs text-muted-foreground">

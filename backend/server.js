@@ -695,6 +695,15 @@ process.on('unhandledRejection', (reason, promise) => {
     console.error('[Unhandled Rejection] Unhandled promise rejection:', reason);
 });
 
+// Global error handler
+app.use((err, req, res, next) => {
+    console.error('[Global Error Handler]:', err);
+    res.status(err.status || 500).json({
+        message: err.message || 'Internal Server Error',
+        error: process.env.NODE_ENV === 'development' ? err : {}
+    });
+});
+
 const PORT = process.env.PORT || 9494;
 server.listen(PORT, '0.0.0.0', () => {
     console.log(`Server backend berjalan di port ${PORT} dan terbuka untuk jaringan`);

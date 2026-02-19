@@ -42,6 +42,9 @@ JNET Monitoring is a full-stack application designed to provide an intuitive and
   - Manage network assets (MikroTik, OLT, ODC, ODP) with coordinates
   - Filter assets by owner
   - View detailed asset information with connected clients/users
+  - **Asset Photos**: Upload and view physical photos (ODP, ODC, OLT) for field identification
+  - **FullScreen Preview**: Click thumbnails to view high-resolution, uncropped asset photos
+  - **Automated Cleanup**: System automatically deletes orphaned photo files when assets are updated or removed
 * **Client Management**:
   - Link PPPoE secrets to clients with location coordinates
   - Connect clients to ODP assets
@@ -61,7 +64,7 @@ JNET Monitoring is a full-stack application designed to provide an intuitive and
 * **Notifications**: 
   - WhatsApp notifications for downtime events (after 2 minutes)
   - Reconnect notifications (only if preceding downtime was >= 2 minutes)
-  - Toast notifications in web dashboard
+  - Toast notifications in web dashboard for downtime, reconnect, and **device connection status (WebSocket)**
   - WebSocket real-time updates
 
 ### 📄 Report Generation
@@ -109,12 +112,21 @@ JNET Monitoring is a full-stack application designed to provide an intuitive and
 ### 🔐 Security & Authentication
 * **Two-Factor Authentication**: OTP sent via WhatsApp for secure login
 * **JWT Authentication**: Secure token-based authentication
+* **Super Admin Role**: Restricted access for sensitive bot operations (toggle, reset, global management)
+* **Multi-User Super Admin**: Configurable list of Super Admin IDs via environment variables
 * **Session Management**: Track user sessions with device and location information
 * **Workspace-based Access**: Multi-user support with workspace isolation
 
 ### ⚙️ Settings & Configuration
 * **Device Management**: Add, edit, and manage multiple MikroTik devices
 * **Workspace Settings**: Configure active device, main interface, and WhatsApp bot
+* **Advanced Backup & Factory Reset**:
+  - **Full Backup**: Export entire database and avatars to a password-less ZIP
+  - **Restore**: Easy restoration from ZIP file
+  - **Factory Reset**: Wipe workspace-specific operational data with automatic backup download
+* **Super Admin Global Control**:
+  - Centralized WhatsApp group management for all workspaces
+  - Dynamic dropdown for choosing active WhatsApp groups
 * **WhatsApp Group ID**: Update group ID via dashboard (no manual database input needed)
 * **User Profile**: Manage profile picture and display name
 
@@ -322,14 +334,19 @@ NODE_ENV=production
 
 # CORS Origins - GANTI dengan domain production Anda
 CORS_ORIGINS=https://yourwebsite.com,http://yourwebsite.com
+
+# Super Admin IDs (comma-separated list of User IDs)
+SUPER_ADMIN_IDS=1
 ```
 
 4. **Create public folder structure:**
 ```bash
 mkdir -p public/uploads/avatars
+mkdir -p public/uploads/assets
 chmod -R 755 public
 chmod -R 644 public/uploads/avatars/*.jpg 2>/dev/null || true
 chmod -R 644 public/uploads/avatars/*.png 2>/dev/null || true
+chmod -R 644 public/uploads/assets/* 2>/dev/null || true
 
 # Upload default.jpg ke public/uploads/avatars/ jika belum ada
 # Atau download placeholder:
@@ -526,7 +543,8 @@ skydash-next-monitoring/
 │   │   └── utils/            # Utility functions
 │   ├── public/               # Static files (avatars, uploads)
 │   │   └── uploads/
-│   │       └── avatars/
+│   │       ├── avatars/      # User profile pictures
+│   │       └── assets/       # Asset photos (ODP, ODC, OLT)
 │   ├── database_schema.sql   # Database schema
 │   ├── database_seeder.sql    # Sample data seeder
 │   ├── migration_*.sql        # Database migrations
@@ -621,6 +639,11 @@ See `backend/database_schema.sql` for complete schema definition.
 * `DELETE /api/ip-pools/:id` - Delete IP pool
 * `POST /api/ip-pools/sync?deviceId=X` - Sync IP pools from MikroTik device
 
+### Backup & Maintenance
+* `GET /api/backup/export` - Export full system backup (ZIP)
+* `POST /api/backup/restore` - Restore system from backup ZIP
+* `POST /api/backup/factory-reset` - Perform workspace factory reset (with auto-backup)
+
 ### Import/Export
 * `POST /api/import/kml` - Import KML file
 * `GET /api/import/kml` - Export KML file
@@ -636,6 +659,8 @@ See `backend/database_schema.sql` for complete schema definition.
 * `PUT /api/workspaces/set-main-interface` - Set main interface
 * `PUT /api/workspaces/whatsapp-group-id` - Update WhatsApp Group ID
 * `GET /api/workspaces/interfaces-by-device` - Get interfaces for device
+* `GET /api/workspaces/all` - [Super Admin] List all workspaces in system
+* `PUT /api/workspaces/:workspaceId/whatsapp-group-id` - [Super Admin] Update Group ID for any workspace
 
 ### WebSocket
 * `ws://your-domain.com/ws` - WebSocket connection for real-time updates
@@ -647,15 +672,15 @@ See `backend/database_schema.sql` for complete schema definition.
 
 1. **Enable WhatsApp Bot:**
    - Go to Settings page in the dashboard
-   - Enable "Bot WhatsApp Interaktif"
+   - Enable "Bot WhatsApp Interaktif" (Requires Super Admin privileges)
    - The bot will generate a QR code for initial pairing
 
 2. **Configure Group ID:**
    - In a WhatsApp group, send `.getgroupid`
    - Copy the Group JID from the response (format: `120363424303016733@g.us`)
    - Go to Settings → Bot WhatsApp Interaktif
-   - Paste the Group ID and save
-   - All notifications will be sent to this group
+   - Select the desired group from the **Dropdown Menu** and save
+   - All notifications for that workspace will be sent to the selected group
 
 3. **Available Commands:**
    - See [Interactive WhatsApp Bot](#-interactive-whatsapp-bot) section above
@@ -678,6 +703,11 @@ See `backend/database_schema.sql` for complete schema definition.
 * High CPU usage
 * Device offline
 * Daily performance reports
+
+### Gateway Connection Alerts
+* **Trigger**: Mikrotik device connects or disconnects from the dashboard
+* **Channel**: Web Dashboard (Real-time Toasts)
+* **Content**: Device name and current connection status (Disconnected / Reconnected)
 
 ---
 

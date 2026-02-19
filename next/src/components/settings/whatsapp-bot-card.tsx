@@ -10,6 +10,9 @@ import { QRCodeSVG } from 'qrcode.react';
 
 const WhatsappBotCard = () => {
     const { user } = useAuth();
+    // Hanya Super Admin yang boleh mengubah status bot karena ini settingan global
+    const isSuperAdmin = !!user?.is_super_admin;
+    // Admin biasa boleh melihat status tapi tidak boleh mengubah
     const isAdmin = user?.role === 'admin';
     const [isEnabled, setIsEnabled] = useState(false);
     const [interfaces, setInterfaces] = useState<string[]>([]);
@@ -25,7 +28,14 @@ const WhatsappBotCard = () => {
     const [isConnected, setIsConnected] = useState(false);
     const [qrString, setQrString] = useState<string | null>(null);
     const [pollingQr, setPollingQr] = useState(false);
+
+    // Global Management States (Super Admin Only)
+    const [allWorkspaces, setAllWorkspaces] = useState<any[]>([]);
+    const [fetchingAllWs, setFetchingAllWs] = useState(false);
+    const [updatingWsId, setUpdatingWsId] = useState<number | null>(null);
+
     const apiUrl = process.env.NEXT_PUBLIC_API_BASE_URL;
+
     const fetchGroups = useCallback(async () => {
         setFetchingGroups(true);
         try {
@@ -40,6 +50,22 @@ const WhatsappBotCard = () => {
             setFetchingGroups(false);
         }
     }, [apiUrl]);
+
+    const fetchAllWorkspaces = useCallback(async () => {
+        if (!isSuperAdmin) return;
+        setFetchingAllWs(true);
+        try {
+            const res = await apiFetch(`${apiUrl}/api/workspaces/all`);
+            if (res.ok) {
+                const data = await res.json();
+                setAllWorkspaces(data);
+            }
+        } catch (error) {
+            console.error("Gagal ambil daftar semua workspace:", error);
+        } finally {
+            setFetchingAllWs(false);
+        }
+    }, [apiUrl, isSuperAdmin]);
 
     const fetchData = useCallback(async () => {
         setLoading(true);
@@ -56,6 +82,11 @@ const WhatsappBotCard = () => {
             // Jika bot aktif, coba ambil daftar grup
             if (workspaceData.whatsapp_bot_enabled) {
                 fetchGroups();
+            }
+
+            // Jika super admin, ambil semua workspace
+            if (isSuperAdmin) {
+                fetchAllWorkspaces();
             }
 
         } catch (error) {
@@ -129,10 +160,31 @@ const WhatsappBotCard = () => {
             if (!res.ok) throw new Error(data.message || 'Gagal menyimpan WhatsApp Group ID');
             setInitialGroupId(whatsappGroupId.trim());
             alert('WhatsApp Group ID berhasil disimpan!');
+
+            // Refresh global list if super admin
+            if (isSuperAdmin) fetchAllWorkspaces();
         } catch (error: any) {
             alert(`Gagal menyimpan WhatsApp Group ID: ${error.message}`);
         } finally {
             setSavingGroupId(false);
+        }
+    };
+
+    const handleAdminSaveGroupId = async (workspaceId: number, groupId: string) => {
+        setUpdatingWsId(workspaceId);
+        try {
+            const res = await apiFetch(`${apiUrl}/api/workspaces/${workspaceId}/whatsapp-group-id`, {
+                method: 'PUT',
+                body: JSON.stringify({ whatsapp_group_id: groupId.trim() || null })
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.message || 'Gagal memperbarui WhatsApp Group ID');
+            alert(`WhatsApp Group ID untuk workspace berhasil diperbarui!`);
+            fetchAllWorkspaces();
+        } catch (error: any) {
+            alert(`Gagal memperbarui: ${error.message}`);
+        } finally {
+            setUpdatingWsId(null);
         }
     };
 
@@ -199,17 +251,22 @@ const WhatsappBotCard = () => {
             <CardContent className="space-y-6">
                 <div className="flex items-center justify-between">
                     <p className="text-sm text-muted-foreground pr-4">Aktifkan bot untuk menerima notifikasi dan menjalankan perintah via WhatsApp.</p>
-                    <label className={`relative inline-flex items-center ${!isAdmin ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'}`}>
+                    <label className={`relative inline-flex items-center ${!isSuperAdmin ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'}`}>
                         <input
                             type="checkbox"
                             className="sr-only peer"
                             checked={isEnabled}
-                            onChange={(e) => isAdmin && handleToggle(e.target.checked)}
-                            disabled={!isAdmin}
+                            onChange={(e) => isSuperAdmin && handleToggle(e.target.checked)}
+                            disabled={!isSuperAdmin}
                         />
                         <div className="w-11 h-6 bg-secondary rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
                     </label>
                 </div>
+                {!isSuperAdmin && isAdmin && (
+                    <p className="text-[10px] text-destructive italic -mt-4">
+                        *Hanya Super Admin (Owner) yang dapat mengubah status bot utama.
+                    </p>
+                )}
 
                 {/* QR Section */}
                 {isEnabled && !isConnected && (
@@ -258,6 +315,69 @@ const WhatsappBotCard = () => {
                         </div>
                     </div>
                 </div>
+
+                {isSuperAdmin && allWorkspaces.length > 0 && (
+                    <div className="pt-6 border-t animate-in fade-in slide-in-from-bottom-2">
+                        <div className="flex items-center justify-between mb-4">
+                            <h4 className="text-sm font-semibold flex items-center gap-2">
+                                <Bot size={16} className="text-primary" /> Manajemen WhatsApp Per Workspace
+                            </h4>
+                            <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={fetchAllWorkspaces}
+                                disabled={fetchingAllWs}
+                                className="h-8 text-[10px] uppercase tracking-wider"
+                            >
+                                {fetchingAllWs ? <Loader2 size={12} className="mr-2 animate-spin" /> : null}
+                                Refresh List
+                            </Button>
+                        </div>
+                        <div className="grid gap-3">
+                            {allWorkspaces.map(ws => (
+                                <div key={ws.id} className="group flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 rounded-xl border bg-secondary/10 hover:bg-secondary/20 transition-colors">
+                                    <div className="space-y-0.5">
+                                        <div className="flex items-center gap-2">
+                                            <p className="font-bold text-sm">{ws.name}</p>
+                                            {ws.id === user?.workspace_id && <span className="text-[9px] bg-primary/20 text-primary px-1.5 py-0.5 rounded-full font-bold uppercase">Milik Anda</span>}
+                                        </div>
+                                        <p className="text-[10px] text-muted-foreground font-medium opacity-70">
+                                            Workspace ID: {ws.id}
+                                        </p>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                        <select
+                                            defaultValue={ws.whatsapp_group_id || ''}
+                                            className="flex-1 sm:w-64 text-xs p-2 rounded-lg border bg-background focus:ring-2 focus:ring-primary/30 outline-none transition-shadow"
+                                            id={`ws-input-${ws.id}`}
+                                            disabled={fetchingGroups || availableGroups.length === 0}
+                                        >
+                                            <option value="">-- Tanpa Grup --</option>
+                                            {availableGroups.map(group => (
+                                                <option key={group.id} value={group.id}>{group.subject}</option>
+                                            ))}
+                                            {ws.whatsapp_group_id && !availableGroups.find(g => g.id === ws.whatsapp_group_id) && (
+                                                <option value={ws.whatsapp_group_id}>{ws.whatsapp_group_id} (Grup Tersimpan)</option>
+                                            )}
+                                        </select>
+                                        <Button
+                                            variant="default"
+                                            size="sm"
+                                            className="h-9 px-3"
+                                            disabled={updatingWsId === ws.id}
+                                            onClick={() => {
+                                                const select = document.getElementById(`ws-input-${ws.id}`) as HTMLSelectElement;
+                                                handleAdminSaveGroupId(ws.id, select.value);
+                                            }}
+                                        >
+                                            {updatingWsId === ws.id ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+                                        </Button>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                )}
 
                 <div className="pt-6 border-t">
                     <div className="space-y-2">
@@ -310,7 +430,7 @@ const WhatsappBotCard = () => {
                     </div>
                 </div>
 
-                {isAdmin && (
+                {isSuperAdmin && (
                     <div className="pt-6 border-t">
                         <div className="rounded-lg border border-destructive/20 bg-destructive/5 p-4">
                             <h4 className="text-sm font-semibold text-destructive mb-1">Ganti Nomor / Reset Sesi</h4>

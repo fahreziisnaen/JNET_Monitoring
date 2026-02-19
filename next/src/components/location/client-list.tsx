@@ -16,6 +16,7 @@ export interface Client {
   isActive?: boolean; // Status aktif dari PPPoE
   created_at?: string;
   updated_at?: string;
+  connection_path?: string | [number, number][];
 }
 
 interface ClientListProps {
@@ -31,7 +32,7 @@ interface ClientListProps {
 const ClientList = ({ clients, loading, selectedClientId, onClientSelect, onClientView, searchQuery = '', onSearchChange }: ClientListProps) => {
   const filteredClients = React.useMemo(() => {
     if (!searchQuery.trim()) return clients;
-    
+
     const query = searchQuery.toLowerCase().trim();
     return clients.filter(client => {
       const nameMatch = client.pppoe_secret_name.toLowerCase().includes(query);
@@ -61,7 +62,7 @@ const ClientList = ({ clients, loading, selectedClientId, onClientSelect, onClie
       </CardHeader>
       <CardContent className="flex-grow overflow-y-auto p-1.5">
         {loading ? (
-          <div className="flex justify-center items-center h-full"><Loader2 className="animate-spin h-6 w-6 text-muted-foreground"/></div>
+          <div className="flex justify-center items-center h-full"><Loader2 className="animate-spin h-6 w-6 text-muted-foreground" /></div>
         ) : filteredClients.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full text-center p-4">
             <p className="text-muted-foreground text-sm">
@@ -74,7 +75,7 @@ const ClientList = ({ clients, loading, selectedClientId, onClientSelect, onClie
               const isSelected = selectedClientId === client.id;
               return (
                 <li key={client.id}>
-                  <button 
+                  <button
                     onClick={() => onClientSelect(client)}
                     onDoubleClick={() => onClientView?.(client)}
                     className={`w-full flex items-center gap-3 p-3 rounded-lg text-left transition-all duration-200 ${isSelected ? 'bg-primary/10 ring-2 ring-primary' : 'hover:bg-secondary'}`}

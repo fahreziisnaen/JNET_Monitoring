@@ -43,7 +43,7 @@ const MapFilterPanel = ({
   showDown = true,
   onToggleDown,
 }: MapFilterPanelProps) => {
-  const [isMinimized, setIsMinimized] = useState(false);
+  const [isMinimized, setIsMinimized] = useState(true);
   const allTypesVisible = assetTypes.every(t => visibleTypes.has(t.id));
   const allOwnersVisible = availableOwners.length > 0 && availableOwners.every(o => visibleOwners.has(o));
 

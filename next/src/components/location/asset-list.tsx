@@ -19,6 +19,8 @@ export interface Asset {
   owner_name?: string | null;
   totalUsers?: number;
   activeUsers?: number;
+  connection_path?: string | [number, number][];
+  photo_url?: string | null;
 }
 
 const getAssetStyle = (type: Asset['type']) => {
@@ -45,14 +47,14 @@ const AssetList = ({ assets, loading, selectedAssetId, onAssetSelect, onAssetVie
   // Filter assets berdasarkan search query
   const filteredAssets = React.useMemo(() => {
     if (!searchQuery.trim()) return assets;
-    
+
     const query = searchQuery.toLowerCase().trim();
     return assets.filter(asset => {
       const nameMatch = asset.name.toLowerCase().includes(query);
       const typeMatch = asset.type.toLowerCase().includes(query);
       const ownerMatch = asset.owner_name?.toLowerCase().includes(query);
       const descriptionMatch = asset.description?.toLowerCase().includes(query);
-      
+
       return nameMatch || typeMatch || ownerMatch || descriptionMatch;
     });
   }, [assets, searchQuery]);
@@ -78,7 +80,7 @@ const AssetList = ({ assets, loading, selectedAssetId, onAssetSelect, onAssetVie
       </CardHeader>
       <CardContent className="flex-grow overflow-y-auto p-1.5">
         {loading ? (
-          <div className="flex justify-center items-center h-full"><Loader2 className="animate-spin h-6 w-6 text-muted-foreground"/></div>
+          <div className="flex justify-center items-center h-full"><Loader2 className="animate-spin h-6 w-6 text-muted-foreground" /></div>
         ) : filteredAssets.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full text-center p-4">
             <p className="text-muted-foreground text-sm">
@@ -92,7 +94,7 @@ const AssetList = ({ assets, loading, selectedAssetId, onAssetSelect, onAssetVie
               const isSelected = selectedAssetId === asset.id;
               return (
                 <li key={asset.id}>
-                  <button 
+                  <button
                     onClick={() => onAssetSelect(asset)}
                     onDoubleClick={() => onAssetView?.(asset)}
                     className={`w-full flex items-center gap-3 p-3 rounded-lg text-left transition-all duration-200 ${isSelected ? 'bg-primary/10 ring-2 ring-primary' : 'hover:bg-secondary'}`}

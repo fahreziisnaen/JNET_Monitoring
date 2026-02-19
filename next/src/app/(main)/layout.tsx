@@ -1,6 +1,7 @@
 import React from 'react';
 import Header from "@/components/layout/header";
 import Navbar from "@/components/layout/navbar";
+import ConnectionStatusToast from "@/components/layout/connection-status-toast";
 
 export default function MainAppLayout({
   children,
@@ -13,6 +14,7 @@ export default function MainAppLayout({
       <main className="flex-1 overflow-y-auto pb-32">
         {children}
       </main>
+      <ConnectionStatusToast />
       <Navbar />
     </div>
   );

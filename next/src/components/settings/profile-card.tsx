@@ -11,6 +11,7 @@ import { apiFetch, getAuthToken } from '@/utils/api';
 const ProfileCard = () => {
   const { user, loading: authLoading, checkLoggedIn } = useAuth();
   const [displayName, setDisplayName] = useState('');
+  const [whatsappNumber, setWhatsappNumber] = useState('');
   const [loading, setLoading] = useState(false);
   const [isCropModalOpen, setIsCropModalOpen] = useState(false);
   const [imageToCrop, setImageToCrop] = useState<string | null>(null);
@@ -19,7 +20,8 @@ const ProfileCard = () => {
 
   useEffect(() => {
     if (user) {
-      setDisplayName(user.displayName || '');
+      setDisplayName(user.display_name || user.displayName || '');
+      setWhatsappNumber(user.whatsapp_number || '');
     }
   }, [user]);
 
@@ -28,7 +30,10 @@ const ProfileCard = () => {
     try {
       const res = await apiFetch(`${apiUrl}/api/user/details`, {
         method: 'PUT',
-        body: JSON.stringify({ displayName })
+        body: JSON.stringify({
+          displayName,
+          whatsapp_number: whatsappNumber
+        })
       });
       if (!res.ok) throw new Error("Gagal menyimpan profil.");
       await checkLoggedIn();
@@ -39,7 +44,7 @@ const ProfileCard = () => {
       setLoading(false);
     }
   };
-  
+
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
@@ -53,7 +58,7 @@ const ProfileCard = () => {
 
     if (e.currentTarget) e.currentTarget.value = "";
   };
-  
+
   const handleSaveAvatar = async (croppedBlob: Blob) => {
     setLoading(true);
     const formData = new FormData();
@@ -67,7 +72,7 @@ const ProfileCard = () => {
       if (token) {
         headers['Authorization'] = `Bearer ${token}`;
       }
-      
+
       await fetch(`${apiUrl}/api/user/avatar`, {
         method: 'POST',
         credentials: 'include',
@@ -76,7 +81,7 @@ const ProfileCard = () => {
       });
       await checkLoggedIn();
       alert("Avatar berhasil diubah!");
-    } catch(err) {
+    } catch (err) {
       alert("Gagal mengubah avatar.");
     } finally {
       setLoading(false);
@@ -85,50 +90,89 @@ const ProfileCard = () => {
     }
   };
 
-  if (authLoading) return <Card className="p-6 flex justify-center"><Loader2 className="animate-spin"/></Card>;
+  if (authLoading) return <Card className="p-6 flex justify-center"><Loader2 className="animate-spin" /></Card>;
 
   return (
     <>
-        <Card>
-          <CardHeader><CardTitle>Profil & Tampilan</CardTitle></CardHeader>
-          <CardContent className="space-y-6">
-            <div className="flex items-center gap-6">
-              <div className="relative">
-                <img 
-                  src={user?.profile_picture_url ? `${apiUrl}${user.profile_picture_url}?t=${new Date().getTime()}` : `${apiUrl}/public/uploads/avatars/default.jpg`} 
-                  alt="Avatar" 
-                  className="w-24 h-24 rounded-full object-cover border-4 border-card shadow-md"
-                  onError={(e) => {
-                    // Fallback jika gambar tidak ditemukan
-                    const target = e.target as HTMLImageElement;
-                    target.src = `${apiUrl}/public/uploads/avatars/default.jpg`;
-                  }}
-                />
-                <input type="file" ref={fileInputRef} onChange={handleFileSelect} className="hidden" accept="image/*"/>
-                <button onClick={() => fileInputRef.current?.click()} className="absolute bottom-0 right-0 bg-primary hover:bg-primary/90 text-primary-foreground p-2 rounded-full shadow-md border-2 border-card">
-                  <Camera size={16} />
-                </button>
-              </div>
-              <div className="flex-grow">
-                <label htmlFor="displayName" className="block text-sm font-medium mb-1 text-muted-foreground">Nama Display</label>
-                <input id="displayName" type="text" value={displayName} onChange={(e) => setDisplayName(e.target.value)} className="w-full p-2 rounded-md bg-input border-border focus:outline-none focus:ring-2 focus:ring-ring"/>
+      <Card>
+        <CardHeader><CardTitle>Profil & Tampilan</CardTitle></CardHeader>
+        <CardContent className="space-y-6">
+          <div className="flex items-center gap-6">
+            <div className="relative">
+              <img
+                src={user?.profile_picture_url ? `${apiUrl}${user.profile_picture_url}?t=${new Date().getTime()}` : `${apiUrl}/public/uploads/avatars/default.jpg`}
+                alt="Avatar"
+                className="w-24 h-24 rounded-full object-cover border-4 border-card shadow-md"
+                onError={(e) => {
+                  // Fallback jika gambar tidak ditemukan
+                  const target = e.target as HTMLImageElement;
+                  target.src = `${apiUrl}/public/uploads/avatars/default.jpg`;
+                }}
+              />
+              <input type="file" ref={fileInputRef} onChange={handleFileSelect} className="hidden" accept="image/*" />
+              <button onClick={() => fileInputRef.current?.click()} className="absolute bottom-0 right-0 bg-primary hover:bg-primary/90 text-primary-foreground p-2 rounded-full shadow-md border-2 border-card">
+                <Camera size={16} />
+              </button>
+            </div>
+            <div className="flex-grow space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label htmlFor="username" className="block text-sm font-medium text-muted-foreground">Username</label>
+                  </div>
+                  <input
+                    id="username"
+                    type="text"
+                    value={user?.username || ''}
+                    readOnly
+                    className="w-full p-2 rounded-md bg-secondary border-border focus:outline-none cursor-not-allowed opacity-70"
+                  />
+                </div>
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label htmlFor="displayName" className="block text-sm font-medium text-muted-foreground">Nama Display</label>
+                  </div>
+                  <input
+                    id="displayName"
+                    type="text"
+                    value={displayName}
+                    onChange={(e) => setDisplayName(e.target.value)}
+                    className="w-full p-2 rounded-md bg-input border-border focus:outline-none focus:ring-2 focus:ring-ring"
+                    placeholder="Masukkan nama tampilan"
+                  />
+                </div>
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label htmlFor="whatsappNumber" className="block text-sm font-medium text-muted-foreground">Nomor WhatsApp</label>
+                    <span className="text-[10px] font-mono bg-secondary px-2 py-0.5 rounded text-muted-foreground">ID: {user?.id}</span>
+                  </div>
+                  <input
+                    id="whatsappNumber"
+                    type="text"
+                    value={whatsappNumber}
+                    onChange={(e) => setWhatsappNumber(e.target.value)}
+                    className="w-full p-2 rounded-md bg-input border-border focus:outline-none focus:ring-2 focus:ring-ring"
+                    placeholder="Contoh: 628123456789"
+                  />
+                </div>
               </div>
             </div>
-            <div className="text-right">
-              <Button onClick={handleSaveProfile} disabled={loading}>
-                {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin"/>} Simpan Profil
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-        
-        <AvatarCropModal
-            isOpen={isCropModalOpen}
-            onClose={() => setIsCropModalOpen(false)}
-            onSave={handleSaveAvatar}
-            imageSrc={imageToCrop}
-            isSaving={loading}
-        />
+          </div>
+          <div className="text-right">
+            <Button onClick={handleSaveProfile} disabled={loading}>
+              {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />} Simpan Profil
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      <AvatarCropModal
+        isOpen={isCropModalOpen}
+        onClose={() => setIsCropModalOpen(false)}
+        onSave={handleSaveAvatar}
+        imageSrc={imageToCrop}
+        isSaving={loading}
+      />
     </>
   );
 };

@@ -12,7 +12,7 @@ interface LegendItem {
 }
 
 const MapLegend = () => {
-  const [isMinimized, setIsMinimized] = useState(false);
+  const [isMinimized, setIsMinimized] = useState(true);
 
   const equipmentItems: LegendItem[] = [
     { label: 'Mikrotik', icon: <div className="w-4 h-4 rounded-full" style={{ backgroundColor: '#06b6d4' }} /> },
@@ -56,7 +56,7 @@ const MapLegend = () => {
               ))}
             </div>
           </div>
-          
+
           <div>
             <h4 className="text-xs font-semibold mb-2 text-muted-foreground">Line Status</h4>
             <div className="space-y-1.5">

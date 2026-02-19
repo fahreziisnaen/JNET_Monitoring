@@ -24,6 +24,8 @@ const AddAssetModal = ({ isOpen, onClose, onSuccess }: AddAssetModalProps) => {
     connectionStatus: "terpasang",
     ownerName: "",
   });
+  const [selectedPhoto, setSelectedPhoto] = useState<File | null>(null);
+  const [photoPreview, setPhotoPreview] = useState<string | null>(null);
   const [availableParents, setAvailableParents] = useState<Asset[]>([]);
   const [assetOwners, setAssetOwners] = useState<{ id: number; name: string }[]>([]);
   const [loading, setLoading] = useState(false);
@@ -56,6 +58,8 @@ const AddAssetModal = ({ isOpen, onClose, onSuccess }: AddAssetModalProps) => {
       setOwnerInputMode('dropdown');
       setOwnerSearchQuery("");
       setIsOwnerDropdownOpen(false);
+      setSelectedPhoto(null);
+      setPhotoPreview(null);
       // Load available parents untuk type default
       loadAvailableParents("ODP");
       // Load asset owners
@@ -99,9 +103,9 @@ const AddAssetModal = ({ isOpen, onClose, onSuccess }: AddAssetModalProps) => {
       const apiUrl = process.env.NEXT_PUBLIC_API_BASE_URL;
       const res = await apiFetch(`${apiUrl}/api/assets`);
       if (!res.ok) return;
-      
+
       const allAssets: Asset[] = await res.json();
-      
+
       // Filter berdasarkan hierarchy: Mikrotik -> OLT -> ODC -> ODP (ODP bisa parent dari ODP juga)
       let parentTypes: string[] = [];
       if (assetType === 'ODP') {
@@ -112,11 +116,11 @@ const AddAssetModal = ({ isOpen, onClose, onSuccess }: AddAssetModalProps) => {
         parentTypes = ['Mikrotik'];
       }
       // Mikrotik tidak punya parent
-      
+
       const parents = allAssets.filter(
         asset => parentTypes.includes(asset.type)
       );
-      
+
       setAvailableParents(parents);
     } catch (err) {
       console.error('Gagal memuat parent assets:', err);
@@ -131,14 +135,14 @@ const AddAssetModal = ({ isOpen, onClose, onSuccess }: AddAssetModalProps) => {
     const newValue = e.target.value;
     setFormData((prev) => {
       const updated = { ...prev, [e.target.name]: newValue };
-      
+
       // Jika type berubah, reset parent dan reload available parents
       if (e.target.name === 'type') {
         updated.parentAssetId = '';
         setParentSearchQuery('');
         loadAvailableParents(newValue);
       }
-      
+
       return updated;
     });
   };
@@ -186,7 +190,7 @@ const AddAssetModal = ({ isOpen, onClose, onSuccess }: AddAssetModalProps) => {
 
     const latitude = parseFloat(coordsParts[0]);
     const longitude = parseFloat(coordsParts[1]);
-    
+
     if (isNaN(latitude) || isNaN(longitude) || latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180) {
       setError('Koordinat tidak valid. Silakan masukkan ulang. Latitude: -90 sampai 90, Longitude: -180 sampai 180.');
       // Reset koordinat agar user bisa memasukkan ulang
@@ -195,21 +199,23 @@ const AddAssetModal = ({ isOpen, onClose, onSuccess }: AddAssetModalProps) => {
       return;
     }
 
-    const submissionData = {
-      ...formData,
-      latitude,
-      longitude,
-      splitter_count: parseInt(formData.splitterCount) || null,
-      parent_asset_id: formData.parentAssetId ? parseInt(formData.parentAssetId) : null,
-      connection_status: formData.connectionStatus,
-      owner_name: formData.ownerName || null,
-    };
+    const formDataToSubmit = new FormData();
+    formDataToSubmit.append('name', formData.name);
+    formDataToSubmit.append('type', formData.type);
+    formDataToSubmit.append('latitude', String(latitude));
+    formDataToSubmit.append('longitude', String(longitude));
+    formDataToSubmit.append('description', formData.description || "");
+    if (formData.splitterCount) formDataToSubmit.append('splitter_count', formData.splitterCount);
+    if (formData.parentAssetId) formDataToSubmit.append('parent_asset_id', formData.parentAssetId);
+    formDataToSubmit.append('connection_status', formData.connectionStatus);
+    if (formData.ownerName) formDataToSubmit.append('owner_name', formData.ownerName);
+    if (selectedPhoto) formDataToSubmit.append('photo', selectedPhoto);
 
     try {
       const apiUrl = process.env.NEXT_PUBLIC_API_BASE_URL;
       const res = await apiFetch(`${apiUrl}/api/assets`, {
         method: "POST",
-        body: JSON.stringify(submissionData),
+        body: formDataToSubmit,
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.message || "Gagal menambah aset");
@@ -291,7 +297,7 @@ const AddAssetModal = ({ isOpen, onClose, onSuccess }: AddAssetModalProps) => {
                       <option value="ODP">ODP</option>
                     </select>
                   </div>
-                {(formData.type === "ODC" || formData.type === "ODP") && (
+                  {(formData.type === "ODC" || formData.type === "ODP") && (
                     <div>
                       <label
                         htmlFor="splitterCount"
@@ -346,6 +352,47 @@ const AddAssetModal = ({ isOpen, onClose, onSuccess }: AddAssetModalProps) => {
                     className="w-full p-2 rounded-md bg-input"
                   ></textarea>
                 </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1">
+                    Foto Aset (Optional)
+                  </label>
+                  <div className="flex flex-col gap-2">
+                    {photoPreview && (
+                      <div className="relative w-full h-40 bg-secondary rounded-lg overflow-hidden border">
+                        <img
+                          src={photoPreview}
+                          alt="Preview"
+                          className="w-full h-full object-cover"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSelectedPhoto(null);
+                            setPhotoPreview(null);
+                          }}
+                          className="absolute top-2 right-2 p-1 bg-red-500 text-white rounded-full hover:bg-red-600 shadow-lg"
+                        >
+                          <X size={14} />
+                        </button>
+                      </div>
+                    )}
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) {
+                          setSelectedPhoto(file);
+                          setPhotoPreview(URL.createObjectURL(file));
+                        }
+                      }}
+                      className="text-xs text-muted-foreground file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-xs file:font-semibold file:bg-primary file:text-primary-foreground hover:file:bg-primary/90"
+                    />
+                    <p className="text-[10px] text-muted-foreground italic">
+                      * Disarankan mengunggah foto fisik perangkat (ODP/ODC/OLT) untuk memudahkan teknisi.
+                    </p>
+                  </div>
+                </div>
                 <div ref={ownerDropdownRef} className="relative">
                   <label
                     htmlFor="ownerName"
@@ -398,7 +445,7 @@ const AddAssetModal = ({ isOpen, onClose, onSuccess }: AddAssetModalProps) => {
                           placeholder="Cari atau pilih pemilik asset..."
                           className="w-full p-2 pl-10 pr-10 rounded-md bg-input border border-input"
                         />
-                        <ChevronDown 
+                        <ChevronDown
                           className="absolute right-3 top-1/2 transform -translate-y-1/2 text-muted-foreground cursor-pointer"
                           size={16}
                           onClick={() => setIsOwnerDropdownOpen(!isOwnerDropdownOpen)}
@@ -432,10 +479,10 @@ const AddAssetModal = ({ isOpen, onClose, onSuccess }: AddAssetModalProps) => {
                               {assetOwners.filter((owner) =>
                                 owner.name.toLowerCase().includes(ownerSearchQuery.toLowerCase())
                               ).length === 0 && ownerSearchQuery && (
-                                <div className="p-2 text-muted-foreground text-sm">
-                                  Tidak ada pemilik ditemukan untuk "{ownerSearchQuery}"
-                                </div>
-                              )}
+                                  <div className="p-2 text-muted-foreground text-sm">
+                                    Tidak ada pemilik ditemukan untuk "{ownerSearchQuery}"
+                                  </div>
+                                )}
                             </>
                           )}
                         </div>
@@ -453,7 +500,7 @@ const AddAssetModal = ({ isOpen, onClose, onSuccess }: AddAssetModalProps) => {
                     />
                   )}
                   <p className="text-xs text-muted-foreground mt-1">
-                    {ownerInputMode === 'dropdown' 
+                    {ownerInputMode === 'dropdown'
                       ? 'Pilih pemilik asset dari daftar atau cari'
                       : 'Masukkan nama pemilik asset baru (akan tersimpan ke database)'}
                   </p>
@@ -469,21 +516,21 @@ const AddAssetModal = ({ isOpen, onClose, onSuccess }: AddAssetModalProps) => {
                     <div className="relative">
                       <div className="relative">
                         <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground" size={16} />
-                      <input
-                        type="text"
-                        value={parentSearchQuery}
-                        onChange={(e) => {
-                          setParentSearchQuery(e.target.value);
-                          setIsParentDropdownOpen(true);
-                          if (!e.target.value) {
-                            setFormData((prev) => ({ ...prev, parentAssetId: "" }));
-                          }
-                        }}
-                        onFocus={() => setIsParentDropdownOpen(true)}
-                        placeholder={selectedParent ? `${selectedParent.name} (${selectedParent.type})` : "Cari parent asset..."}
-                        className="w-full p-2 pl-10 pr-10 rounded-md bg-input border border-input"
-                      />
-                        <ChevronDown 
+                        <input
+                          type="text"
+                          value={parentSearchQuery}
+                          onChange={(e) => {
+                            setParentSearchQuery(e.target.value);
+                            setIsParentDropdownOpen(true);
+                            if (!e.target.value) {
+                              setFormData((prev) => ({ ...prev, parentAssetId: "" }));
+                            }
+                          }}
+                          onFocus={() => setIsParentDropdownOpen(true)}
+                          placeholder={selectedParent ? `${selectedParent.name} (${selectedParent.type})` : "Cari parent asset..."}
+                          className="w-full p-2 pl-10 pr-10 rounded-md bg-input border border-input"
+                        />
+                        <ChevronDown
                           className="absolute right-3 top-1/2 transform -translate-y-1/2 text-muted-foreground cursor-pointer"
                           size={16}
                           onClick={() => setIsParentDropdownOpen(!isParentDropdownOpen)}
@@ -505,9 +552,8 @@ const AddAssetModal = ({ isOpen, onClose, onSuccess }: AddAssetModalProps) => {
                             filteredParents.map((parent) => (
                               <div
                                 key={parent.id}
-                                className={`px-3 py-2 cursor-pointer hover:bg-secondary text-sm ${
-                                  String(parent.id) === formData.parentAssetId ? "bg-secondary" : ""
-                                }`}
+                                className={`px-3 py-2 cursor-pointer hover:bg-secondary text-sm ${String(parent.id) === formData.parentAssetId ? "bg-secondary" : ""
+                                  }`}
                                 onClick={() => {
                                   setFormData((prev) => ({ ...prev, parentAssetId: String(parent.id) }));
                                   setParentSearchQuery(parent.name);
@@ -527,7 +573,7 @@ const AddAssetModal = ({ isOpen, onClose, onSuccess }: AddAssetModalProps) => {
                       )}
                     </div>
                     <p className="text-xs text-muted-foreground mt-1">
-                      {formData.type === "ODP" 
+                      {formData.type === "ODP"
                         ? "Pilih ODC atau ODP sebagai parent untuk membuat garis koneksi"
                         : formData.type === "ODC"
                           ? "Pilih OLT sebagai parent untuk membuat garis koneksi ke ODC"

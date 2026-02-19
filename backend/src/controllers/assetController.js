@@ -1,6 +1,8 @@
 const pool = require('../config/database');
 const { runCommandForWorkspace } = require('../utils/apiConnection');
 const bcrypt = require('bcryptjs');
+const fs = require('fs');
+const path = require('path');
 
 exports.getAssets = async (req, res) => {
     const workspaceId = req.user.workspace_id;
@@ -10,18 +12,18 @@ exports.getAssets = async (req, res) => {
 
     try {
         let [assets] = await pool.query(
-            `SELECT id, name, type, latitude, longitude, description, splitter_count, parent_asset_id, connection_status, owner_name
+            `SELECT id, name, type, latitude, longitude, description, splitter_count, parent_asset_id, connection_status, connection_path, owner_name, photo_url
              FROM network_assets
              WHERE workspace_id = ? 
              ORDER BY FIELD(type, 'Mikrotik', 'OLT', 'ODC', 'ODP'), LENGTH(name), name ASC`,
             [workspaceId]
         );
-        
+
         // Pastikan assets adalah array
         if (!Array.isArray(assets)) {
             assets = [];
         }
-        
+
         // Untuk setiap ODP, hitung jumlah user aktif dan total user
         // Set default values dulu untuk semua assets
         if (Array.isArray(assets)) {
@@ -31,10 +33,10 @@ exports.getAssets = async (req, res) => {
                     asset.activeUsers = 0;
                 }
             });
-            
+
             // Ambil semua ODP IDs
             const odpIds = assets.filter(a => a && a.type === 'ODP' && a.id).map(a => a.id);
-            
+
             if (odpIds.length > 0) {
                 try {
                     // Batch query untuk total users per ODP
@@ -46,7 +48,7 @@ exports.getAssets = async (req, res) => {
                          GROUP BY asset_id`,
                         [...odpIds, workspaceId]
                     );
-                    
+
                     // Map total users ke assets
                     const totalUsersMap = new Map();
                     if (Array.isArray(totalUsersResult)) {
@@ -56,7 +58,7 @@ exports.getAssets = async (req, res) => {
                             }
                         });
                     }
-                    
+
                     // Batch query untuk active users per ODP
                     try {
                         const [activeUsersResult] = await pool.query(
@@ -67,7 +69,7 @@ exports.getAssets = async (req, res) => {
                              GROUP BY ouc.asset_id`,
                             [...odpIds, workspaceId, workspaceId]
                         );
-                        
+
                         // Map active users ke assets
                         const activeUsersMap = new Map();
                         if (Array.isArray(activeUsersResult)) {
@@ -77,7 +79,7 @@ exports.getAssets = async (req, res) => {
                                 }
                             });
                         }
-                        
+
                         // Update assets dengan user counts
                         assets.forEach(asset => {
                             if (asset && asset.type === 'ODP' && asset.id) {
@@ -101,7 +103,7 @@ exports.getAssets = async (req, res) => {
                 }
             }
         }
-        
+
         res.status(200).json(assets || []);
     } catch (error) {
         // Jika error karena kolom tidak ada (owner_id atau parent_asset_id), coba query tanpa kolom tersebut
@@ -110,8 +112,8 @@ exports.getAssets = async (req, res) => {
                 // Coba query tanpa owner_name dan parent_asset_id jika kolom belum ada
                 const [assets] = await pool.query(
                     `SELECT id, name, type, latitude, longitude, description, splitter_count, 
-                     NULL as parent_asset_id, 'terpasang' as connection_status,
-                     NULL as owner_name
+                     NULL as parent_asset_id, 'terpasang' as connection_status, NULL as connection_path,
+                     NULL as owner_name, NULL as photo_url
                      FROM network_assets 
                      WHERE workspace_id = ? 
                      ORDER BY FIELD(type, 'Mikrotik', 'OLT', 'ODC', 'ODP'), LENGTH(name), name ASC`,
@@ -133,7 +135,7 @@ exports.getAssets = async (req, res) => {
 
 exports.addAsset = async (req, res) => {
     const workspaceId = req.user.workspace_id;
-    const { name, type, latitude, longitude, description, splitter_count, connection_status, owner_name } = req.body;
+    const { name, type, latitude, longitude, description, splitter_count, connection_status, connection_path, owner_name } = req.body;
 
     if (!name || !type || !latitude || !longitude) {
         return res.status(400).json({ message: 'Field yang wajib diisi tidak boleh kosong.' });
@@ -143,9 +145,15 @@ exports.addAsset = async (req, res) => {
         // Simpan owner_name langsung ke network_assets
         const finalOwnerName = owner_name && owner_name.trim() ? owner_name.trim() : null;
 
+        // Handle photo upload
+        let photoUrl = null;
+        if (req.file) {
+            photoUrl = `/public/uploads/assets/${req.file.filename}`;
+        }
+
         const [result] = await pool.query(
-            'INSERT INTO network_assets (workspace_id, owner_name, name, type, latitude, longitude, description, splitter_count, connection_status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
-            [workspaceId, finalOwnerName, name, type, latitude, longitude, description || null, splitter_count || null, connection_status || 'terpasang']
+            'INSERT INTO network_assets (workspace_id, owner_name, name, type, latitude, longitude, description, splitter_count, connection_status, connection_path, photo_url) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+            [workspaceId, finalOwnerName, name, type, latitude, longitude, description || null, splitter_count || null, connection_status || 'terpasang', connection_path || null, photoUrl]
         );
         res.status(201).json({ message: 'Aset berhasil ditambahkan', assetId: result.insertId });
     } catch (error) {
@@ -157,54 +165,79 @@ exports.addAsset = async (req, res) => {
 exports.updateAsset = async (req, res) => {
     const { id } = req.params;
     const workspaceId = req.user.workspace_id;
-    const { name, type, latitude, longitude, description, splitter_count, parent_asset_id, connection_status, owner_name } = req.body;
-
-    if (!name || !type || !latitude || !longitude) {
-        return res.status(400).json({ message: 'Field yang wajib diisi tidak boleh kosong.' });
-    }
+    const { name, type, latitude, longitude, description, splitter_count, parent_asset_id, connection_status, connection_path, owner_name } = req.body;
 
     try {
-        // Validasi parent_asset_id jika di-set
-        if (parent_asset_id) {
-            // Cek apakah parent asset ada dan milik workspace yang sama
-            const [parentAssets] = await pool.query(
-                'SELECT id, type FROM network_assets WHERE id = ? AND workspace_id = ?',
-                [parent_asset_id, workspaceId]
-            );
-            
-            if (parentAssets.length === 0) {
-                return res.status(400).json({ message: 'Parent asset tidak ditemukan.' });
+        const updates = [];
+        const values = [];
+
+        if (name !== undefined) {
+            updates.push('name = ?');
+            values.push(name);
+        }
+        if (type !== undefined) {
+            updates.push('type = ?');
+            values.push(type);
+        }
+        if (latitude !== undefined) {
+            updates.push('latitude = ?');
+            values.push(latitude);
+        }
+        if (longitude !== undefined) {
+            updates.push('longitude = ?');
+            values.push(longitude);
+        }
+        if (description !== undefined) {
+            updates.push('description = ?');
+            values.push(description || null);
+        }
+        if (splitter_count !== undefined) {
+            updates.push('splitter_count = ?');
+            values.push(splitter_count || null);
+        }
+        if (parent_asset_id !== undefined) {
+            updates.push('parent_asset_id = ?');
+            values.push(parent_asset_id || null);
+        }
+        if (connection_status !== undefined) {
+            updates.push('connection_status = ?');
+            values.push(connection_status || 'terpasang');
+        }
+        if (connection_path !== undefined) {
+            updates.push('connection_path = ?');
+            values.push(connection_path || null);
+        }
+        if (owner_name !== undefined) {
+            const finalOwnerName = owner_name && owner_name.trim() ? owner_name.trim() : null;
+            updates.push('owner_name = ?');
+            values.push(finalOwnerName);
+        }
+        if (req.file) {
+            // Delete old photo if exists
+            const [oldAsset] = await pool.query('SELECT photo_url FROM network_assets WHERE id = ? AND workspace_id = ?', [id, workspaceId]);
+            if (oldAsset.length > 0 && oldAsset[0].photo_url) {
+                const oldPath = path.join(__dirname, '../../', oldAsset[0].photo_url);
+                if (fs.existsSync(oldPath)) {
+                    fs.unlinkSync(oldPath);
+                }
             }
-            
-            const parentType = parentAssets[0].type;
-            
-            // Validasi hierarchy baru: Mikrotik -> OLT -> ODC -> ODP (ODP bisa parent dari ODP juga)
-            if (type === 'ODP' && parentType !== 'ODC' && parentType !== 'ODP') {
-                return res.status(400).json({ message: 'ODP hanya bisa memiliki parent ODC atau ODP.' });
-            }
-            if (type === 'ODC' && parentType !== 'OLT') {
-                return res.status(400).json({ message: 'ODC hanya bisa memiliki parent OLT.' });
-            }
-            if (type === 'OLT' && parentType !== 'Mikrotik') {
-                return res.status(400).json({ message: 'OLT hanya bisa memiliki parent Mikrotik.' });
-            }
-            if (type === 'Mikrotik') {
-                return res.status(400).json({ message: 'Mikrotik tidak bisa memiliki parent.' });
-            }
-            
-            // Cegah circular reference (asset tidak bisa jadi parent dirinya sendiri)
-            if (parseInt(parent_asset_id) === parseInt(id)) {
-                return res.status(400).json({ message: 'Asset tidak bisa menjadi parent dirinya sendiri.' });
-            }
+
+            const photoUrl = `/public/uploads/assets/${req.file.filename}`;
+            updates.push('photo_url = ?');
+            values.push(photoUrl);
         }
 
-        // Simpan owner_name langsung ke network_assets
-        const finalOwnerName = owner_name && owner_name.trim() ? owner_name.trim() : null;
-        
+        if (updates.length === 0) {
+            return res.status(400).json({ message: 'Tidak ada data yang diperbarui.' });
+        }
+
+        // Jalankan query dinamis
+        values.push(id, workspaceId);
         const [result] = await pool.query(
-            'UPDATE network_assets SET name = ?, type = ?, latitude = ?, longitude = ?, description = ?, splitter_count = ?, parent_asset_id = ?, connection_status = ?, owner_name = ? WHERE id = ? AND workspace_id = ?',
-            [name, type, latitude, longitude, description || null, splitter_count || null, parent_asset_id || null, connection_status || 'terpasang', finalOwnerName, id, workspaceId]
+            `UPDATE network_assets SET ${updates.join(', ')} WHERE id = ? AND workspace_id = ?`,
+            values
         );
+
         if (result.affectedRows === 0) {
             return res.status(404).json({ message: 'Aset tidak ditemukan atau Anda tidak punya izin.' });
         }
@@ -220,6 +253,9 @@ exports.deleteAsset = async (req, res) => {
     const workspaceId = req.user.workspace_id;
 
     try {
+        // Get photo_url before deleting
+        const [asset] = await pool.query('SELECT photo_url FROM network_assets WHERE id = ? AND workspace_id = ?', [id, workspaceId]);
+
         const [result] = await pool.query(
             'DELETE FROM network_assets WHERE id = ? AND workspace_id = ?',
             [id, workspaceId]
@@ -228,6 +264,15 @@ exports.deleteAsset = async (req, res) => {
         if (result.affectedRows === 0) {
             return res.status(404).json({ message: 'Aset tidak ditemukan atau Anda tidak punya izin.' });
         }
+
+        // Delete photo file if exists
+        if (asset.length > 0 && asset[0].photo_url) {
+            const photoPath = path.join(__dirname, '../../', asset[0].photo_url);
+            if (fs.existsSync(photoPath)) {
+                fs.unlinkSync(photoPath);
+            }
+        }
+
         res.status(200).json({ message: 'Aset berhasil dihapus.' });
     } catch (error) {
         console.error("DELETE ASSET ERROR:", error);
@@ -239,16 +284,26 @@ exports.deleteAllAssets = async (req, res) => {
     const workspaceId = req.user.workspace_id;
 
     try {
+        // Get all photos before deleting
+        const [assets] = await pool.query('SELECT photo_url FROM network_assets WHERE workspace_id = ? AND photo_url IS NOT NULL', [workspaceId]);
+
         // Hapus semua aset milik workspace ini
-        // Foreign key constraint akan otomatis menghapus:
-        // - odp_user_connections yang terkait
-        // - child assets (karena parent_asset_id akan di-set NULL atau dihapus)
         const [result] = await pool.query(
             'DELETE FROM network_assets WHERE workspace_id = ?',
             [workspaceId]
         );
 
-        res.status(200).json({ 
+        // Delete photo files
+        assets.forEach(asset => {
+            if (asset.photo_url) {
+                const photoPath = path.join(__dirname, '../../', asset.photo_url);
+                if (fs.existsSync(photoPath)) {
+                    fs.unlinkSync(photoPath);
+                }
+            }
+        });
+
+        res.status(200).json({
             message: `Berhasil menghapus ${result.affectedRows} aset.`,
             deletedCount: result.affectedRows
         });
@@ -296,7 +351,7 @@ exports.addAssetConnection = async (req, res) => {
     if (!pppoe_secret_name) {
         return res.status(400).json({ message: 'Nama pengguna PPPoE wajib diisi.' });
     }
-    
+
     try {
         // Validasi bahwa asset adalah ODP
         const [assets] = await pool.query(
@@ -309,7 +364,7 @@ exports.addAssetConnection = async (req, res) => {
         if (assets[0].type !== 'ODP') {
             return res.status(400).json({ message: 'Hanya ODP yang bisa memiliki koneksi user.' });
         }
-        
+
         // Cek apakah connection sudah ada
         const [existing] = await pool.query(
             'SELECT id FROM odp_user_connections WHERE workspace_id = ? AND asset_id = ? AND pppoe_secret_name = ?',
@@ -318,13 +373,13 @@ exports.addAssetConnection = async (req, res) => {
         if (existing.length > 0) {
             return res.status(409).json({ message: `User ${pppoe_secret_name} sudah terhubung ke ODP ini.` });
         }
-        
+
         // Cek apakah user sudah terhubung ke ODP lain
         const [existingConnections] = await pool.query(
             'SELECT asset_id FROM odp_user_connections WHERE workspace_id = ? AND pppoe_secret_name = ?',
             [workspace_id, pppoe_secret_name]
         );
-        
+
         // Jika sudah terhubung ke ODP lain, hapus connection lama
         if (existingConnections.length > 0) {
             const oldOdpId = existingConnections[0].asset_id;
@@ -332,26 +387,26 @@ exports.addAssetConnection = async (req, res) => {
                 'DELETE FROM odp_user_connections WHERE workspace_id = ? AND asset_id = ? AND pppoe_secret_name = ?',
                 [workspace_id, oldOdpId, pppoe_secret_name]
             );
-            
+
             // Update clients.odp_asset_id untuk ODP lama menjadi NULL
             await pool.query(
                 'UPDATE clients SET odp_asset_id = NULL WHERE workspace_id = ? AND pppoe_secret_name = ? AND odp_asset_id = ?',
                 [workspace_id, pppoe_secret_name, oldOdpId]
             );
         }
-        
+
         // Tambahkan connection baru ke odp_user_connections
         const [result] = await pool.query(
             'INSERT INTO odp_user_connections (workspace_id, asset_id, pppoe_secret_name) VALUES (?, ?, ?)',
             [workspace_id, assetId, pppoe_secret_name]
         );
-        
+
         // Sync: Update clients.odp_asset_id jika client sudah ada
         await pool.query(
             'UPDATE clients SET odp_asset_id = ? WHERE workspace_id = ? AND pppoe_secret_name = ?',
             [assetId, workspace_id, pppoe_secret_name]
         );
-        
+
         res.status(201).json({ message: 'Koneksi berhasil ditambahkan', connectionId: result.insertId });
     } catch (error) {
         console.error("ADD ASSET CONNECTION ERROR:", error);
@@ -392,13 +447,13 @@ exports.getAssetOwners = async (req, res) => {
              ORDER BY owner_name ASC`,
             [workspaceId]
         );
-        
+
         // Format response untuk kompatibilitas dengan frontend (menambahkan id dummy)
         const formattedOwners = owners.map((owner, index) => ({
             id: index + 1, // Dummy ID karena tidak ada ID sebenarnya
             name: owner.name
         }));
-        
+
         console.log(`[GET ASSET OWNERS] Found ${formattedOwners.length} owners for workspace ${workspaceId}:`, formattedOwners);
         res.json(formattedOwners);
     } catch (error) {
@@ -423,22 +478,22 @@ exports.addAssetOwner = async (req, res) => {
             'SELECT DISTINCT owner_name FROM network_assets WHERE workspace_id = ? AND owner_name = ?',
             [workspaceId, name.trim()]
         );
-        
+
         if (existing.length > 0) {
             // Owner sudah ada di database
-            return res.json({ 
-                message: 'Pemilik asset sudah ada', 
+            return res.json({
+                message: 'Pemilik asset sudah ada',
                 id: 1, // Dummy ID
-                name: name.trim() 
+                name: name.trim()
             });
         }
-        
+
         // Owner belum ada, tapi tidak perlu insert karena akan otomatis tersimpan saat asset dibuat/diupdate
         // Kita hanya return success untuk kompatibilitas dengan frontend
-        res.status(201).json({ 
-            message: 'Pemilik asset siap digunakan', 
+        res.status(201).json({
+            message: 'Pemilik asset siap digunakan',
             id: 1, // Dummy ID
-            name: name.trim() 
+            name: name.trim()
         });
     } catch (error) {
         console.error("ADD ASSET OWNER ERROR:", error);
@@ -500,7 +555,7 @@ exports.addWorkspaceUser = async (req, res) => {
             [username, displayName, passwordHash, whatsappNumber || null, avatarUrl, workspaceId]
         );
 
-        res.status(201).json({ 
+        res.status(201).json({
             message: 'Pengguna berhasil ditambahkan ke workspace.',
             userId: result.insertId
         });
