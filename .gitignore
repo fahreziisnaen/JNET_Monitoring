@@ -3,9 +3,11 @@
 /backend/whatsapp_auth_info
 /backend/.env
 /backend/public/uploads/assets/*
+/backend/package-lock.json
 
 # frontend
 /next/node_modules
+/next/package-lock.json
 /next/.pnp
 /next/.pnp.*
 /next/.yarn/*
