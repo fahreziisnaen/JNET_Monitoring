@@ -17,6 +17,8 @@ import {
   Calendar,
   Server,
   ArrowDown,
+  Camera,
+  Image as ImageIcon
 } from 'lucide-react';
 import { Doughnut } from 'react-chartjs-2';
 import { Chart as ChartJS, ArcElement, Tooltip } from 'chart.js';
@@ -106,9 +108,10 @@ const ClientDetailModal = ({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [showFullImage, setShowFullImage] = useState(false);
   const apiUrl = process.env.NEXT_PUBLIC_API_BASE_URL;
 
-  // Get PPPoE details from WebSocket data (sama seperti management page)
+  // Get PPPoE details from WebSocket data
   const pppoeDetails = useMemo(() => {
     if (!pppoeSecrets || !client) return null;
 
@@ -128,7 +131,7 @@ const ClientDetailModal = ({
     };
   }, [pppoeSecrets, client]);
 
-  // Fetch hanya SLA dan usage (tidak perlu fetch basic client data karena sudah ada di props)
+  // Fetch SLA and usage data
   const fetchClientData = React.useCallback(async (isInitial = false) => {
     if (!client) return;
 
@@ -139,13 +142,11 @@ const ClientDetailModal = ({
     }
 
     try {
-      // Fetch hanya SLA dan usage secara parallel (tidak perlu basic client data)
       const [slaRes, usageRes] = await Promise.all([
         apiFetch(`${apiUrl}/api/pppoe/secrets/${client.pppoe_secret_name}/sla`).catch(() => null),
         apiFetch(`${apiUrl}/api/pppoe/secrets/${client.pppoe_secret_name}/usage`).catch(() => null)
       ]);
 
-      // Process SLA data
       if (slaRes && slaRes.ok) {
         const sla = await slaRes.json();
         setSlaData({
@@ -154,7 +155,6 @@ const ClientDetailModal = ({
         });
       }
 
-      // Process usage data
       if (usageRes && usageRes.ok) {
         const usage = await usageRes.json();
         setUsageData(usage);
@@ -176,10 +176,8 @@ const ClientDetailModal = ({
   useEffect(() => {
     if (client && isOpen) {
       setError(null);
-      // Fetch initial data with loading (hanya SLA dan usage)
       fetchClientData(true);
 
-      // Set up polling for real-time updates (every 5 seconds untuk SLA/usage)
       const intervalId = setInterval(() => {
         fetchClientData(false);
       }, 5000);
@@ -188,7 +186,6 @@ const ClientDetailModal = ({
         clearInterval(intervalId);
       };
     } else {
-      // Reset when modal closes
       setSlaData(null);
       setUsageData(null);
       setLoading(true);
@@ -251,36 +248,61 @@ const ClientDetailModal = ({
                 </div>
               ) : (
                 <>
-                  {/* Client Info */}
-                  <div className="space-y-3">
-                    <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
-                      Informasi Client
-                    </h3>
-
-                    <div className="flex items-center gap-3">
-                      <MapPin size={16} className="text-muted-foreground" />
-                      <span className="text-sm">
-                        Koordinat:{' '}
-                        <a
-                          href={`https://www.google.com/maps?q=${lat},${lon}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="font-mono text-xs text-primary hover:underline"
-                        >
-                          {lat.toFixed(5)}, {lon.toFixed(5)}
-                        </a>
-                      </span>
-                    </div>
-
-                    {odpName && (
-                      <div className="flex items-center gap-3">
-                        <Network size={16} className="text-muted-foreground" />
-                        <span className="text-sm">
-                          ODP:{' '}
-                          <span className="font-semibold">{odpName}</span>
-                        </span>
+                  {/* Client Image & Basic Info */}
+                  <div className="flex flex-col sm:flex-row gap-6 items-start">
+                    {client.photo_url ? (
+                      <div
+                        className="relative w-full sm:w-32 aspect-square rounded-xl overflow-hidden border shadow-sm group cursor-pointer active:scale-95 transition-transform flex-shrink-0"
+                        onClick={() => setShowFullImage(true)}
+                      >
+                        <img
+                          src={`${apiUrl}${client.photo_url}`}
+                          alt={client.pppoe_secret_name}
+                          className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
+                        />
+                        <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                          <span className="text-[10px] text-white font-medium bg-black/50 px-2 py-1 rounded-full">Klik Zoom</span>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="w-full sm:w-32 aspect-square rounded-xl bg-secondary flex items-center justify-center text-muted-foreground border border-dashed border-muted-foreground/25 flex-shrink-0">
+                        <div className="flex flex-col items-center gap-1">
+                          <User size={32} />
+                          <span className="text-[10px] uppercase font-bold tracking-tighter opacity-50">No Photo</span>
+                        </div>
                       </div>
                     )}
+
+                    <div className="flex-1 space-y-3 w-full">
+                      <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
+                        Informasi Client
+                      </h3>
+
+                      <div className="flex items-center gap-3">
+                        <MapPin size={16} className="text-muted-foreground" />
+                        <span className="text-sm">
+                          Koordinat:{' '}
+                          <a
+                            href={`https://www.google.com/maps?q=${lat},${lon}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="font-mono text-xs text-primary hover:underline"
+                          >
+                            {lat.toFixed(5)}, {lon.toFixed(5)}
+                          </a>
+                        </span>
+                      </div>
+
+                      {odpName && (
+                        <div className="flex items-center gap-3">
+                          <Network size={16} className="text-muted-foreground" />
+                          <span className="text-sm">
+                            ODP:{' '}
+                            <span className="font-semibold">{odpName}</span>
+                          </span>
+                        </div>
+                      )}
+                    </div>
                   </div>
 
                   {/* PPPoE Details */}
@@ -498,9 +520,44 @@ const ClientDetailModal = ({
           </motion.div>
         </motion.div>
       )}
+
+      {/* Full Screen Image Modal */}
+      <AnimatePresence>
+        {showFullImage && client?.photo_url && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black/95 z-[2000] flex items-center justify-center p-4 md:p-10"
+            onClick={() => setShowFullImage(false)}
+          >
+            <motion.button
+              initial={{ scale: 0, rotate: -90 }}
+              animate={{ scale: 1, rotate: 0 }}
+              className="absolute top-6 right-6 p-2 bg-white/10 hover:bg-white/20 rounded-full text-white z-50 backdrop-blur-md"
+              onClick={() => setShowFullImage(false)}
+            >
+              <X size={24} />
+            </motion.button>
+            <motion.div
+              layoutId={`client-photo-${client.id}`}
+              className="relative max-w-5xl w-full h-full flex items-center justify-center"
+            >
+              <img
+                src={`${apiUrl}${client.photo_url}`}
+                alt={client.pppoe_secret_name}
+                className="max-w-full max-h-full object-contain rounded-lg shadow-2xl"
+              />
+              <div className="absolute bottom-[-40px] left-0 right-0 text-center">
+                <p className="text-white font-medium">{client.pppoe_secret_name}</p>
+                <p className="text-white/50 text-xs">Client Photo</p>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </AnimatePresence>
   );
 };
 
 export default ClientDetailModal;
-

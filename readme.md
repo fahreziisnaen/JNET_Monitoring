@@ -343,10 +343,12 @@ SUPER_ADMIN_IDS=1
 ```bash
 mkdir -p public/uploads/avatars
 mkdir -p public/uploads/assets
+mkdir -p public/uploads/clients
 chmod -R 755 public
 chmod -R 644 public/uploads/avatars/*.jpg 2>/dev/null || true
 chmod -R 644 public/uploads/avatars/*.png 2>/dev/null || true
 chmod -R 644 public/uploads/assets/* 2>/dev/null || true
+chmod -R 644 public/uploads/clients/* 2>/dev/null || true
 
 # Upload default.jpg ke public/uploads/avatars/ jika belum ada
 # Atau download placeholder:
@@ -543,8 +545,9 @@ skydash-next-monitoring/
 │   │   └── utils/            # Utility functions
 │   ├── public/               # Static files (avatars, uploads)
 │   │   └── uploads/
-│   │       ├── avatars/      # User profile pictures
-│   │       └── assets/       # Asset photos (ODP, ODC, OLT)
+│   │       ├── avatars/      # Foto User (Profile)
+│   │       ├── assets/       # Foto Network Assets
+│   │       └── clients/      # Foto Profil Client
 │   ├── database_schema.sql   # Database schema
 │   ├── database_seeder.sql    # Sample data seeder
 │   ├── migration_*.sql        # Database migrations

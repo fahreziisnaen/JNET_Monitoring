@@ -17,6 +17,7 @@ export interface Client {
   created_at?: string;
   updated_at?: string;
   connection_path?: string | [number, number][];
+  photo_url?: string | null;
 }
 
 interface ClientListProps {

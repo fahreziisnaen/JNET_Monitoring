@@ -1,5 +1,7 @@
 const pool = require('../config/database');
 const { runCommandForWorkspace } = require('../utils/apiConnection');
+const path = require('path');
+const fs = require('fs');
 
 // Helper function untuk parse rate dari MikroTik (format: "1M", "500K", "1000000", dll)
 function parseRateToBps(rateStr) {
@@ -35,7 +37,7 @@ exports.getClients = async (req, res) => {
         // Ambil clients dengan status aktif dari pppoe_user_status dan owner ODP
         const [clients] = await pool.query(
             `SELECT c.id, c.workspace_id, c.pppoe_secret_name, c.latitude, c.longitude, 
-                    c.odp_asset_id, c.connection_path, c.created_at, c.updated_at,
+                    c.odp_asset_id, c.connection_path, c.photo_url, c.created_at, c.updated_at,
                     na.name as odp_name,
                     na.owner_name as odp_owner_name,
                     COALESCE(pus.is_active, FALSE) as isActive
@@ -78,7 +80,7 @@ exports.getClients = async (req, res) => {
         try {
             const [clients] = await pool.query(
                 `SELECT c.id, c.workspace_id, c.pppoe_secret_name, c.latitude, c.longitude, 
-                        c.odp_asset_id, c.created_at, c.updated_at,
+                        c.odp_asset_id, c.photo_url, c.created_at, c.updated_at,
                         na.name as odp_name,
                         FALSE as isActive
                  FROM clients c
@@ -150,6 +152,7 @@ exports.getUnlinkedPppoeSecrets = async (req, res) => {
 exports.createClient = async (req, res) => {
     const { workspace_id } = req.user;
     const { pppoe_secret_name, latitude, longitude, odp_asset_id, connection_path } = req.body;
+    const photo_url = req.file ? `/public/uploads/clients/${req.file.filename}` : null;
 
     if (!pppoe_secret_name || latitude === undefined || longitude === undefined) {
         return res.status(400).json({ message: 'pppoe_secret_name, latitude, dan longitude wajib diisi.' });
@@ -209,8 +212,8 @@ exports.createClient = async (req, res) => {
 
         // Insert client
         const [result] = await pool.query(
-            'INSERT INTO clients (workspace_id, pppoe_secret_name, latitude, longitude, odp_asset_id, connection_path) VALUES (?, ?, ?, ?, ?, ?)',
-            [workspace_id, pppoe_secret_name, lat, lon, odp_asset_id || null, connection_path || null]
+            'INSERT INTO clients (workspace_id, pppoe_secret_name, latitude, longitude, odp_asset_id, connection_path, photo_url) VALUES (?, ?, ?, ?, ?, ?, ?)',
+            [workspace_id, pppoe_secret_name, lat, lon, odp_asset_id || null, connection_path || null, photo_url]
         );
 
         // If linked to ODP, also add to odp_user_connections if not exists
@@ -239,7 +242,13 @@ exports.createClient = async (req, res) => {
 exports.updateClient = async (req, res) => {
     const { id } = req.params;
     const { workspace_id } = req.user;
-    const { latitude, longitude, odp_asset_id, connection_path } = req.body;
+    const { latitude, longitude, connection_path, pppoe_secret_name } = req.body;
+    let { odp_asset_id } = req.body;
+
+    // Convert empty string to null for odp_asset_id
+    if (odp_asset_id === '' || odp_asset_id === 'null' || odp_asset_id === 'undefined') {
+        odp_asset_id = null;
+    }
 
     // Validate coordinates if provided
     let lat = null;
@@ -339,6 +348,32 @@ exports.updateClient = async (req, res) => {
             values.push(connection_path);
         }
 
+        if (req.file) {
+            // Delete old photo if exists
+            const [oldClient] = await pool.query('SELECT photo_url FROM clients WHERE id = ? AND workspace_id = ?', [id, workspace_id]);
+            if (oldClient.length > 0 && oldClient[0].photo_url) {
+                const oldPath = path.join(__dirname, '../../', oldClient[0].photo_url);
+                if (fs.existsSync(oldPath)) {
+                    fs.unlinkSync(oldPath);
+                }
+            }
+
+            const photoUrl = `/public/uploads/clients/${req.file.filename}`;
+            updates.push('photo_url = ?');
+            values.push(photoUrl);
+        } else if (req.body.deletePhoto === 'true') {
+            // Handle explicit delete request
+            const [oldClient] = await pool.query('SELECT photo_url FROM clients WHERE id = ? AND workspace_id = ?', [id, workspace_id]);
+            if (oldClient.length > 0 && oldClient[0].photo_url) {
+                const oldPath = path.join(__dirname, '../../', oldClient[0].photo_url);
+                if (fs.existsSync(oldPath)) {
+                    fs.unlinkSync(oldPath);
+                }
+            }
+            updates.push('photo_url = ?');
+            values.push(null);
+        }
+
         if (updates.length === 0) {
             return res.status(400).json({ message: 'Tidak ada data yang diupdate.' });
         }
@@ -383,6 +418,15 @@ exports.deleteClient = async (req, res) => {
             );
         }
 
+        // Get photo_url before deleting to remove file
+        const [clientPhoto] = await pool.query('SELECT photo_url FROM clients WHERE id = ? AND workspace_id = ?', [id, workspace_id]);
+        if (clientPhoto.length > 0 && clientPhoto[0].photo_url) {
+            const photoPath = path.join(__dirname, '../../', clientPhoto[0].photo_url);
+            if (fs.existsSync(photoPath)) {
+                fs.unlinkSync(photoPath);
+            }
+        }
+
         // Delete client
         await pool.query(
             'DELETE FROM clients WHERE id = ? AND workspace_id = ?',
@@ -408,7 +452,7 @@ exports.getClient = async (req, res) => {
     try {
         const [clients] = await pool.query(
             `SELECT c.id, c.workspace_id, c.pppoe_secret_name, c.latitude, c.longitude, 
-                    c.odp_asset_id, c.connection_path, c.created_at, c.updated_at,
+                    c.odp_asset_id, c.connection_path, c.photo_url, c.created_at, c.updated_at,
                     na.name as odp_name,
                     na.owner_name as odp_owner_name
              FROM clients c

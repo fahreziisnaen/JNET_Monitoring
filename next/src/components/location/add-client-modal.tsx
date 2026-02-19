@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from '@/components/motion';
-import { X, User, Loader2, MapPin, Unlink } from 'lucide-react';
+import { X, User, Loader2, MapPin, Unlink, Camera, Image as ImageIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { apiFetch } from '@/utils/api';
@@ -34,6 +34,8 @@ const AddClientModal = ({ isOpen, onClose, onSuccess, assets = [] }: AddClientMo
   const [odpAssetId, setOdpAssetId] = useState<string>('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [selectedPhoto, setSelectedPhoto] = useState<File | null>(null);
+  const [photoPreview, setPhotoPreview] = useState<string | null>(null);
   const apiUrl = process.env.NEXT_PUBLIC_API_BASE_URL;
 
   // Filter assets untuk hanya ODP
@@ -48,7 +50,7 @@ const AddClientModal = ({ isOpen, onClose, onSuccess, assets = [] }: AddClientMo
       setLatitude('');
       setLongitude('');
       setOdpAssetId('');
-      
+
       // Fetch existing clients sekali, lalu build kedua data dari hasilnya
       apiFetch(`${apiUrl}/api/clients`)
         .then(res => {
@@ -58,7 +60,7 @@ const AddClientModal = ({ isOpen, onClose, onSuccess, assets = [] }: AddClientMo
         .then(clients => {
           // Build existing clients list
           const clientNames = clients.map((c: any) => c.pppoe_secret_name);
-          
+
           // Build ODP connections map dari clients yang punya odp_asset_id
           const connectionsMap = new Map<string, number>();
           clients.forEach((client: any) => {
@@ -66,7 +68,7 @@ const AddClientModal = ({ isOpen, onClose, onSuccess, assets = [] }: AddClientMo
               connectionsMap.set(client.pppoe_secret_name, client.odp_asset_id);
             }
           });
-          
+
           setExistingClients(clientNames);
           setOdpConnections(connectionsMap);
           setLoading(false);
@@ -97,7 +99,7 @@ const AddClientModal = ({ isOpen, onClose, onSuccess, assets = [] }: AddClientMo
         };
         return secretData;
       });
-    
+
     // Sort berdasarkan nama A-Z
     return filtered.sort((a, b) => a.name.toLowerCase().localeCompare(b.name.toLowerCase()));
   }, [pppoeSecrets, selectedDeviceId, existingClients, odpConnections]);
@@ -135,15 +137,21 @@ const AddClientModal = ({ isOpen, onClose, onSuccess, assets = [] }: AddClientMo
     setLoading(true);
     setError('');
 
+    const formDataToSubmit = new FormData();
+    formDataToSubmit.append('pppoe_secret_name', selectedSecret);
+    formDataToSubmit.append('latitude', lat.toString());
+    formDataToSubmit.append('longitude', lon.toString());
+    if (odpAssetId) {
+      formDataToSubmit.append('odp_asset_id', odpAssetId);
+    }
+    if (selectedPhoto) {
+      formDataToSubmit.append('photo', selectedPhoto);
+    }
+
     try {
       const res = await apiFetch(`${apiUrl}/api/clients`, {
         method: 'POST',
-        body: JSON.stringify({
-          pppoe_secret_name: selectedSecret,
-          latitude: lat,
-          longitude: lon,
-          odp_asset_id: odpAssetId ? parseInt(odpAssetId) : null,
-        })
+        body: formDataToSubmit
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.message || "Gagal membuat client.");
@@ -160,19 +168,19 @@ const AddClientModal = ({ isOpen, onClose, onSuccess, assets = [] }: AddClientMo
 
   return (
     <AnimatePresence>
-      <motion.div 
-        initial={{ opacity: 0 }} 
-        animate={{ opacity: 1 }} 
-        exit={{ opacity: 0 }} 
-        className="fixed inset-0 bg-black/70 flex items-center justify-center z-[1002] p-4" 
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        className="fixed inset-0 bg-black/70 flex items-center justify-center z-[1002] p-4"
         onClick={onClose}
       >
-        <motion.div 
-          initial={{ y: 50, opacity: 0 }} 
-          animate={{ y: 0, opacity: 1 }} 
-          exit={{ y: 50, opacity: 0 }} 
-          transition={{ type: 'spring' }} 
-          className="bg-card text-card-foreground rounded-2xl shadow-2xl w-full max-w-md border" 
+        <motion.div
+          initial={{ y: 50, opacity: 0 }}
+          animate={{ y: 0, opacity: 1 }}
+          exit={{ y: 50, opacity: 0 }}
+          transition={{ type: 'spring' }}
+          className="bg-card text-card-foreground rounded-2xl shadow-2xl w-full max-w-md border"
           onClick={e => e.stopPropagation()}
         >
           <form onSubmit={handleSubmit}>
@@ -188,7 +196,7 @@ const AddClientModal = ({ isOpen, onClose, onSuccess, assets = [] }: AddClientMo
               <p className="text-sm text-muted-foreground">
                 Pilih PPPoE secret dari MikroTik dan masukkan koordinat untuk menampilkan client di map.
               </p>
-              
+
               <div>
                 <label htmlFor="pppoe-secret" className="block text-sm font-medium mb-2">PPPoE Secret</label>
                 <select
@@ -284,6 +292,54 @@ const AddClientModal = ({ isOpen, onClose, onSuccess, assets = [] }: AddClientMo
                 )}
               </div>
 
+              <div>
+                <label className="block text-sm font-medium mb-2 flex items-center gap-2">
+                  <Camera size={14} /> Foto Client (Opsional)
+                </label>
+                <div className="space-y-3">
+                  {photoPreview ? (
+                    <div className="relative w-full aspect-video rounded-lg overflow-hidden bg-muted border group">
+                      <img
+                        src={photoPreview}
+                        alt="Preview"
+                        className="w-full h-full object-cover"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSelectedPhoto(null);
+                          setPhotoPreview(null);
+                        }}
+                        className="absolute top-2 right-2 p-1 bg-red-500 text-white rounded-full hover:bg-red-600 shadow-lg"
+                      >
+                        <X size={14} />
+                      </button>
+                    </div>
+                  ) : (
+                    <div
+                      onClick={() => document.getElementById('client-photo-upload')?.click()}
+                      className="w-full aspect-video rounded-lg border-2 border-dashed border-muted-foreground/25 flex flex-col items-center justify-center gap-2 hover:bg-secondary/50 cursor-pointer transition-colors"
+                    >
+                      <ImageIcon className="text-muted-foreground" size={32} />
+                      <span className="text-xs text-muted-foreground">Klik untuk upload foto</span>
+                    </div>
+                  )}
+                  <input
+                    id="client-photo-upload"
+                    type="file"
+                    accept="image/*"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (file) {
+                        setSelectedPhoto(file);
+                        setPhotoPreview(URL.createObjectURL(file));
+                      }
+                    }}
+                    className="hidden"
+                  />
+                </div>
+              </div>
+
               {error && (
                 <p className="text-sm text-center text-destructive p-3 bg-destructive/10 rounded-md">
                   {error}
@@ -295,7 +351,7 @@ const AddClientModal = ({ isOpen, onClose, onSuccess, assets = [] }: AddClientMo
                 Batal
               </Button>
               <Button type="submit" disabled={loading || unlinkedSecrets.length === 0 || !!error || !selectedDeviceId}>
-                {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin"/>}
+                {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                 Simpan Client
               </Button>
             </footer>
