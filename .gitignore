@@ -3,7 +3,9 @@
 /backend/whatsapp_auth_info
 /backend/.env
 /backend/public/uploads/assets/*
+!/backend/public/uploads/assets/.gitkeep
 /backend/public/uploads/clients/*
+!/backend/public/uploads/clients/.gitkeep
 /backend/package-lock.json
 
 
