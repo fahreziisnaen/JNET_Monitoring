@@ -32,6 +32,7 @@ const EditAssetModal = ({
   });
   const [selectedPhoto, setSelectedPhoto] = useState<File | null>(null);
   const [photoPreview, setPhotoPreview] = useState<string | null>(null);
+  const [isPhotoDeleted, setIsPhotoDeleted] = useState(false);
   const [availableParents, setAvailableParents] = useState<Asset[]>([]);
   const [assetOwners, setAssetOwners] = useState<{ id: number; name: string }[]>([]);
   const [loading, setLoading] = useState(false);
@@ -84,8 +85,9 @@ const EditAssetModal = ({
         setPhotoPreview(null);
       }
       setSelectedPhoto(null);
+      setIsPhotoDeleted(false);
     }
-  }, [assetToEdit]);
+  }, [assetToEdit, isOpen]);
 
   // Cek apakah owner yang dipilih ada di daftar setelah owners dimuat
   useEffect(() => {
@@ -266,7 +268,13 @@ const EditAssetModal = ({
     if (formData.parentAssetId) formDataToSubmit.append('parent_asset_id', formData.parentAssetId);
     formDataToSubmit.append('connection_status', formData.connectionStatus);
     if (formData.ownerName) formDataToSubmit.append('owner_name', formData.ownerName);
-    if (selectedPhoto) formDataToSubmit.append('photo', selectedPhoto);
+
+    // Logic upload/delete photo
+    if (selectedPhoto) {
+      formDataToSubmit.append('photo', selectedPhoto);
+    } else if (isPhotoDeleted) {
+      formDataToSubmit.append('deletePhoto', 'true');
+    }
 
     try {
       const apiUrl = process.env.NEXT_PUBLIC_API_BASE_URL;
@@ -425,6 +433,7 @@ const EditAssetModal = ({
                         onClick={() => {
                           setSelectedPhoto(null);
                           setPhotoPreview(null);
+                          setIsPhotoDeleted(true);
                         }}
                         className="absolute top-2 right-2 p-1 bg-red-500 text-white rounded-full hover:bg-red-600 shadow-lg"
                       >
@@ -440,6 +449,7 @@ const EditAssetModal = ({
                       if (file) {
                         setSelectedPhoto(file);
                         setPhotoPreview(URL.createObjectURL(file));
+                        setIsPhotoDeleted(false);
                       }
                     }}
                     className="text-xs text-muted-foreground file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-xs file:font-semibold file:bg-primary file:text-primary-foreground hover:file:bg-primary/90"

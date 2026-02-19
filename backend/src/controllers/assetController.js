@@ -225,6 +225,17 @@ exports.updateAsset = async (req, res) => {
             const photoUrl = `/public/uploads/assets/${req.file.filename}`;
             updates.push('photo_url = ?');
             values.push(photoUrl);
+        } else if (req.body.deletePhoto === 'true') {
+            // Handle explicit delete request
+            const [oldAsset] = await pool.query('SELECT photo_url FROM network_assets WHERE id = ? AND workspace_id = ?', [id, workspaceId]);
+            if (oldAsset.length > 0 && oldAsset[0].photo_url) {
+                const oldPath = path.join(__dirname, '../../', oldAsset[0].photo_url);
+                if (fs.existsSync(oldPath)) {
+                    fs.unlinkSync(oldPath);
+                }
+            }
+            updates.push('photo_url = ?');
+            values.push(null);
         }
 
         if (updates.length === 0) {
