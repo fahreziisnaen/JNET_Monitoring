@@ -41,6 +41,17 @@ const protect = async (req, res, next) => {
                 return res.status(401).json({ message: 'Tidak terotorisasi, user tidak ditemukan.' });
             }
 
+            // Verify if the session still exists in database (allows revoking tokens on logout)
+            const [sessions] = await pool.query(
+                'SELECT id FROM user_sessions WHERE token_id = ? AND user_id = ?',
+                [decoded.jti, decoded.id]
+            );
+
+            if (sessions.length === 0) {
+                console.warn(`[Auth Middleware] Session ${decoded.jti} not found in database. Token revoked.`);
+                return res.status(401).json({ message: 'Sesi telah berakhir atau dikeluarkan. Silakan login kembali.' });
+            }
+
             let dbUser = users[0];
 
             // Safeguard: Jika user tidak punya workspace_id, buat workspace otomatis

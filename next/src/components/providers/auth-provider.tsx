@@ -102,6 +102,8 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   }, [apiUrl]);
 
   const logout = useCallback(async () => {
+    const token = getAuthToken();
+    
     if (typeof window !== 'undefined') {
       try {
         localStorage.removeItem('auth_token');
@@ -110,11 +112,23 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         console.warn('[Auth Provider] Gagal menghapus token dari localStorage saat logout:', e);
       }
     }
-    // Logout tidak perlu apiFetch karena ini adalah cleanup operation
-    await fetch(`${apiUrl}/api/auth/logout`, {
-      method: "POST",
-      credentials: "include",
-    });
+
+    const headers: HeadersInit = {};
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+
+    // Logout perlu memanggil backend untuk menghapus sesi di database
+    try {
+      await fetch(`${apiUrl}/api/auth/logout`, {
+        method: "POST",
+        credentials: "include",
+        headers
+      });
+    } catch (error) {
+      console.error('[Auth Provider] Gagal memanggil API logout:', error);
+    }
+
     setIsLoggedIn(false);
     setUser(null);
     setToken(null);

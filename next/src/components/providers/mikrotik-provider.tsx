@@ -15,12 +15,12 @@ export const MikrotikProvider = ({ children }: { children: React.ReactNode }) =>
     const [selectedDeviceId, setSelectedDeviceId] = useState<number | null>(null);
     const [resource, setResource] = useState(null);
     const [pppoeSecrets, setPppoeSecrets] = useState([]);
-    const [activeInterfaces, setActiveInterfaces] = useState<Array<{name: string, type: string, running: boolean}>>([]);
+    const [activeInterfaces, setActiveInterfaces] = useState<Array<{ name: string, type: string, running: boolean }>>([]);
     const [traffic, setTraffic] = useState({});
     const [isConnected, setIsConnected] = useState(false);
-    
+
     const ws = useRef<WebSocket | null>(null);
-    
+
     // Load selected device from localStorage
     useEffect(() => {
         if (user?.workspace_id) {
@@ -55,11 +55,11 @@ export const MikrotikProvider = ({ children }: { children: React.ReactNode }) =>
         // Fetch snapshot terlebih dahulu untuk instant load
         const fetchSnapshot = async () => {
             if (!selectedDeviceId) return; // Wait for device selection
-            
+
             try {
                 const apiUrl = process.env.NEXT_PUBLIC_API_BASE_URL;
                 const res = await apiFetch(`${apiUrl}/api/dashboard/snapshot?deviceId=${selectedDeviceId}`);
-                
+
                 if (res.ok) {
                     const data = await res.json();
                     // Set data dari snapshot jika ada
@@ -109,7 +109,7 @@ export const MikrotikProvider = ({ children }: { children: React.ReactNode }) =>
                 console.log('[WebSocket] Skip connect - selectedDeviceId belum tersedia');
                 return; // Wait for device selection
             }
-            
+
             // Pastikan user sudah ada
             if (!user) {
                 console.log('[WebSocket] Skip connect - user belum tersedia');
@@ -123,32 +123,32 @@ export const MikrotikProvider = ({ children }: { children: React.ReactNode }) =>
                     console.log('[WebSocket] Koneksi sedang dalam proses, skip');
                     return; // Jangan buat koneksi baru jika sedang connecting
                 }
-                
+
                 if (currentState === WebSocket.OPEN) {
-                // Check if device changed
+                    // Check if device changed
                     try {
-                const currentUrl = ws.current.url;
+                        const currentUrl = ws.current.url;
                         if (currentUrl) {
                             const urlObj = new URL(currentUrl);
                             const expectedDeviceId = urlObj.searchParams.get('deviceId');
-                if (expectedDeviceId === selectedDeviceId.toString()) {
+                            if (expectedDeviceId === selectedDeviceId.toString()) {
                                 console.log('[WebSocket] Sudah terhubung ke device yang sama, skip');
-                    return; // Same device, already connected
-                } else {
-                    // Device changed, close and reconnect
-                    console.log('[WebSocket] Device berubah, menutup koneksi lama');
-                    if (ws.current && (ws.current.readyState === WebSocket.OPEN || ws.current.readyState === WebSocket.CONNECTING)) {
-                        ws.current.close();
-                        ws.current = null;
-                    }
-                }
+                                return; // Same device, already connected
+                            } else {
+                                // Device changed, close and reconnect
+                                console.log('[WebSocket] Device berubah, menutup koneksi lama');
+                                if (ws.current && (ws.current.readyState === WebSocket.OPEN || ws.current.readyState === WebSocket.CONNECTING)) {
+                                    ws.current.close();
+                                    ws.current = null;
+                                }
+                            }
                         }
                     } catch (urlError) {
                         // Jika URL tidak valid, close dan reconnect
                         console.warn('[WebSocket] Error parsing URL, menutup koneksi:', urlError);
                         if (ws.current) {
-                    ws.current.close();
-                    ws.current = null;
+                            ws.current.close();
+                            ws.current = null;
                         }
                     }
                 }
@@ -170,10 +170,10 @@ export const MikrotikProvider = ({ children }: { children: React.ReactNode }) =>
                     setIsConnected(false);
                     return;
                 }
-                
+
                 const wsUrlWithParams = `${wsUrl}?deviceId=${selectedDeviceId}&token=${encodeURIComponent(token)}`;
                 console.log('[WebSocket] Connecting dengan token dari localStorage/cookie, deviceId:', selectedDeviceId);
-                
+
                 // Tambahkan small delay untuk memastikan tidak ada race condition
                 // Tapi jangan delay jika ini retry
                 const socket = new WebSocket(wsUrlWithParams);
@@ -198,19 +198,19 @@ export const MikrotikProvider = ({ children }: { children: React.ReactNode }) =>
                     clearTimeout(connectionTimeout);
                     setIsConnected(false);
                     ws.current = null;
-                    
+
                     // Log close reason jika ada
                     if (event.code !== 1000) { // 1000 = normal closure
                         console.warn(`[WebSocket] Koneksi ditutup dengan code ${event.code}, reason: ${event.reason || 'Tidak ada alasan'}`);
                     } else {
-                    console.log('[WebSocket] Koneksi ditutup.');
+                        console.log('[WebSocket] Koneksi ditutup.');
                     }
-                    
+
                     // Auto-reconnect jika masih ada user dan belum mencapai max attempts
                     // Jangan reconnect jika close code adalah 1008 (Unauthorized) atau 1003 (Invalid data)
                     if (user && reconnectAttempts < maxReconnectAttempts && event.code !== 1008 && event.code !== 1003) {
                         reconnectAttempts++;
-                        console.log(`[WebSocket] Mencoba reconnect (${reconnectAttempts}/${maxReconnectAttempts}) dalam ${reconnectDelay/1000} detik...`);
+                        console.log(`[WebSocket] Mencoba reconnect (${reconnectAttempts}/${maxReconnectAttempts}) dalam ${reconnectDelay / 1000} detik...`);
                         reconnectTimeout = setTimeout(() => {
                             connectWebSocket();
                         }, reconnectDelay);
@@ -253,6 +253,12 @@ export const MikrotikProvider = ({ children }: { children: React.ReactNode }) =>
                             window.dispatchEvent(new CustomEvent('downtime-notification', {
                                 detail: message.payload
                             }));
+                        } else if (message.type === 'connection-status' && message.payload) {
+                            // Forward connection status to other components
+                            console.log("[WebSocket] Menerima connection status:", message.payload);
+                            window.dispatchEvent(new CustomEvent('mikrotik-connection-status', {
+                                detail: message.payload
+                            }));
                         } else if (message.type === 'reconnect-notification' && message.payload) {
                             // Forward reconnect notification ke notification provider via custom event
                             console.log("[WebSocket] Menerima reconnect notification:", message.payload);
@@ -283,14 +289,14 @@ export const MikrotikProvider = ({ children }: { children: React.ReactNode }) =>
                     return;
                 }
             }
-            
+
             // Delay kecil untuk memastikan tidak ada race condition
             const connectTimeout = setTimeout(() => {
                 if (selectedDeviceId && user && (!ws.current || ws.current.readyState === WebSocket.CLOSED)) {
-            connectWebSocket();
+                    connectWebSocket();
                 }
             }, 100); // 100ms delay
-            
+
             return () => {
                 clearTimeout(connectTimeout);
             };
@@ -306,7 +312,7 @@ export const MikrotikProvider = ({ children }: { children: React.ReactNode }) =>
             if (ws.current && (!user || !selectedDeviceId)) {
                 console.log('[WebSocket] Cleanup: Menutup WebSocket karena user atau deviceId tidak ada');
                 if (ws.current.readyState === WebSocket.OPEN || ws.current.readyState === WebSocket.CONNECTING) {
-                ws.current.close();
+                    ws.current.close();
                 }
                 ws.current = null;
             }
@@ -315,18 +321,18 @@ export const MikrotikProvider = ({ children }: { children: React.ReactNode }) =>
 
     const handleDeviceChange = (deviceId: number | null) => {
         console.log('[MikrotikProvider] handleDeviceChange dipanggil dengan deviceId:', deviceId, 'current deviceId:', selectedDeviceId);
-        
+
         // Jika deviceId sama, tidak perlu melakukan apapun
         if (deviceId === selectedDeviceId) {
             console.log('[MikrotikProvider] DeviceId sama, skip');
             return;
         }
-        
+
         // Close WebSocket to reconnect with new device
         // Tapi jangan close jika masih CONNECTING (tunggu sampai OPEN atau CLOSED)
         if (ws.current) {
             const currentState = ws.current.readyState;
-            
+
             if (currentState === WebSocket.OPEN) {
                 console.log('[MikrotikProvider] Menutup WebSocket yang OPEN sebelum change device');
                 ws.current.close(1000, 'Device changed'); // Normal closure
@@ -350,16 +356,16 @@ export const MikrotikProvider = ({ children }: { children: React.ReactNode }) =>
                         }
                     }
                 };
-                
+
                 // Set timeout maksimal 5 detik untuk menunggu
                 setTimeout(() => {
                     if (ws.current && ws.current.readyState === WebSocket.CONNECTING) {
                         console.warn('[MikrotikProvider] WebSocket masih CONNECTING setelah 5 detik, force close');
-            ws.current.close();
-            ws.current = null;
-        }
+                        ws.current.close();
+                        ws.current = null;
+                    }
                 }, 5000);
-                
+
                 // Mulai check setelah 200ms
                 setTimeout(checkAndClose, 200);
             } else {
@@ -367,17 +373,17 @@ export const MikrotikProvider = ({ children }: { children: React.ReactNode }) =>
                 ws.current = null;
             }
         }
-        
+
         // Clear data
         setResource(null);
         setPppoeSecrets([]);
         setActiveInterfaces([]);
         setTraffic({});
         setIsConnected(false);
-        
+
         // Set deviceId setelah clear data dan close WebSocket
         setSelectedDeviceId(deviceId);
-        
+
         if (user?.workspace_id && deviceId) {
             localStorage.setItem(`selected-device-${user.workspace_id}`, deviceId.toString());
         }
@@ -388,16 +394,16 @@ export const MikrotikProvider = ({ children }: { children: React.ReactNode }) =>
         return pppoeSecrets.filter((secret: any) => secret.isActive === true);
     }, [pppoeSecrets]);
 
-    const value = { 
-        resource, 
+    const value = {
+        resource,
         pppoeActive, // Backward compatibility: derived dari pppoeSecrets
         pppoeSecrets,
-        activeInterfaces, 
-        traffic, 
+        activeInterfaces,
+        traffic,
         isConnected,
         selectedDeviceId,
         setSelectedDeviceId: handleDeviceChange
     };
-    
+
     return <MikrotikContext.Provider value={value}>{children}</MikrotikContext.Provider>;
 };

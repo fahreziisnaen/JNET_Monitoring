@@ -13,15 +13,64 @@ exports.getActiveSessions = async (req, res) => {
     }
 
     try {
+        // Auto-prune old sessions (> 7 days) before fetching
+        await pool.query('DELETE FROM user_sessions WHERE user_id = ? AND last_seen < DATE_SUB(NOW(), INTERVAL 7 DAY)', [userId]);
+
         const [sessions] = await pool.query(
             'SELECT * FROM user_sessions WHERE user_id = ? ORDER BY last_seen DESC',
             [userId]
         );
 
-        console.log(`[Session Controller] Found ${sessions.length} sessions for user ${userId}`);
-
+        // --- Aggressive Self-Healing Deduplication ---
         const parser = new UAParser();
-        const detailedSessions = sessions.map(session => {
+        const seenFingerprints = new Set();
+        const duplicateIds = [];
+        const uniqueSessionsList = [];
+
+        sessions.forEach(session => {
+            // Normalize IP for fingerprinting
+            let ip = session.ip_address || 'Unknown';
+            if (ip.includes('::ffff:')) ip = ip.split('::ffff:')[1];
+            if (ip === '::1') ip = '127.0.0.1';
+
+            // Parse UA for fingerprinting
+            parser.setUA(session.user_agent || "");
+            const ua = parser.getResult();
+            const browserName = ua.browser.name || 'Unknown';
+            const browserMajor = ua.browser.major || '0';
+            const osName = ua.os.name || 'Unknown';
+
+            // Fingerprint: BrowserName + Major + OS + IP
+            const fingerprint = `${browserName}_${browserMajor}_${osName}_${ip}`;
+
+            // If this is the current session, we ALWAYS keep it
+            const isCurrent = session.token_id === currentTokenId;
+
+            if (isCurrent) {
+                uniqueSessionsList.push(session);
+                seenFingerprints.add(fingerprint);
+            } else if (!seenFingerprints.has(fingerprint)) {
+                uniqueSessionsList.push(session);
+                seenFingerprints.add(fingerprint);
+            } else {
+                duplicateIds.push(session.id);
+            }
+        });
+
+        // Delete duplicates from DB in background
+        if (duplicateIds.length > 0) {
+            console.log(`[Session Cleanup] Removing ${duplicateIds.length} duplicate ghost sessions for user ${userId}. Fingerprint matching used.`);
+            pool.query('DELETE FROM user_sessions WHERE id IN (?)', [duplicateIds]).catch(err => {
+                console.error("[Session Cleanup] Error deleting duplicates:", err);
+            });
+        }
+        // Use uniqueSessionsList for display
+        const displaySessions = uniqueSessionsList;
+        // --- End Deduplication ---
+
+        console.log(`[Session Controller] Found ${displaySessions.length} unique sessions for user ${userId}`);
+
+        const detailedSessions = displaySessions.map(session => {
             parser.setUA(session.user_agent || "");
             const uaResult = parser.getResult();
 

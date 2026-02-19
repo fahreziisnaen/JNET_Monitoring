@@ -35,9 +35,25 @@ exports.requestLoginOtp = async (req, res) => {
 
             const tokenId = crypto.randomBytes(16).toString('hex');
             const payload = { id: user.id, username: user.username, workspace_id: user.workspace_id, jti: tokenId };
-            const token = jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: '7d' });
+            // Normalize IP (remove ::ffff: prefix and handle localhost)
+            let normalizedIp = req.ip.includes('::ffff:') ? req.ip.split('::ffff:')[1] : req.ip;
+            if (normalizedIp === '::1') normalizedIp = '127.0.0.1';
+            const userAgent = req.headers['user-agent'] || 'Unknown';
 
-            await pool.query('INSERT INTO user_sessions (user_id, token_id, user_agent, ip_address) VALUES (?, ?, ?, ?)', [user.id, tokenId, req.headers['user-agent'], req.ip]);
+            try {
+                // Delete ANY session for this user with same UA or same IP
+                const [delResult] = await pool.query(
+                    'DELETE FROM user_sessions WHERE user_id = ? AND (user_agent = ? OR ip_address = ?)',
+                    [user.id, userAgent, normalizedIp]
+                );
+                if (delResult.affectedRows > 0) {
+                    console.log(`[Auth Bypass Cleanup] Removed ${delResult.affectedRows} existing sessions for user ${user.id}.`);
+                }
+            } catch (delError) {
+                console.error("[Auth Bypass Cleanup] Error during session cleanup:", delError);
+            }
+
+            await pool.query('INSERT INTO user_sessions (user_id, token_id, user_agent, ip_address) VALUES (?, ?, ?, ?)', [user.id, tokenId, userAgent, normalizedIp]);
 
             const cookieOptions = {
                 httpOnly: true,
@@ -97,12 +113,25 @@ exports.verifyLoginOtp = async (req, res) => {
         const [users] = await pool.query('SELECT * FROM users WHERE id = ?', [userId]);
         const user = users[0];
 
-        const tokenId = crypto.randomBytes(16).toString('hex');
-        const payload = { id: user.id, username: user.username, workspace_id: user.workspace_id, jti: tokenId };
-        const token = jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: '7d' });
+        // ultra-aggressive session cleanup (prevent duplicates on same browser/IP)
+        let normalizedIp = req.ip.includes('::ffff:') ? req.ip.split('::ffff:')[1] : req.ip;
+        if (normalizedIp === '::1') normalizedIp = '127.0.0.1';
+        const userAgent = req.headers['user-agent'] || 'Unknown';
+
+        try {
+            const [delResult] = await pool.query(
+                'DELETE FROM user_sessions WHERE user_id = ? AND (user_agent = ? OR ip_address = ?)',
+                [user.id, userAgent, normalizedIp]
+            );
+            if (delResult.affectedRows > 0) {
+                console.log(`[Auth Cleanup] Removed ${delResult.affectedRows} existing sessions for user ${user.id}.`);
+            }
+        } catch (delError) {
+            console.error("[Auth Cleanup] Error during session cleanup:", delError);
+        }
 
         await pool.query('DELETE FROM login_otps WHERE user_id = ?', [userId]);
-        await pool.query('INSERT INTO user_sessions (user_id, token_id, user_agent, ip_address) VALUES (?, ?, ?, ?)', [user.id, tokenId, req.headers['user-agent'], req.ip]);
+        await pool.query('INSERT INTO user_sessions (user_id, token_id, user_agent, ip_address) VALUES (?, ?, ?, ?)', [user.id, tokenId, userAgent, normalizedIp]);
 
         // Set cookie dengan konfigurasi yang lebih eksplisit
         // Untuk development, jangan gunakan secure (hanya untuk HTTPS)
@@ -159,11 +188,22 @@ exports.verifyLoginOtp = async (req, res) => {
 };
 
 exports.logout = async (req, res) => {
-    res.cookie('token', '', {
-        httpOnly: true,
-        expires: new Date(0),
-    });
-    res.status(200).json({ message: 'Logout berhasil.' });
+    try {
+        const tokenId = req.user?.jti;
+        if (tokenId) {
+            await pool.query('DELETE FROM user_sessions WHERE token_id = ?', [tokenId]);
+            console.log(`[Auth] Session ${tokenId} deleted from database on logout.`);
+        }
+
+        res.cookie('token', '', {
+            httpOnly: true,
+            expires: new Date(0),
+        });
+        res.status(200).json({ message: 'Logout berhasil.' });
+    } catch (error) {
+        console.error("LOGOUT ERROR:", error);
+        res.status(500).json({ message: 'Gagal memproses logout.' });
+    }
 };
 
 exports.getMe = (req, res) => {

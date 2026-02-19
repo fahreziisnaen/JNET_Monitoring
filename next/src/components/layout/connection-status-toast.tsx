@@ -12,60 +12,43 @@ export default function ConnectionStatusToast() {
     useEffect(() => {
         if (!token || !user) return;
 
-        const connectWs = () => {
-            const wsUrl = process.env.NEXT_PUBLIC_WS_BASE_URL || 'ws://localhost:9494/ws';
-            const ws = new WebSocket(`${wsUrl}?token=${token}`);
-            wsRef.current = ws;
+        const handleStatusEvent = (event: any) => {
+            const data = event.detail;
+            if (!data) return;
 
-            ws.onmessage = (event) => {
-                try {
-                    const data = JSON.parse(event.data);
+            const { status, message } = data;
 
-                    if (data.type === 'connection-status') {
-                        const { status, message, deviceId } = data.payload;
-
-                        if (status === 'disconnected') {
-                            // Show persistent destructive toast
-                            toastIdRef.current = toast.error('Koneksi Terputus', {
-                                description: message || 'Koneksi ke perangkat Mikrotik terputus.',
-                                duration: Infinity, // Persistent until reconnected
-                                action: {
-                                    label: 'Reconnect',
-                                    onClick: () => window.location.reload()
-                                }
-                            });
-                        } else if (status === 'connected') {
-                            // Dismiss disconnected toast if exists
-                            if (toastIdRef.current) {
-                                toast.dismiss(toastIdRef.current);
-                                toastIdRef.current = null;
-                            }
-
-                            // Show success toast briefly
-                            toast.success('Terhubung Kembali', {
-                                description: 'Koneksi ke perangkat Mikrotik berhasil dipulihkan.',
-                                duration: 3000
-                            });
+            if (status === 'disconnected') {
+                // Show persistent destructive toast
+                if (!toastIdRef.current) {
+                    toastIdRef.current = toast.error('Koneksi Terputus', {
+                        description: message || 'Koneksi ke perangkat Mikrotik terputus.',
+                        duration: Infinity, // Persistent until reconnected
+                        action: {
+                            label: 'Reconnect',
+                            onClick: () => window.location.reload()
                         }
-                    }
-                } catch (e) {
-                    // Ignore parsing errors
+                    });
                 }
-            };
+            } else if (status === 'connected') {
+                // Dismiss disconnected toast if exists
+                if (toastIdRef.current) {
+                    toast.dismiss(toastIdRef.current);
+                    toastIdRef.current = null;
+                }
 
-            ws.onclose = () => {
-                // Reconnect logic managed by polling in other components, 
-                // but here we just want to listen to events when connected.
-                setTimeout(connectWs, 5000);
-            };
+                // Show success toast briefly
+                toast.success('Terhubung Kembali', {
+                    description: 'Koneksi ke perangkat Mikrotik berhasil dipulihkan.',
+                    duration: 3000
+                });
+            }
         };
 
-        connectWs();
+        window.addEventListener('mikrotik-connection-status', handleStatusEvent);
 
         return () => {
-            if (wsRef.current) {
-                wsRef.current.close();
-            }
+            window.removeEventListener('mikrotik-connection-status', handleStatusEvent);
         };
     }, [token, user]);
 
