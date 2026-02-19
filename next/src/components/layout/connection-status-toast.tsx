@@ -13,7 +13,7 @@ export default function ConnectionStatusToast() {
         if (!token || !user) return;
 
         const connectWs = () => {
-            const wsUrl = process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:5000';
+            const wsUrl = process.env.NEXT_PUBLIC_WS_BASE_URL || 'ws://localhost:9494/ws';
             const ws = new WebSocket(`${wsUrl}?token=${token}`);
             wsRef.current = ws;
 

@@ -174,27 +174,33 @@ const LocationPage = () => {
 
   // Filter clients berdasarkan owner ODP yang terhubung dan status Up/Down
   const filteredClients = useMemo(() => {
-    // Check if all owners are selected
-    const allOwnersSelected = availableOwners.length > 0 && visibleOwners.size === availableOwners.length;
+    // Check if all owners are selected (or none available to filter)
+    const allOwnersSelected = availableOwners.length === 0 ||
+      (availableOwners.length > 0 && visibleOwners.size === availableOwners.length);
 
-    return clients.filter(client => {
+    console.log('[DEBUG] availableOwners:', availableOwners);
+    console.log('[DEBUG] visibleOwners.size:', visibleOwners.size);
+    console.log('[DEBUG] allOwnersSelected:', allOwnersSelected);
+
+    const result = clients.filter(client => {
       // Filter berdasarkan owner
       let ownerMatch = true;
       if (client.odp_asset_id && client.odp_owner_name) {
-        // Jika semua owner dipilih, tampilkan semua client
-        if (!allOwnersSelected) {
-          // Tampilkan client jika owner ODP-nya terlihat
+        // Jika tidak semua owner terpilih, cek apakah owner client ini termasuk yang dicentang
+        if (!allOwnersSelected && visibleOwners.size > 0) {
           ownerMatch = visibleOwners.has(client.odp_owner_name);
         }
       }
 
       // Filter berdasarkan status Up/Down
-      // Client aktif (isActive === true) adalah "Up", tidak aktif adalah "Down"
       const isClientUp = client.isActive === true;
       const statusMatch = (isClientUp && showUp) || (!isClientUp && showDown);
 
       return ownerMatch && statusMatch;
     });
+
+    console.log('[DEBUG] Jumlah client setelah difilter:', result.length);
+    return result;
   }, [clients, visibleOwners, availableOwners, showUp, showDown]);
 
   const handleToggleType = (type: string) => {

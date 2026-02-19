@@ -14,6 +14,7 @@ import { getAuthToken } from "@/utils/api";
 interface AuthContextType {
   isLoggedIn: boolean;
   user: any;
+  token: string | null;
   loading: boolean;
   checkLoggedIn: () => Promise<void>;
   logout: () => Promise<void>;
@@ -27,6 +28,7 @@ const publicPaths = ["/login", "/register", "/forgot-password"];
 export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [user, setUser] = useState<any>(null);
+  const [token, setToken] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const apiUrl = process.env.NEXT_PUBLIC_API_BASE_URL;
   const router = useRouter();
@@ -62,6 +64,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       if (response.ok) {
         const data = await response.json();
         setIsLoggedIn(true);
+        setToken(token);
         // Pastikan user object memiliki workspace_id
         const userData = data.user ?? data;
         if (!userData.workspace_id) {
@@ -87,6 +90,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         }
         setIsLoggedIn(false);
         setUser(null);
+        setToken(null);
       }
     } catch (error) {
       console.error("[Auth Provider] Check login error:", error);
@@ -113,12 +117,15 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     });
     setIsLoggedIn(false);
     setUser(null);
+    setToken(null);
     router.push("/login");
   }, [router, apiUrl]);
 
   const login = useCallback((newUser: any) => {
+    const gotToken = getAuthToken();
     setIsLoggedIn(true);
     setUser(newUser);
+    setToken(gotToken);
   }, []);
 
   useEffect(() => {
@@ -133,7 +140,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
   return (
     <AuthContext.Provider
-      value={{ isLoggedIn, user, loading, checkLoggedIn, logout, login }}
+      value={{ isLoggedIn, user, token, loading, checkLoggedIn, logout, login }}
     >
       {loading && !publicPaths.includes(pathname) ? (
         <div className="flex h-screen w-full items-center justify-center">
