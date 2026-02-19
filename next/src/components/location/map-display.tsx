@@ -301,6 +301,7 @@ interface MapDisplayProps {
   onMapClick?: (latlng: [number, number]) => void;
   onLineSelect?: (type: 'asset' | 'client', id: number, latlng?: [number, number]) => void;
   onWaypointDrag?: (index: number, latlng: [number, number]) => void;
+  onWaypointDragStart?: (points: [number, number][], dragIdx?: number) => void;
   isPullingNewPoint?: boolean;
   activeDraggedIndex?: number | null;
   onMouseUp?: () => void;
@@ -322,6 +323,7 @@ const MapDisplay = ({
   onMapClick,
   onLineSelect,
   onWaypointDrag,
+  onWaypointDragStart,
   isPullingNewPoint = false,
   activeDraggedIndex = null,
   onMouseUp
@@ -554,12 +556,19 @@ const MapDisplay = ({
               bubblingMouseEvents={false}
               eventHandlers={{
                 mousedown: (e) => {
+                  if (isEditingPath) {
+                    // Immediately prevent map pan — must happen before async React state update
+                    const map = (e.target as any)._map;
+                    if (map) {
+                      map.dragging.disable();
+                      if (map.doubleClickZoom) map.doubleClickZoom.disable();
+                    }
+                  }
                   if (onLineSelect) {
                     L.DomEvent.stopPropagation(e.originalEvent || e);
                     const latlng: [number, number] = [e.latlng.lat, e.latlng.lng];
                     onLineSelect('type' in line.to ? 'asset' : 'client', line.to.id, latlng);
                   } else if (isEditingPath) {
-                    // Fallback propagation stop jika onLineSelect tidak ada
                     L.DomEvent.stopPropagation(e.originalEvent || e);
                   }
                 }
@@ -580,11 +589,27 @@ const MapDisplay = ({
           <>
             <Polyline
               positions={editingPathPoints.filter(p => !isNaN(p[0]) && !isNaN(p[1]))}
+              bubblingMouseEvents={false}
               pathOptions={{
                 color: '#f59e0b',
                 weight: 8,
                 opacity: 1,
-                // Hilangkan dashArray agar garis terlihat solid saat ditarik
+              }}
+              eventHandlers={{
+                mousedown: (e) => {
+                  if (!isEditingPath || !activePathTarget || !onLineSelect) return;
+
+                  // Immediately prevent map pan
+                  const map = (e.target as any)._map;
+                  if (map) {
+                    map.dragging.disable();
+                    if (map.doubleClickZoom) map.doubleClickZoom.disable();
+                  }
+
+                  L.DomEvent.stopPropagation(e.originalEvent || e);
+                  const latlng: [number, number] = [e.latlng.lat, e.latlng.lng];
+                  onLineSelect(activePathTarget.type, activePathTarget.id, latlng);
+                }
               }}
             />
             {editingPathPoints.map((point, idx) => {
@@ -596,32 +621,23 @@ const MapDisplay = ({
                 <Marker
                   key={`edit-point-${idx}`}
                   position={point}
-                  draggable={!isEndpoint && isEditingPath}
+                  draggable={false}
                   eventHandlers={{
                     mousedown: (e) => {
+                      if (isEndpoint || !isEditingPath) return;
                       if (e.originalEvent) L.DomEvent.stopPropagation(e.originalEvent);
                       else L.DomEvent.stopPropagation(e as any);
-                    },
-                    dragstart: (e) => {
-                      const marker = e.target;
-                      const map = marker._map || (marker.__parent && marker.__parent._map);
+
+                      // Immediately disable map pan
+                      const marker = e.target as any;
+                      const map = marker._map;
                       if (map) {
                         map.dragging.disable();
                         if (map.doubleClickZoom) map.doubleClickZoom.disable();
                       }
-                    },
-                    dragend: (e) => {
-                      const marker = e.target;
-                      const map = marker._map || (marker.__parent && marker.__parent._map);
-                      if (map) {
-                        map.dragging.enable();
-                        if (map.doubleClickZoom) map.doubleClickZoom.enable();
-                      }
 
-                      const position = marker.getLatLng();
-                      if (onWaypointDrag) {
-                        onWaypointDrag(idx, [position.lat, position.lng]);
-                      }
+                      // Push undo history and start pull mechanism for this waypoint
+                      if (onWaypointDragStart) onWaypointDragStart(editingPathPoints, idx);
                     }
                   }}
                   icon={L.divIcon({
@@ -632,7 +648,8 @@ const MapDisplay = ({
                     border: 2px solid white; 
                     border-radius: 50%; 
                     box-shadow: 0 0 10px rgba(0,0,0,0.5);
-                    cursor: grab;
+                    cursor: ${isEndpoint ? 'default' : 'grab'};
+                    pointer-events: ${isEndpoint ? 'none' : 'auto'};
                   "></div>`,
                     className: '',
                     iconSize: [18, 18],
