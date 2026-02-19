@@ -100,8 +100,33 @@ exports.restoreBackup = async (req, res) => {
 
             const rows = backupData[table];
             if (rows && rows.length > 0) {
-                const keys = Object.keys(rows[0]);
-                const values = rows.map(row => keys.map(key => {
+                // Pre-process rows to handle missing device_id in newer schema
+                // Identify if table needs device_id but data might be missing it
+                const needsDeviceId = ['pppoe_user_status', 'downtime_events', 'pppoe_usage_logs', 'resource_logs', 'dashboard_snapshot'].includes(table);
+
+                let processedRows = rows;
+                let keys = Object.keys(rows[0]);
+
+                if (needsDeviceId && !keys.includes('device_id')) {
+                    console.log(`[Restore] Table ${table} lacks device_id in backup. Attempting fallback...`);
+                    // Fetch devices for mapping
+                    const [devices] = await conn.query('SELECT id, workspace_id FROM mikrotik_devices');
+                    const workspaceToDeviceMap = new Map();
+                    devices.forEach(d => {
+                        if (!workspaceToDeviceMap.has(d.workspace_id)) {
+                            workspaceToDeviceMap.set(d.workspace_id, d.id);
+                        }
+                    });
+
+                    // Add device_id to keys and rows
+                    keys.push('device_id');
+                    processedRows = rows.map(row => {
+                        const deviceId = workspaceToDeviceMap.get(row.workspace_id);
+                        return { ...row, device_id: deviceId || null };
+                    });
+                }
+
+                const values = processedRows.map(row => keys.map(key => {
                     let value = row[key];
                     // Jika value adalah string ISO Date (2025-12-03T...Z), ubah ke format MySQL (YYYY-MM-DD HH:mm:ss)
                     if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{3})?Z$/.test(value)) {
@@ -171,7 +196,24 @@ const RESET_TABLES = [
 ];
 
 exports.factoryReset = async (req, res) => {
-    const workspaceId = req.user.workspace_id;
+    const { targetWorkspaceId } = req.body;
+    const currentUser = req.user;
+
+    // Determine the actual workspace ID to reset
+    // Super admin can specify targetWorkspaceId, regular admin resets their own
+    let workspaceId = currentUser.workspace_id;
+    if (currentUser.is_super_admin && targetWorkspaceId) {
+        workspaceId = parseInt(targetWorkspaceId);
+    }
+
+    // Validation
+    // 1. If not Super Admin, MUST be the owner of the workspace
+    if (!currentUser.is_super_admin) {
+        if (!currentUser.is_owner) {
+            return res.status(403).json({ message: 'Akses ditolak. Hanya Pemilik Workspace atau Super Admin yang dapat melakukan Factory Reset.' });
+        }
+    }
+
     const conn = await pool.getConnection();
 
     try {

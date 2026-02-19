@@ -61,11 +61,15 @@ JNET Monitoring is a full-stack application designed to provide an intuitive and
   - Automatic detection of user disconnections
   - Track downtime duration with detailed timestamps
   - Format downtime duration as "x hari x jam x menit x detik"
+* **Real-time Map Status**: 
+  - **Dynamic Markers**: Client and ODP markers update status instantly via WebSocket (no refresh needed)
+  - **Traffic Flow Animation**: Animated connection lines to visualize active traffic from parent to child
+  - **Auto-ODP State**: ODP markers turn red automatically if all connected clients are offline
 * **Notifications**: 
   - WhatsApp notifications for downtime events (after 2 minutes)
   - Reconnect notifications (only if preceding downtime was >= 2 minutes)
-  - Toast notifications in web dashboard for downtime, reconnect, and **device connection status (WebSocket)**
-  - WebSocket real-time updates
+  - Toast notifications in web dashboard for downtime, reconnect, and device connection status (WebSocket)
+  - WebSocket real-time updates for all connected clients
 
 ### 📄 Report Generation
 * **Monthly PDF Reports**: Generate comprehensive monthly reports in PDF format
@@ -136,16 +140,17 @@ JNET Monitoring is a full-stack application designed to provide an intuitive and
 
 | Frontend                          | Backend                              |
 | --------------------------------- | ------------------------------------ |
-| **Next.js 15** (App Router)       | **Node.js**                          |
-| **React 19** & **TypeScript**     | **Express.js 5**                     |
-| **Tailwind CSS**                  | **MySQL 8**                          |
-| **Chart.js** (data visualization) | **node-routeros** (MikroTik API)     |
-| **Leaflet** (interactive maps)    | **@whiskeysockets/baileys** (WhatsApp) |
-| **Framer Motion** (animations)    | **JWT** (Authentication)             |
-| **shadcn/ui** (components)         | **node-cron** (Scheduled Tasks)      |
-| **react-leaflet** (map components)| **WebSocket (ws)** (Real-time)       |
+| **Next.js 15** (App Router)       | **Node.js 20+**                      |
+| **React 19** & **TypeScript**     | **Express.js 5.x**                   |
+| **Tailwind CSS 4** (PostCSS 8)    | **MySQL 8**                          |
+| **Chart.js 4** (data visualization)| **node-routeros** (MikroTik API)     |
+| **Leaflet 1.9** (interactive maps)| **@whiskeysockets/baileys** (WhatsApp) |
+| **Framer Motion 12** (animations) | **JWT** (Authentication)             |
+| **sonner** (Toast notifications)  | **node-cron 4** (Scheduled Tasks)     |
+| **react-leaflet 5** (map components)| **WebSocket (ws) 8** (Real-time)      |
 | **OSRM Routing** (road routing)   | **PDFKit** (PDF generation)           |
-| **xml2js** (KML parsing)          | **bcryptjs** (Password hashing)      |
+| **dnd-kit** (Drag & Drop)         | **bcryptjs** (Password hashing)      |
+| **lucide-react** (icons)          | **pino** (Logger)                    |
 
 ---
 
@@ -238,67 +243,31 @@ The application will be accessible at `http://localhost:3000`.
 
 ## 🚀 Production Deployment
 
+A collection of steps to move JNET Monitoring from development to a live production environment.
+
 ### Prerequisites for Production
 
-* Linux server (Debian/Ubuntu recommended)
-* Node.js v18+ installed
-* MySQL/MariaDB installed and running
-* PM2 installed globally (`npm install -g pm2`)
-* Apache2 installed and configured
-* Cloudflare Tunnel (optional, for external access)
+*   **OS**: Linux Server (Ubuntu 22.04+ or Debian 11+ recommended)
+*   **Node.js**: v20.x (LTS) or later
+*   **Database**: MySQL v8.0 or MariaDB v10.6+
+*   **Process Manager**: [PM2](https://pm2.keymetrics.io/) installed globally (`npm install -g pm2`)
+*   **Web Server**: Nginx or Apache2 (as reverse proxy)
+*   **Network**: Direct access to router management ports and WhatsApp servers
 
-### Step 1: Database Setup
+### Phase 1: Database Setup
 
-1. **Create database and import complete setup:**
-```bash
-mysql -u root -p < /var/www/JNET_Monitoring/backend/database_setup.sql
-```
+1.  **Initialize Database**:
+    ```bash
+    mysql -u root -p -e "CREATE DATABASE jnet_monitoring CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
+    mysql -u root -p jnet_monitoring < backend/database_setup.sql
+    ```
+    *Note: `database_setup.sql` contains the complete schema, initial migrations, and default configurations.*
 
-**Atau secara manual:**
-```bash
-mysql -u root -p
-```
-
-```sql
-SOURCE /var/www/JNET_Monitoring/backend/database_setup.sql;
-```
-
-**Note**: File `database_setup.sql` sudah termasuk:
-- Database creation
-- All tables (schema + migrations)
-- Timezone setup
-- Indexes
-- Optional seeder (commented out)
-
-2. **Set timezone permanen (opsional, untuk memastikan):**
-Edit `/etc/mysql/mariadb.conf.d/50-server.cnf` (atau `/etc/mysql/my.cnf`):
-```ini
-[mysqld]
-default-time-zone = '+07:00'
-```
-
-Restart MySQL:
-```bash
-systemctl restart mariadb
-```
-
-3. **Verify database setup:**
-```sql
--- Check timezone
-SELECT NOW(), @@global.time_zone, @@session.time_zone;
-
--- Check tables
-SHOW TABLES;
-
--- Check if clients table exists
-DESCRIBE clients;
-
--- Check if notification_sent column exists
-DESCRIBE downtime_events;
-
--- Check if whatsapp_group_id column exists
-DESCRIBE workspaces;
-```
+2.  **Configure System Timezone**:
+    Ensure your database server uses the same timezone as your network (e.g., WIB/GMT+7):
+    ```sql
+    SET GLOBAL time_zone = '+07:00';
+    ```
 
 ### Step 2: Backend Setup
 
@@ -336,83 +305,67 @@ NODE_ENV=production
 CORS_ORIGINS=https://yourwebsite.com,http://yourwebsite.com
 
 # Super Admin IDs (comma-separated list of User IDs)
-SUPER_ADMIN_IDS=1
-```
+### Phase 2: Backend Deployment
 
-4. **Create public folder structure:**
-```bash
-mkdir -p public/uploads/avatars
-mkdir -p public/uploads/assets
-mkdir -p public/uploads/clients
-chmod -R 755 public
-chmod -R 644 public/uploads/avatars/*.jpg 2>/dev/null || true
-chmod -R 644 public/uploads/avatars/*.png 2>/dev/null || true
-chmod -R 644 public/uploads/assets/* 2>/dev/null || true
-chmod -R 644 public/uploads/clients/* 2>/dev/null || true
+1.  **Install Dependencies**:
+    ```bash
+    cd backend
+    npm install --production
+    ```
 
-# Upload default.jpg ke public/uploads/avatars/ jika belum ada
-# Atau download placeholder:
-cd public/uploads/avatars
-wget https://via.placeholder.com/200x200.jpg -O default.jpg
-```
+2.  **Production Environment**:
+    Create a `.env` file in the `backend/` directory:
+    ```env
+    DB_HOST=127.0.0.1
+    DB_USER=your_db_user
+    DB_PASSWORD=your_secure_password
+    DB_NAME=jnet_monitoring
+    JWT_SECRET=your_jwt_secret
+    PORT=9494
+    NODE_ENV=production
+    CORS_ORIGINS=https://yourdomain.com
+    SUPER_ADMIN_IDS=1,2
+    ```
 
-5. **Start backend with PM2:**
-```bash
-pm2 start server.js --name "jnet-backend"
-pm2 save
-pm2 startup
-```
+3.  **Directory Permissions**:
+    ```bash
+    mkdir -p public/uploads/avatars public/uploads/assets public/uploads/clients
+    chmod -R 755 public
+    ```
 
-6. **Verify backend is running:**
-```bash
-pm2 status
-pm2 logs jnet-backend --lines 20
-curl http://localhost:9494/api/auth/login
-```
+4.  **Start with PM2**:
+    ```bash
+    pm2 start server.js --name jnet-monitoring-api
+    pm2 save
+    ```
 
-### Step 3: Frontend Setup
+### Phase 3: Frontend Deployment (Next.js 15)
 
-1. **Navigate to frontend directory:**
-```bash
-cd /var/www/JNET_Monitoring/next
-```
+1.  **Configure Build Variables**:
+    Create a `.env.production` file in the `next/` directory:
+    ```env
+    NEXT_PUBLIC_API_BASE_URL=https://yourdomain.com/api
+    NEXT_PUBLIC_WS_BASE_URL=wss://yourdomain.com/ws
+    ```
 
-2. **Install dependencies:**
-```bash
-npm install
-```
+2.  **Build Optimized Application**:
+    ```bash
+    cd next
+    npm install
+    npm run build
+    ```
 
-3. **Create `.env.production` file:**
-```bash
-nano .env.production
-```
+3.  **Start with PM2**:
+    ```bash
+    pm2 start "npm start" --name jnet-monitoring-web
+    pm2 save
+    ```
 
-**Isi dengan:**
-```env
-# API Base URL - GANTI dengan domain production Anda
-NEXT_PUBLIC_API_BASE_URL=https://yourwebsite.com
-
-# WebSocket Base URL - GANTI dengan domain production Anda
-NEXT_PUBLIC_WS_BASE_URL=wss://yourwebsite.com/ws
-```
-
-4. **Build frontend:**
-```bash
-npm run build
-```
-
-5. **Start frontend with PM2:**
-```bash
-pm2 start npm --name "jnet-monitoring" -- start
-pm2 save
-```
-
-6. **Verify frontend is running:**
-```bash
-pm2 status
-pm2 logs jnet-monitoring --lines 20
-curl http://localhost:3000
-```
+4.  **Verify Application**:
+    ```bash
+    pm2 status
+    curl http://localhost:3000
+    ```
 
 ### Step 4: Apache2 Reverse Proxy Setup
 
@@ -430,103 +383,90 @@ systemctl restart apache2
 ```bash
 nano /etc/apache2/sites-available/jnet-monitoring.conf
 ```
+### Phase 4: Reverse Proxy Configuration
 
-**Isi dengan:**
+#### Nginx (Recommended)
+
+```nginx
+server {
+    listen 443 ssl;
+    server_name monitor.yourdomain.com;
+
+    # SSL (Managed by Certbot)
+    ssl_certificate /etc/letsencrypt/live/monitor.yourdomain.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/monitor.yourdomain.com/privkey.pem;
+
+    # Frontend (Next.js)
+    location / {
+        proxy_pass http://localhost:3000;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host $host;
+        proxy_cache_bypass $http_upgrade;
+    }
+
+    # Backend API
+    location /api/ {
+        proxy_pass http://localhost:9494/;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    # WebSocket (MikroTik/Dashboard)
+    location /ws {
+        proxy_pass http://localhost:9494/ws;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "Upgrade";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+    }
+
+    # Static Assets (Photos)
+    location /public/ {
+        proxy_pass http://localhost:9494/public/;
+        expires 30d;
+        add_header Cache-Control "public, no-transform";
+    }
+}
+```
+
+#### Apache2
+
 ```apache
-<VirtualHost *:80>
-    ServerName yourwebsite.com
-    ServerAlias localhost 127.0.0.1
+<VirtualHost *:443>
+    ServerName monitor.yourdomain.com
     
-    ProxyPreserveHost On
-    ProxyRequests Off
-    
-    # Proxy WebSocket di path /ws ke backend
+    # SSL config... (Certbot)
+
+    # API & Public Files
+    ProxyPass /api http://localhost:9494
+    ProxyPass /public http://localhost:9494/public
+
+    # WebSocket
     ProxyPass /ws ws://localhost:9494/ws
     ProxyPassReverse /ws ws://localhost:9494/ws
-    
-    # Proxy /api/* ke backend (HTTP)
-    ProxyPass /api http://localhost:9494/api
-    ProxyPassReverse /api http://localhost:9494/api
-    
-    # Proxy /public/* ke backend (HTTP)
-    ProxyPass /public http://localhost:9494/public
-    ProxyPassReverse /public http://localhost:9494/public
-    
-    # Proxy static files dari Next.js (favicon, _next/static, dll)
-    # Pastikan ini SEBELUM proxy umum ke frontend
-    ProxyPass /favicon.ico http://localhost:3000/favicon.ico
-    ProxyPassReverse /favicon.ico http://localhost:3000/favicon.ico
-    
-    # Proxy semua yang lain ke frontend Next.js (HTTP)
+
+    # Frontend
     ProxyPass / http://localhost:3000/
-    ProxyPassReverse / http://localhost:3000/
-    
-    # Headers
-    RequestHeader set X-Forwarded-Proto "http"
-    RequestHeader set X-Forwarded-For "%{REMOTE_ADDR}s"
 </VirtualHost>
 ```
 
-3. **Enable site and test configuration:**
-```bash
-a2ensite jnet-monitoring.conf
-apache2ctl configtest
-systemctl reload apache2
-```
+### Phase 5: Cloudflare Tunnel (Optional)
 
-4. **Test Apache2 proxy:**
-```bash
-# Test API
-curl http://localhost/api/auth/login
+If using Cloudflare Tunnel for secure external access:
+1.  **Expose Site**: Point your tunnel configuration to `http://localhost:80` (if using proxy) or `http://localhost:3000`.
+2.  **WebSocket Support**: Ensure "WebSockets" is enabled in Cloudflare dashboard under Network settings.
 
-# Test WebSocket (install wscat: npm install -g wscat)
-wscat -c "ws://localhost/ws?deviceId=1&token=test123"
+### Phase 6: System Verification
 
-# Test public folder
-curl http://localhost/public/uploads/avatars/default.jpg
-```
-
-### Step 5: Cloudflare Tunnel Setup (Optional)
-
-Jika menggunakan Cloudflare Tunnel untuk akses eksternal:
-
-1. **Install Cloudflare Tunnel:**
-```bash
-# Follow Cloudflare Tunnel installation guide
-# https://developers.cloudflare.com/cloudflare-one/connections/connect-apps/install-and-setup/
-```
-
-2. **Configure Cloudflare Tunnel:**
-* Point Cloudflare Tunnel ke Apache2 (port 80)
-* Domain: `yourwebsite.com`
-* Target: `http://localhost:80`
-
-3. **Verify:**
-* Akses `https://yourwebsite.com` dari browser
-* Test WebSocket connection dari browser console
-
-### Step 6: Verify Production Setup
-
-1. **Check all services:**
-```bash
-# Check PM2 processes
-pm2 status
-
-# Check Apache2
-systemctl status apache2
-
-# Check MySQL
-systemctl status mariadb
-
-# Check ports
-netstat -tulpn | grep -E "3000|9494|80"
-```
-
-2. **Test from browser:**
-* Open `https://yourwebsite.com`
-* Login with OTP
-* Check WebSocket connection in browser console
-* Test all features (dashboard, management, location, etc.)
+1.  **Check Processes**: `pm2 list` (Ensure `jnet-monitoring-api` and `jnet-monitoring-web` are online).
+2.  **Check Logs**: `pm2 logs` for real-time debugging.
+3.  **Check Ports**: `netstat -tulpn | grep LISTEN` (Verify 3000, 9494, and 80/443).
 
 ---
 

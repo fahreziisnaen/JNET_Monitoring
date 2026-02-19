@@ -68,6 +68,16 @@ const protect = async (req, res, next) => {
             // Set default avatar jika tidak ada
             const profilePictureUrl = dbUser.profile_picture_url || '/public/uploads/avatars/default.jpg';
 
+            // Tentukan apakah user adalah Super Admin
+            const superAdminIds = process.env.SUPER_ADMIN_IDS
+                ? process.env.SUPER_ADMIN_IDS.split(',').map(id => parseInt(id.trim()))
+                : [1];
+            const isSuperAdmin = superAdminIds.includes(dbUser.id);
+
+            // Tentukan apakah user adalah owner dari workspace-nya
+            const [wsOwnerInfo] = await pool.query('SELECT owner_id FROM workspaces WHERE id = ?', [dbUser.workspace_id]);
+            const isOwner = wsOwnerInfo.length > 0 && wsOwnerInfo[0].owner_id === dbUser.id;
+
             req.user = {
                 id: dbUser.id,
                 username: dbUser.username,
@@ -76,6 +86,8 @@ const protect = async (req, res, next) => {
                 workspace_id: dbUser.workspace_id,
                 whatsapp_number: dbUser.whatsapp_number,
                 role: dbUser.role || 'user',
+                is_owner: isOwner,
+                is_super_admin: isSuperAdmin,
                 jti: decoded.jti
             };
 

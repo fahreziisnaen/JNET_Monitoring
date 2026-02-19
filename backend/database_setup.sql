@@ -208,6 +208,7 @@ CREATE TABLE `odp_user_connections` (
 CREATE TABLE `downtime_events` (
   `id` int NOT NULL AUTO_INCREMENT,
   `workspace_id` int NOT NULL,
+  `device_id` int NOT NULL,
   `pppoe_user` varchar(100) NOT NULL,
   `start_time` datetime NOT NULL,
   `end_time` datetime DEFAULT NULL,
@@ -215,19 +216,23 @@ CREATE TABLE `downtime_events` (
   `notification_sent` BOOLEAN DEFAULT FALSE COMMENT 'Untuk track apakah notifikasi disconnect sudah dikirim setelah 2 menit downtime',
   PRIMARY KEY (`id`),
   KEY `idx_workspace_id` (`workspace_id`),
+  KEY `idx_device_id` (`device_id`),
   KEY `idx_pppoe_user` (`pppoe_user`),
-  CONSTRAINT `fk_downtime_events_workspace` FOREIGN KEY (`workspace_id`) REFERENCES `workspaces` (`id`) ON DELETE CASCADE
+  CONSTRAINT `fk_downtime_events_workspace` FOREIGN KEY (`workspace_id`) REFERENCES `workspaces` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_downtime_events_device` FOREIGN KEY (`device_id`) REFERENCES `mikrotik_devices` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE `pppoe_user_status` (
   `workspace_id` int NOT NULL,
+  `device_id` int NOT NULL,
   `pppoe_user` varchar(100) NOT NULL,
   `is_active` tinyint(1) DEFAULT '0',
   `last_seen_active` datetime DEFAULT NULL,
   `last_upload_bytes` BIGINT UNSIGNED DEFAULT 0,
   `last_download_bytes` BIGINT UNSIGNED DEFAULT 0,
-  PRIMARY KEY (`workspace_id`, `pppoe_user`),
-  CONSTRAINT `fk_pppoe_status_workspace` FOREIGN KEY (`workspace_id`) REFERENCES `workspaces` (`id`) ON DELETE CASCADE
+  PRIMARY KEY (`workspace_id`, `device_id`, `pppoe_user`),
+  CONSTRAINT `fk_pppoe_status_workspace` FOREIGN KEY (`workspace_id`) REFERENCES `workspaces` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_pppoe_status_device` FOREIGN KEY (`device_id`) REFERENCES `mikrotik_devices` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE `workspace_invites` (
@@ -253,15 +258,18 @@ CREATE TABLE `workspace_invites` (
 CREATE TABLE `pppoe_usage_logs` (
   `id` INT AUTO_INCREMENT PRIMARY KEY,
   `workspace_id` INT NOT NULL,
+  `device_id` INT NOT NULL,
   `pppoe_user` VARCHAR(255) NOT NULL,
   `usage_date` DATE NOT NULL,
   `upload_bytes` BIGINT UNSIGNED DEFAULT 0,
   `download_bytes` BIGINT UNSIGNED DEFAULT 0,
   `total_bytes` BIGINT UNSIGNED DEFAULT 0,
-  UNIQUE KEY `unique_usage` (`workspace_id`, `pppoe_user`, `usage_date`),
+  UNIQUE KEY `unique_usage` (`workspace_id`, `device_id`, `pppoe_user`, `usage_date`),
   KEY `idx_workspace_id` (`workspace_id`),
+  KEY `idx_device_id` (`device_id`),
   KEY `idx_usage_date` (`usage_date`),
-  CONSTRAINT `fk_pppoe_usage_logs_workspace` FOREIGN KEY (`workspace_id`) REFERENCES `workspaces`(`id`) ON DELETE CASCADE
+  CONSTRAINT `fk_pppoe_usage_logs_workspace` FOREIGN KEY (`workspace_id`) REFERENCES `workspaces`(`id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_pppoe_usage_logs_device` FOREIGN KEY (`device_id`) REFERENCES `mikrotik_devices`(`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE `resource_logs` (

@@ -192,3 +192,26 @@ exports.getGroups = async (req, res) => {
         res.status(500).json({ message: 'Gagal mengambil daftar grup.' });
     }
 };
+
+exports.testMessage = async (req, res) => {
+    const { jid } = req.body;
+
+    if (!jid) {
+        return res.status(400).json({ message: 'WhatsApp ID (JID) diperlukan.' });
+    }
+
+    try {
+        if (!isWhatsAppConnected()) {
+            return res.status(400).json({ message: 'WhatsApp belum terhubung. Silakan hubungkan terlebih dahulu.' });
+        }
+
+        const message = `🚀 *Tes Koneksi WhatsApp Gateway JNET*\n\nLayanan ini sekarang siap mengirimkan notifikasi ke group ini.\nTerima kasih!`;
+
+        await sendWhatsAppMessage(jid, message);
+
+        res.status(200).json({ message: 'Pesan tes berhasil dikirim!' });
+    } catch (error) {
+        console.error("[Bot Controller] Gagal mengirim pesan tes:", error);
+        res.status(500).json({ message: `Gagal mengirim pesan tes: ${error.message}` });
+    }
+};

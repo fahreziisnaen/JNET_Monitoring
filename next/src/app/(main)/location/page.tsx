@@ -18,6 +18,7 @@ import { assetTypes } from '@/components/location/asset-filter';
 import MapLegend from '@/components/location/map-legend';
 import MapFilterPanel from '@/components/location/map-filter-panel';
 import { apiFetch, getAuthToken } from '@/utils/api';
+import { useMikrotik } from '@/components/providers/mikrotik-provider';
 
 const MapDisplay = dynamic(() => import('@/components/location/map-display'), {
   ssr: false,
@@ -49,6 +50,7 @@ const isAssetUp = (asset: Asset): boolean => {
 };
 
 const LocationPage = () => {
+  const { pppoeSecrets } = useMikrotik() || { pppoeSecrets: [] };
   const [assets, setAssets] = useState<Asset[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
   const [loading, setLoading] = useState(true);
@@ -139,6 +141,38 @@ const LocationPage = () => {
     fetchClients();
   }, [fetchAssets, fetchClients, refreshTrigger]);
 
+  // Derive real-time client status from pppoeSecrets
+  const realTimeClientsBySecrets = useMemo(() => {
+    if (!pppoeSecrets || pppoeSecrets.length === 0) return clients;
+
+    // Create a map for fast lookup by name
+    const secretMap = new Map(pppoeSecrets.map((s: any) => [s.name, s]));
+
+    return clients.map(client => {
+      const secret = secretMap.get(client.pppoe_secret_name) as any;
+      return {
+        ...client,
+        isActive: secret ? secret.isActive : false
+      };
+    });
+  }, [clients, pppoeSecrets]);
+
+  // Derive real-time asset status (specifically for ODPs based on their connected clients)
+  const realTimeAssetsBySecrets = useMemo(() => {
+    return assets.map(asset => {
+      if (asset.type !== 'ODP') return asset;
+
+      // Look up clients connected to this ODP from our real-time client list
+      const connectedClients = realTimeClientsBySecrets.filter(c => c.odp_asset_id === asset.id);
+
+      return {
+        ...asset,
+        totalUsers: connectedClients.length,
+        activeUsers: connectedClients.filter(c => c.isActive).length
+      };
+    });
+  }, [assets, realTimeClientsBySecrets]);
+
   // Get unique owners from assets
   const availableOwners = useMemo(() => {
     const owners = new Set<string>();
@@ -161,7 +195,7 @@ const LocationPage = () => {
     // Check if all owners are selected
     const allOwnersSelected = availableOwners.length > 0 && visibleOwners.size === availableOwners.length;
 
-    return assets.filter(asset => {
+    return realTimeAssetsBySecrets.filter(asset => {
       const typeMatch = visibleTypes.has(asset.type);
       // If all owners are selected, show all assets (including those without owner)
       // If not all owners selected, show only assets whose owner is in visibleOwners
@@ -174,13 +208,13 @@ const LocationPage = () => {
 
       return typeMatch && ownerMatch && statusMatch;
     });
-  }, [assets, visibleTypes, visibleOwners, availableOwners, showUp, showDown]);
+  }, [realTimeAssetsBySecrets, visibleTypes, visibleOwners, availableOwners, showUp, showDown]);
 
   const filteredClients = useMemo(() => {
     const allOwnersSelected = availableOwners.length === 0 ||
       (availableOwners.length > 0 && visibleOwners.size === availableOwners.length);
 
-    const result = clients.filter(client => {
+    const result = realTimeClientsBySecrets.filter(client => {
       let ownerMatch = true;
       if (client.odp_asset_id && client.odp_owner_name) {
         if (!allOwnersSelected && visibleOwners.size > 0) {
@@ -193,7 +227,7 @@ const LocationPage = () => {
     });
 
     return result;
-  }, [clients, visibleOwners, availableOwners, showUp, showDown]);
+  }, [realTimeClientsBySecrets, visibleOwners, availableOwners, showUp, showDown]);
 
   // When in edit mode, overlay pending unsaved edits onto the displayed assets/clients
   // so all lines show their current (possibly unsaved) state visually.
@@ -441,13 +475,13 @@ const LocationPage = () => {
       if (type === 'asset') {
         const asset = item as Asset;
         if (asset.parent_asset_id) {
-          const parent = assets.find(a => a.id === asset.parent_asset_id);
+          const parent = realTimeAssetsBySecrets.find(a => a.id === asset.parent_asset_id);
           if (parent) fromCoords = [parent.latitude, parent.longitude];
         }
       } else {
         const client = item as Client;
         if (client.odp_asset_id) {
-          const odp = assets.find(a => a.id === client.odp_asset_id);
+          const odp = realTimeAssetsBySecrets.find(a => a.id === client.odp_asset_id);
           if (odp) fromCoords = [odp.latitude, odp.longitude];
         }
       }
@@ -560,8 +594,8 @@ const LocationPage = () => {
     setPathTarget({ type, id });
     setPathHistory([]); // Clear undo history when switching target
     const item = type === 'asset'
-      ? assets.find(a => a.id === id)
-      : clients.find(c => c.id === id);
+      ? realTimeAssetsBySecrets.find(a => a.id === id)
+      : realTimeClientsBySecrets.find(c => c.id === id);
 
     if (!item) return;
 
@@ -594,13 +628,13 @@ const LocationPage = () => {
       if (type === 'asset') {
         const asset = item as Asset;
         if (asset.parent_asset_id) {
-          const parent = assets.find(a => a.id === asset.parent_asset_id);
+          const parent = realTimeAssetsBySecrets.find(a => a.id === asset.parent_asset_id);
           if (parent) fromCoords = [parent.latitude, parent.longitude];
         }
       } else {
         const client = item as Client;
         if (client.odp_asset_id) {
-          const odp = assets.find(a => a.id === client.odp_asset_id);
+          const odp = realTimeAssetsBySecrets.find(a => a.id === client.odp_asset_id);
           if (odp) fromCoords = [odp.latitude, odp.longitude];
         }
       }
@@ -828,6 +862,7 @@ const LocationPage = () => {
                 onClientView={handleClientView}
                 searchQuery={clientSearchQuery}
                 onSearchChange={setClientSearchQuery}
+                pppoeSecrets={pppoeSecrets}
               />
             </div>
           </div>

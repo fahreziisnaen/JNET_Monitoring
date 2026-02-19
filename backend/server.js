@@ -726,10 +726,12 @@ server.listen(PORT, '0.0.0.0', () => {
         sendDowntimeNotifications(broadcastToWorkspace);
     });
 
-    // Daily reports - setiap hari jam 00:00
+    /* 
+    // Daily reports - setiap hari jam 00:00 - DISABLED as per user request
     cron.schedule('0 0 * * *', generateAndSendDailyReports, {
         timezone: "Asia/Jakarta"
     });
+    */
 
     // Database cleanup - setiap hari jam 02:00 (menghapus log lama untuk menghemat storage dan memory)
     cron.schedule('0 2 * * *', async () => {

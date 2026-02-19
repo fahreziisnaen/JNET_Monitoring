@@ -373,6 +373,18 @@ const MapDisplay = ({
         margin: 0 !important;
         padding: 0 !important;
       }
+      @keyframes flow {
+        from {
+          stroke-dashoffset: 20;
+        }
+        to {
+          stroke-dashoffset: 0;
+        }
+      }
+      .flow-active {
+        stroke-dasharray: 10, 10;
+        animation: flow 1s linear infinite;
+      }
     `;
     document.head.appendChild(style);
     return () => {
@@ -557,7 +569,6 @@ const MapDisplay = ({
               eventHandlers={{
                 mousedown: (e) => {
                   if (isEditingPath) {
-                    // Immediately prevent map pan — must happen before async React state update
                     const map = (e.target as any)._map;
                     if (map) {
                       map.dragging.disable();
@@ -571,14 +582,19 @@ const MapDisplay = ({
                   } else if (isEditingPath) {
                     L.DomEvent.stopPropagation(e.originalEvent || e);
                   }
+                },
+                click: (e) => {
+                  if (isEditingPath) {
+                    L.DomEvent.stopPropagation(e.originalEvent || e);
+                  }
                 }
               }}
               pathOptions={{
                 color: isLineActive ? '#f59e0b' : line.color,
                 weight: isLineActive ? 8 : 4,
                 opacity: isLineActive ? 1 : 0.8,
-                dashArray: line.status === 'rencana' ? '10, 5' : line.status === 'maintenance' ? '5, 5' : undefined,
-                className: isEditingPath ? 'cursor-pointer transition-all' : ''
+                dashArray: line.status === 'rencana' ? '10, 5' : line.status === 'maintenance' ? '5, 5' : (line.status === 'terpasang' || line.status === 'active' ? '10, 10' : undefined),
+                className: `${isEditingPath ? 'cursor-pointer transition-all' : ''} ${!isEditingPath && (line.status === 'terpasang' || line.status === 'active') ? 'flow-active' : ''}`.trim()
               }}
             />
           );
@@ -609,6 +625,11 @@ const MapDisplay = ({
                   L.DomEvent.stopPropagation(e.originalEvent || e);
                   const latlng: [number, number] = [e.latlng.lat, e.latlng.lng];
                   onLineSelect(activePathTarget.type, activePathTarget.id, latlng);
+                },
+                click: (e) => {
+                  if (isEditingPath) {
+                    L.DomEvent.stopPropagation(e.originalEvent || e);
+                  }
                 }
               }}
             />
@@ -688,7 +709,14 @@ const MapDisplay = ({
               <Marker
                 key={asset.id}
                 position={[lat, lon]}
-                eventHandlers={{ click: () => onMarkerClick(asset) }}
+                eventHandlers={{
+                  click: (e) => {
+                    if (isEditingPath) {
+                      L.DomEvent.stopPropagation(e.originalEvent || e);
+                    }
+                    onMarkerClick(asset);
+                  }
+                }}
                 icon={icon}
                 zIndexOffset={isSelected ? 1000 : 0}
               >
@@ -735,7 +763,14 @@ const MapDisplay = ({
               <Marker
                 key={`client-${client.id}`}
                 position={[lat, lon]}
-                eventHandlers={{ click: () => onClientClick?.(client) }}
+                eventHandlers={{
+                  click: (e) => {
+                    if (isEditingPath) {
+                      L.DomEvent.stopPropagation(e.originalEvent || e);
+                    }
+                    onClientClick?.(client);
+                  }
+                }}
                 icon={icon}
                 zIndexOffset={isSelected ? 1000 : 100}
               >

@@ -28,19 +28,44 @@ interface ClientListProps {
   onClientView?: (client: Client) => void;
   searchQuery?: string;
   onSearchChange?: (query: string) => void;
+  pppoeSecrets?: any[];
 }
 
-const ClientList = ({ clients, loading, selectedClientId, onClientSelect, onClientView, searchQuery = '', onSearchChange }: ClientListProps) => {
-  const filteredClients = React.useMemo(() => {
-    if (!searchQuery.trim()) return clients;
+const ClientList = ({ clients, loading, selectedClientId, onClientSelect, onClientView, searchQuery = '', onSearchChange, pppoeSecrets }: ClientListProps) => {
+  const existingSecretsSet = React.useMemo(() => {
+    return new Set(pppoeSecrets?.map((s: any) => s.name) || []);
+  }, [pppoeSecrets]);
 
-    const query = searchQuery.toLowerCase().trim();
-    return clients.filter(client => {
-      const nameMatch = client.pppoe_secret_name.toLowerCase().includes(query);
-      const odpMatch = client.odp_name?.toLowerCase().includes(query);
-      return nameMatch || odpMatch;
-    });
-  }, [clients, searchQuery]);
+  const filteredClients = React.useMemo(() => {
+    let result = [...clients];
+
+    if (searchQuery.trim()) {
+      const query = searchQuery.toLowerCase().trim();
+      result = result.filter(client => {
+        const nameMatch = client.pppoe_secret_name.toLowerCase().includes(query);
+        const odpMatch = client.odp_name?.toLowerCase().includes(query);
+        return nameMatch || odpMatch;
+      });
+    }
+
+    // Sort: Orphan first, then alphabetical
+    if (pppoeSecrets && pppoeSecrets.length > 0) {
+      result.sort((a, b) => {
+        const aIsOrphan = !existingSecretsSet.has(a.pppoe_secret_name);
+        const bIsOrphan = !existingSecretsSet.has(b.pppoe_secret_name);
+
+        if (aIsOrphan && !bIsOrphan) return -1;
+        if (!aIsOrphan && bIsOrphan) return 1;
+
+        return a.pppoe_secret_name.localeCompare(b.pppoe_secret_name);
+      });
+    } else {
+      // Default alphabetical sort if no pppoeSecrets for comparison
+      result.sort((a, b) => a.pppoe_secret_name.localeCompare(b.pppoe_secret_name));
+    }
+
+    return result;
+  }, [clients, searchQuery, pppoeSecrets, existingSecretsSet]);
 
   return (
     <Card className="h-full flex flex-col">
@@ -85,7 +110,14 @@ const ClientList = ({ clients, loading, selectedClientId, onClientSelect, onClie
                       <User size={20} />
                     </div>
                     <div className="flex-grow overflow-hidden">
-                      <p className="font-semibold truncate text-base">{client.pppoe_secret_name}</p>
+                      <div className="flex items-center gap-2">
+                        <p className="font-semibold truncate text-base">{client.pppoe_secret_name}</p>
+                        {pppoeSecrets && pppoeSecrets.length > 0 && !existingSecretsSet.has(client.pppoe_secret_name) && (
+                          <span className="flex-shrink-0 px-1.5 py-0.5 rounded text-[10px] font-bold bg-destructive text-destructive-foreground">
+                            ORPHAN
+                          </span>
+                        )}
+                      </div>
                       {client.odp_name ? (
                         <p className="text-sm text-muted-foreground">ODP: {client.odp_name}</p>
                       ) : (

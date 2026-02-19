@@ -16,8 +16,8 @@ const BackupRestoreCard = () => {
     const fileInputRef = useRef<HTMLInputElement>(null);
     const apiUrl = process.env.NEXT_PUBLIC_API_BASE_URL;
 
-    // Hanya admin yang bisa melihat konten card ini
-    if (user?.role !== 'admin') return null;
+    // Hanya Super Admin yang bisa melihat konten card ini
+    if (!user?.is_super_admin) return null;
 
     const handleExport = async () => {
         setExporting(true);

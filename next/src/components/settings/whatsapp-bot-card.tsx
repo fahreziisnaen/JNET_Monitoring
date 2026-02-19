@@ -14,7 +14,6 @@ const WhatsappBotCard = () => {
     const isSuperAdmin = !!user?.is_super_admin;
     // Admin biasa boleh melihat status tapi tidak boleh mengubah
     const isAdmin = user?.role === 'admin';
-    const [isEnabled, setIsEnabled] = useState(false);
     const [interfaces, setInterfaces] = useState<string[]>([]);
     const [selectedInterface, setSelectedInterface] = useState('');
     const [initialInterface, setInitialInterface] = useState('');
@@ -36,6 +35,29 @@ const WhatsappBotCard = () => {
 
     const apiUrl = process.env.NEXT_PUBLIC_API_BASE_URL;
 
+    const [testingWsId, setTestingWsId] = useState<string | number | null>(null);
+
+    const handleSendTestMessage = async (jid: string, identifier: string | number) => {
+        if (!jid) {
+            alert('Silakan pilih grup atau masukkan ID WhatsApp terlebih dahulu.');
+            return;
+        }
+        setTestingWsId(identifier);
+        try {
+            const res = await apiFetch(`${apiUrl}/api/bot/test-message`, {
+                method: 'POST',
+                body: JSON.stringify({ jid })
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.message || 'Gagal mengirim pesan tes');
+            alert('Pesan tes berhasil dikirim! Silakan periksa grup/nomor tujuan.');
+        } catch (error: any) {
+            alert(`Gagal mengirim pesan tes: ${error.message}`);
+        } finally {
+            setTestingWsId(null);
+        }
+    };
+
     const fetchGroups = useCallback(async () => {
         setFetchingGroups(true);
         try {
@@ -51,6 +73,9 @@ const WhatsappBotCard = () => {
         }
     }, [apiUrl]);
 
+    // State untuk menampung pilihan grup tiap workspace (controlled)
+    const [wsGroupSelections, setWsGroupSelections] = useState<Record<number, string>>({});
+
     const fetchAllWorkspaces = useCallback(async () => {
         if (!isSuperAdmin) return;
         setFetchingAllWs(true);
@@ -59,6 +84,13 @@ const WhatsappBotCard = () => {
             if (res.ok) {
                 const data = await res.json();
                 setAllWorkspaces(data);
+
+                // Sinkronisasi state lokal dengan data dari database
+                const selections: Record<number, string> = {};
+                data.forEach((ws: any) => {
+                    selections[ws.id] = ws.whatsapp_group_id || '';
+                });
+                setWsGroupSelections(selections);
             }
         } catch (error) {
             console.error("Gagal ambil daftar semua workspace:", error);
@@ -73,16 +105,12 @@ const WhatsappBotCard = () => {
             const workspaceRes = await apiFetch(`${apiUrl}/api/workspaces/me`);
             const workspaceData = await workspaceRes.json();
 
-            setIsEnabled(workspaceData.whatsapp_bot_enabled);
-
             // Set WhatsApp Group ID
             setWhatsappGroupId(workspaceData.whatsapp_group_id || '');
             setInitialGroupId(workspaceData.whatsapp_group_id || '');
 
-            // Jika bot aktif, coba ambil daftar grup
-            if (workspaceData.whatsapp_bot_enabled) {
-                fetchGroups();
-            }
+            // Coba ambil daftar grup
+            fetchGroups();
 
             // Jika super admin, ambil semua workspace
             if (isSuperAdmin) {
@@ -94,7 +122,7 @@ const WhatsappBotCard = () => {
         } finally {
             setLoading(false);
         }
-    }, [apiUrl, fetchGroups]);
+    }, [apiUrl, fetchGroups, isSuperAdmin, fetchAllWorkspaces]);
 
     const fetchQrStatus = useCallback(async () => {
         try {
@@ -113,15 +141,12 @@ const WhatsappBotCard = () => {
         fetchData();
     }, [fetchData]);
 
-    // Polling untuk status QR jika bot aktif
+    // Polling untuk status QR (Always On)
     useEffect(() => {
-        let interval: NodeJS.Timeout;
-        if (isEnabled) {
-            fetchQrStatus(); // initial call
-            interval = setInterval(fetchQrStatus, 5000);
-        }
+        fetchQrStatus(); // initial call
+        const interval = setInterval(fetchQrStatus, 5000);
         return () => clearInterval(interval);
-    }, [isEnabled, fetchQrStatus]);
+    }, [fetchQrStatus]);
 
     // Jika status koneksi berubah jadi connected, refresh grup
     useEffect(() => {
@@ -129,23 +154,6 @@ const WhatsappBotCard = () => {
             fetchGroups();
         }
     }, [isConnected, fetchGroups]);
-
-    const handleToggle = async (checked: boolean) => {
-        setIsEnabled(checked);
-        try {
-            await apiFetch(`${apiUrl}/api/bot/toggle`, {
-                method: 'POST',
-                body: JSON.stringify({ isEnabled: checked })
-            });
-            if (checked) {
-                // Tunggu sebentar agar bot siap, lalu ambil grup
-                setTimeout(fetchGroups, 2000);
-            }
-        } catch (error) {
-            alert("Gagal mengubah status bot.");
-            setIsEnabled(!checked);
-        }
-    };
 
 
 
@@ -180,6 +188,10 @@ const WhatsappBotCard = () => {
             const data = await res.json();
             if (!res.ok) throw new Error(data.message || 'Gagal memperbarui WhatsApp Group ID');
             alert(`WhatsApp Group ID untuk workspace berhasil diperbarui!`);
+
+            // Update local selection state
+            setWsGroupSelections(prev => ({ ...prev, [workspaceId]: groupId.trim() }));
+
             fetchAllWorkspaces();
         } catch (error: any) {
             alert(`Gagal memperbarui: ${error.message}`);
@@ -247,35 +259,20 @@ const WhatsappBotCard = () => {
 
     return (
         <Card>
-            <CardHeader><CardTitle className="flex items-center gap-2"><Bot /> Bot WhatsApp Interaktif</CardTitle></CardHeader>
+            <CardHeader><CardTitle className="flex items-center gap-2"><Bot /> Layanan WhatsApp Gateway</CardTitle></CardHeader>
             <CardContent className="space-y-6">
-                <div className="flex items-center justify-between">
-                    <p className="text-sm text-muted-foreground pr-4">Aktifkan bot untuk menerima notifikasi dan menjalankan perintah via WhatsApp.</p>
-                    <label className={`relative inline-flex items-center ${!isSuperAdmin ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'}`}>
-                        <input
-                            type="checkbox"
-                            className="sr-only peer"
-                            checked={isEnabled}
-                            onChange={(e) => isSuperAdmin && handleToggle(e.target.checked)}
-                            disabled={!isSuperAdmin}
-                        />
-                        <div className="w-11 h-6 bg-secondary rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
-                    </label>
+                <div className="bg-primary/5 p-4 rounded-xl border border-primary/20">
+                    <p className="text-sm text-primary font-medium">WhatsApp Gateway aktif otomatis untuk mengirimkan OTP dan notifikasi downtime/reconnect ke nomor atau grup yang Anda tentukan di bawah.</p>
                 </div>
-                {!isSuperAdmin && isAdmin && (
-                    <p className="text-[10px] text-destructive italic -mt-4">
-                        *Hanya Super Admin (Owner) yang dapat mengubah status bot utama.
-                    </p>
-                )}
 
                 {/* QR Section */}
-                {isEnabled && !isConnected && (
+                {!isConnected && (
                     <div className="pt-6 border-t flex flex-col items-center gap-4 animate-in fade-in zoom-in-95 duration-500">
                         <div className="text-center">
                             <h3 className="text-lg font-bold flex items-center justify-center gap-2">
                                 <QrIcon className="text-primary" /> Hubungkan WhatsApp
                             </h3>
-                            <p className="text-sm text-muted-foreground mt-1">Silakan pindai kode QR di bawah ini dengan WhatsApp di HP Anda untuk mengaktifkan bot.</p>
+                            <p className="text-sm text-muted-foreground mt-1">Silakan pindai kode QR di bawah ini dengan WhatsApp di HP Anda untuk mengaktifkan layanan.</p>
                         </div>
 
                         <div className="bg-white p-6 rounded-2xl shadow-inner border border-border/50">
@@ -308,9 +305,9 @@ const WhatsappBotCard = () => {
                 <div className="pt-6 border-t">
                     <div className="flex justify-between items-center mb-4">
                         <div className="flex items-center gap-3">
-                            <div className={`w-3 h-3 rounded-full ${isEnabled ? (isConnected ? 'bg-green-500 shadow-[0_0_10px_rgba(34,197,94,0.5)]' : 'bg-yellow-500 animate-pulse') : 'bg-destructive'}`} />
+                            <div className={`w-3 h-3 rounded-full ${isConnected ? 'bg-green-500 shadow-[0_0_10px_rgba(34,197,94,0.5)]' : 'bg-yellow-500 animate-pulse'}`} />
                             <span className="text-sm font-semibold tracking-wide uppercase">
-                                Status Bot: {isEnabled ? (isConnected ? 'Terhubung (Ready)' : 'Menunggu Koneksi...') : 'Off'}
+                                Status Koneksi: {isConnected ? 'Terhubung (Ready)' : 'Menunggu Koneksi...'}
                             </span>
                         </div>
                     </div>
@@ -347,7 +344,11 @@ const WhatsappBotCard = () => {
                                     </div>
                                     <div className="flex items-center gap-2">
                                         <select
-                                            defaultValue={ws.whatsapp_group_id || ''}
+                                            value={wsGroupSelections[ws.id] || ''}
+                                            onChange={(e) => {
+                                                const val = e.target.value;
+                                                setWsGroupSelections(prev => ({ ...prev, [ws.id]: val }));
+                                            }}
                                             className="flex-1 sm:w-64 text-xs p-2 rounded-lg border bg-background focus:ring-2 focus:ring-primary/30 outline-none transition-shadow"
                                             id={`ws-input-${ws.id}`}
                                             disabled={fetchingGroups || availableGroups.length === 0}
@@ -356,18 +357,27 @@ const WhatsappBotCard = () => {
                                             {availableGroups.map(group => (
                                                 <option key={group.id} value={group.id}>{group.subject}</option>
                                             ))}
-                                            {ws.whatsapp_group_id && !availableGroups.find(g => g.id === ws.whatsapp_group_id) && (
-                                                <option value={ws.whatsapp_group_id}>{ws.whatsapp_group_id} (Grup Tersimpan)</option>
+                                            {wsGroupSelections[ws.id] && !availableGroups.find(g => g.id === wsGroupSelections[ws.id]) && (
+                                                <option value={wsGroupSelections[ws.id]}>{wsGroupSelections[ws.id]} (Grup Tersimpan)</option>
                                             )}
                                         </select>
+                                        <Button
+                                            variant="outline"
+                                            size="sm"
+                                            className="h-9 px-3"
+                                            title="Kirim pesan tes ke grup ini"
+                                            disabled={testingWsId === `test-${ws.id}`}
+                                            onClick={() => handleSendTestMessage(wsGroupSelections[ws.id], `test-${ws.id}`)}
+                                        >
+                                            {testingWsId === `test-${ws.id}` ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}
+                                        </Button>
                                         <Button
                                             variant="default"
                                             size="sm"
                                             className="h-9 px-3"
                                             disabled={updatingWsId === ws.id}
                                             onClick={() => {
-                                                const select = document.getElementById(`ws-input-${ws.id}`) as HTMLSelectElement;
-                                                handleAdminSaveGroupId(ws.id, select.value);
+                                                handleAdminSaveGroupId(ws.id, wsGroupSelections[ws.id]);
                                             }}
                                         >
                                             {updatingWsId === ws.id ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
@@ -401,10 +411,19 @@ const WhatsappBotCard = () => {
                                 onClick={fetchGroups}
                                 variant="outline"
                                 size="sm"
-                                disabled={fetchingGroups || !isEnabled}
+                                disabled={fetchingGroups}
                                 title="Refresh daftar grup"
                             >
                                 {fetchingGroups ? <Loader2 size={16} className="animate-spin" /> : <Bot size={16} />}
+                            </Button>
+                            <Button
+                                onClick={() => handleSendTestMessage(whatsappGroupId, 'current-ws-test')}
+                                variant="outline"
+                                size="sm"
+                                disabled={testingWsId === 'current-ws-test'}
+                                title="Kirim pesan tes ke grup pilihan"
+                            >
+                                {testingWsId === 'current-ws-test' ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
                             </Button>
                             <Button
                                 onClick={handleSaveGroupId}
@@ -414,11 +433,8 @@ const WhatsappBotCard = () => {
                                 Simpan
                             </Button>
                         </div>
-                        {availableGroups.length === 0 && isEnabled && !fetchingGroups && (
+                        {availableGroups.length === 0 && !fetchingGroups && (
                             <p className="text-[10px] text-muted-foreground italic">Bot terhubung tapi tidak menemukan grup pendengar, atau Anda belum masuk ke grup apapun.</p>
-                        )}
-                        {!isEnabled && (
-                            <p className="text-[10px] text-muted-foreground italic">Aktifkan bot terlebih dahulu untuk melihat daftar grup.</p>
                         )}
                         {initialGroupId && (
                             <p className="text-xs text-muted-foreground">

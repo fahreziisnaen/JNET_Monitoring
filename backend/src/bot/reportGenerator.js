@@ -73,8 +73,7 @@ async function generateAndSendDailyReports() {
             SELECT w.id, w.name, w.whatsapp_group_id, u.whatsapp_number 
             FROM workspaces w 
             LEFT JOIN users u ON w.owner_id = u.id 
-            WHERE w.whatsapp_bot_enabled = TRUE 
-            AND (w.whatsapp_group_id IS NOT NULL OR u.whatsapp_number IS NOT NULL)`);
+            WHERE (w.whatsapp_group_id IS NOT NULL OR u.whatsapp_number IS NOT NULL)`);
         for (const workspace of workspaces) {
             await generateSingleReport(workspace);
         }
