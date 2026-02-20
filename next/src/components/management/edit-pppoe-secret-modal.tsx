@@ -40,8 +40,8 @@ const EditPppoeSecretModal = ({ isOpen, onClose, onSuccess, secretToEdit }: Edit
         const now = Date.now();
         // Jika cache masih valid (< 5 menit), gunakan cache
         if (now - timestamp < CACHE_TTL) {
-          // Pastikan data terurut (untuk safety, meskipun backend sudah sort)
-          const sortedData = [...data].sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()));
+          // Pastikan data terurut, unik, dan tidak ada empty string
+          const sortedData = [...new Set(data.filter((p: string) => p && p.trim()))].sort((a: string, b: string) => a.toLowerCase().localeCompare(b.toLowerCase()));
           setProfiles(sortedData);
           return;
         }
@@ -52,14 +52,13 @@ const EditPppoeSecretModal = ({ isOpen, onClose, onSuccess, secretToEdit }: Edit
 
     // Jika cache tidak ada atau expired, fetch dari API
     setProfilesLoading(true);
-        try {
-          const res = await apiFetch(`${apiUrl}/api/pppoe/profiles`);
-          if (!res.ok) throw new Error('Gagal memuat profil');
-          const data = await res.json();
-      // Pastikan data terurut (untuk safety, meskipun backend sudah sort)
-      const sortedData = [...data].sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()));
+    try {
+      const res = await apiFetch(`${apiUrl}/api/pppoe/profiles`);
+      if (!res.ok) throw new Error('Gagal memuat profil');
+      const data = await res.json();
+      const sortedData = [...new Set(data.filter((p: string) => p && p.trim()))].sort((a: string, b: string) => a.toLowerCase().localeCompare(b.toLowerCase()));
       setProfiles(sortedData);
-      
+
       // Simpan ke cache
       try {
         localStorage.setItem(profilesCacheKey, JSON.stringify({
@@ -74,7 +73,7 @@ const EditPppoeSecretModal = ({ isOpen, onClose, onSuccess, secretToEdit }: Edit
     } finally {
       setProfilesLoading(false);
     }
-      };
+  };
 
   useEffect(() => {
     if (isOpen && secretToEdit) {
@@ -96,7 +95,7 @@ const EditPppoeSecretModal = ({ isOpen, onClose, onSuccess, secretToEdit }: Edit
     try {
       // Cek apakah profile berubah
       const profileChanged = formData.profile !== secretToEdit.profile;
-      
+
       // Update secret terlebih dahulu
       const res = await apiFetch(`${apiUrl}/api/pppoe/secrets/${secretToEdit['.id']}`, {
         method: 'PUT',
@@ -106,7 +105,7 @@ const EditPppoeSecretModal = ({ isOpen, onClose, onSuccess, secretToEdit }: Edit
         const data = await res.json();
         throw new Error(data.message || "Gagal mengupdate secret");
       }
-      
+
       // Jika profile berubah dan user sedang aktif, kick user setelah update
       if (profileChanged) {
         // Gunakan activeConnectionId dari secretToEdit (jika ada) atau cari dari pppoeSecrets
@@ -116,7 +115,7 @@ const EditPppoeSecretModal = ({ isOpen, onClose, onSuccess, secretToEdit }: Edit
           const updatedSecret = pppoeSecrets.find((s: any) => s.name === secretToEdit.name && s.isActive === true);
           activeConnectionId = updatedSecret?.activeConnectionId;
         }
-        
+
         if (activeConnectionId) {
           try {
             const encodedId = encodeURIComponent(activeConnectionId);
@@ -136,7 +135,7 @@ const EditPppoeSecretModal = ({ isOpen, onClose, onSuccess, secretToEdit }: Edit
           console.warn('User tidak aktif atau activeConnectionId tidak ditemukan, skip kick');
         }
       }
-      
+
       onSuccess();
       onClose();
     } catch (err: any) {
@@ -154,7 +153,7 @@ const EditPppoeSecretModal = ({ isOpen, onClose, onSuccess, secretToEdit }: Edit
         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 bg-black/70 flex items-center justify-center z-[1001] p-4" onClick={onClose}>
           <motion.div initial={{ y: 50, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: 50, opacity: 0 }} transition={{ type: 'spring', damping: 20, stiffness: 300 }} className="bg-card rounded-2xl shadow-2xl w-full max-w-lg border" onClick={(e) => e.stopPropagation()}>
             <form onSubmit={handleSubmit}>
-              <header className="flex justify-between items-center p-4 border-b"><h2 className="text-xl font-bold flex items-center gap-2"><Edit/> Edit Secret: {secretToEdit.name}</h2><button type="button" onClick={onClose} className="p-1 rounded-full hover:bg-secondary"><X size={20} /></button></header>
+              <header className="flex justify-between items-center p-4 border-b"><h2 className="text-xl font-bold flex items-center gap-2"><Edit /> Edit Secret: {secretToEdit.name}</h2><button type="button" onClick={onClose} className="p-1 rounded-full hover:bg-secondary"><X size={20} /></button></header>
               <div className="p-6 space-y-4">
                 <div><label className="block text-sm font-medium mb-1 text-muted-foreground">Password Baru (kosongkan jika tidak diubah)</label><input type="password" name="password" onChange={handleChange} className="w-full p-2 rounded-md bg-input" /></div>
                 <div>
@@ -167,7 +166,7 @@ const EditPppoeSecretModal = ({ isOpen, onClose, onSuccess, secretToEdit }: Edit
                   ) : (
                     <select name="profile" value={formData.profile} onChange={handleChange} className="w-full p-2 rounded-md bg-input" required>
                       {profiles.length > 0 ? (
-                        profiles.map(p => <option key={p} value={p}>{p}</option>)
+                        profiles.map((p, i) => <option key={`profile-${p}-${i}`} value={p}>{p}</option>)
                       ) : (
                         <option value="">Tidak ada profil tersedia</option>
                       )}
@@ -176,7 +175,7 @@ const EditPppoeSecretModal = ({ isOpen, onClose, onSuccess, secretToEdit }: Edit
                 </div>
                 {error && <p className="text-sm text-destructive text-center">{error}</p>}
               </div>
-              <footer className="flex justify-end gap-4 p-4 bg-secondary/50"><Button type="button" variant="ghost" onClick={onClose}>Batal</Button><Button type="submit" disabled={loading}>{loading && <Loader2 className="mr-2 h-4 w-4 animate-spin"/>} Simpan Perubahan</Button></footer>
+              <footer className="flex justify-end gap-4 p-4 bg-secondary/50"><Button type="button" variant="ghost" onClick={onClose}>Batal</Button><Button type="submit" disabled={loading}>{loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />} Simpan Perubahan</Button></footer>
             </form>
           </motion.div>
         </motion.div>

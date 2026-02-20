@@ -37,8 +37,8 @@ const AddPppoeSecretModal = ({
           const res = await apiFetch(`${apiUrl}/api/pppoe/profiles`);
           if (!res.ok) throw new Error("Gagal memuat profil");
           const data = await res.json();
-          // Pastikan data terurut (untuk safety, meskipun backend sudah sort)
-          const sortedData = [...data].sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()));
+          // Pastikan data terurut, unik, dan tidak ada empty string
+          const sortedData = [...new Set(data.filter((p: string) => p && p.trim()))].sort((a: string, b: string) => a.toLowerCase().localeCompare(b.toLowerCase()));
           setProfiles(sortedData);
           if (sortedData.length > 0) {
             setFormData((prev) => ({ ...prev, profile: sortedData[0] }));
@@ -173,8 +173,8 @@ const AddPppoeSecretModal = ({
                     className="w-full p-2 rounded-md bg-input"
                     required
                   >
-                    {profiles.map((p) => (
-                      <option key={p} value={p}>
+                    {profiles.filter(p => p && p.trim()).map((p, i) => (
+                      <option key={`profile-${p}-${i}`} value={p}>
                         {p}
                       </option>
                     ))}

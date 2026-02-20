@@ -66,8 +66,8 @@ const IpPoolManagerModal = ({ isOpen, onClose }: IpPoolManagerModalProps) => {
         poolsData: poolsData.length > 0 ? poolsData.map(p => p.profile_name) : 'empty'
       });
 
-      // Pastikan profiles terurut (untuk safety, meskipun backend sudah sort)
-      const sortedProfiles = [...profilesData].sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()));
+      // Pastikan profiles terurut dan unik (filter empty, deduplicate, lalu sort)
+      const sortedProfiles = Array.from(new Set<string>((profilesData as string[]).filter((p) => Boolean(p && p.trim())))).sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()));
 
       // Jika database kosong (tidak ada data) dan belum skip auto sync, lakukan sync otomatis
       // Hanya sync jika benar-benar tidak ada data di database (poolsData.length === 0)
@@ -336,46 +336,49 @@ const IpPoolManagerModal = ({ isOpen, onClose }: IpPoolManagerModalProps) => {
     }
   };
 
+
   return (
-    <AnimatePresence>
-      {isOpen && (
-        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 bg-black/70 flex items-center justify-center z-[1001] p-4" onClick={onClose}>
-          <motion.div initial={{ y: 50, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: 50, opacity: 0 }} transition={{ type: 'spring', damping: 20, stiffness: 300 }} className="bg-card text-card-foreground rounded-2xl shadow-2xl w-full max-w-2xl border flex flex-col max-h-[90vh]" onClick={(e) => e.stopPropagation()}>
-            <header className="flex-shrink-0 flex justify-between items-center p-4 border-b"><h2 className="text-xl font-bold flex items-center gap-2"><Database /> Manajer IP Pool</h2><button type="button" onClick={onClose} className="p-1 rounded-full hover:bg-secondary"><X size={20} /></button></header>
-            <div className="flex-grow p-6 space-y-4 overflow-y-auto">
-              <div className="flex justify-between items-center">
-                <h3 className="font-semibold text-muted-foreground">Aturan Aktif</h3>
-                <Button
-                  onClick={handleSyncClick}
-                  variant="outline"
-                  size="sm"
-                  disabled={loading}
-                  className="flex items-center gap-2"
-                >
-                  <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
-                  Sync dari Mikrotik
-                </Button>
-              </div>
-              {loading ? <div className="flex justify-center p-4"><Loader2 className="animate-spin" /></div> : pools.length > 0 ? <div className="space-y-2">{pools.map(pool => (<div key={pool.id} className="text-sm p-3 bg-secondary rounded-lg flex justify-between items-center"><div><p className="font-bold text-primary">{pool.profile_name}</p><p className="text-xs font-mono text-muted-foreground">Range: {pool.ip_start} - {pool.ip_end}</p><p className="text-xs font-mono text-muted-foreground">Gateway: {pool.gateway}</p></div><Button onClick={() => handleDeleteClick(pool.id)} variant="ghost" size="icon" className="text-muted-foreground hover:text-destructive"><Trash2 size={16} /></Button></div>))}</div> : <p className="text-center text-muted-foreground text-sm">Belum ada aturan IP Pool yang dibuat.</p>}
-            </div>
-            <form onSubmit={handleSubmit}>
-              <div className="flex-shrink-0 p-6 border-t space-y-4 bg-background">
-                <h3 className="font-semibold">Tambah/Update Aturan Baru</h3>
-                {error && <p className="text-sm text-destructive text-center p-2 bg-destructive/10 rounded-md">{error}</p>}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div><label className="text-sm font-medium">Profil PPPoE</label><select name="profile_name" value={formData.profile_name} onChange={handleChange} className="w-full p-2 mt-1 rounded-md bg-input" required>{profiles.map(p => <option key={p} value={p}>{p}</option>)}</select></div>
-                  <div><label className="text-sm font-medium">Gateway (Local)</label><input name="gateway" value={formData.gateway} onChange={handleChange} type="text" placeholder="e.g., 10.10.10.1" className="w-full p-2 mt-1 rounded-md bg-input" required /></div>
+    <>
+      <AnimatePresence>
+        {isOpen && (
+          <motion.div key="ip-pool-overlay" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 bg-black/70 flex items-center justify-center z-[1001] p-4" onClick={onClose}>
+            <motion.div initial={{ y: 50, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: 50, opacity: 0 }} transition={{ type: 'spring', damping: 20, stiffness: 300 }} className="bg-card text-card-foreground rounded-2xl shadow-2xl w-full max-w-2xl border flex flex-col max-h-[90vh]" onClick={(e) => e.stopPropagation()}>
+              <header className="flex-shrink-0 flex justify-between items-center p-4 border-b"><h2 className="text-xl font-bold flex items-center gap-2"><Database /> Manajer IP Pool</h2><button type="button" onClick={onClose} className="p-1 rounded-full hover:bg-secondary"><X size={20} /></button></header>
+              <div className="flex-grow p-6 space-y-4 overflow-y-auto">
+                <div className="flex justify-between items-center">
+                  <h3 className="font-semibold text-muted-foreground">Aturan Aktif</h3>
+                  <Button
+                    onClick={handleSyncClick}
+                    variant="outline"
+                    size="sm"
+                    disabled={loading}
+                    className="flex items-center gap-2"
+                  >
+                    <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
+                    Sync dari Mikrotik
+                  </Button>
                 </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div><label className="text-sm font-medium">IP Start (Remote)</label><input name="ip_start" value={formData.ip_start} onChange={handleChange} type="text" placeholder="e.g., 10.10.10.2" className="w-full p-2 mt-1 rounded-md bg-input" required /></div>
-                  <div><label className="text-sm font-medium">IP End (Remote)</label><input name="ip_end" value={formData.ip_end} onChange={handleChange} type="text" placeholder="e.g., 10.10.10.254" className="w-full p-2 mt-1 rounded-md bg-input" required /></div>
-                </div>
-                <div className="flex justify-end"><Button type="submit" className="flex items-center gap-2" disabled={loading}>{loading && <Loader2 className="animate-spin h-4 w-4 mr-2" />}<Save size={16} /> Simpan Aturan</Button></div>
+                {loading ? <div className="flex justify-center p-4"><Loader2 className="animate-spin" /></div> : pools.length > 0 ? <div className="space-y-2">{pools.map((pool, i) => (<div key={`pool-${pool.id ?? i}-${pool.profile_name}`} className="text-sm p-3 bg-secondary rounded-lg flex justify-between items-center"><div><p className="font-bold text-primary">{pool.profile_name}</p><p className="text-xs font-mono text-muted-foreground">Range: {pool.ip_start} - {pool.ip_end}</p><p className="text-xs font-mono text-muted-foreground">Gateway: {pool.gateway}</p></div><Button onClick={() => handleDeleteClick(pool.id)} variant="ghost" size="icon" className="text-muted-foreground hover:text-destructive"><Trash2 size={16} /></Button></div>))}</div> : <p className="text-center text-muted-foreground text-sm">Belum ada aturan IP Pool yang dibuat.</p>}
               </div>
-            </form>
+              <form onSubmit={handleSubmit}>
+                <div className="flex-shrink-0 p-6 border-t space-y-4 bg-background">
+                  <h3 className="font-semibold">Tambah/Update Aturan Baru</h3>
+                  {error && <p className="text-sm text-destructive text-center p-2 bg-destructive/10 rounded-md">{error}</p>}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div><label className="text-sm font-medium">Profil PPPoE</label><select name="profile_name" value={formData.profile_name} onChange={handleChange} className="w-full p-2 mt-1 rounded-md bg-input" required>{profiles.filter(p => p && p.trim()).map((p, i) => <option key={`profile-${p}-${i}`} value={p}>{p}</option>)}</select></div>
+                    <div><label className="text-sm font-medium">Gateway (Local)</label><input name="gateway" value={formData.gateway} onChange={handleChange} type="text" placeholder="e.g., 10.10.10.1" className="w-full p-2 mt-1 rounded-md bg-input" required /></div>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div><label className="text-sm font-medium">IP Start (Remote)</label><input name="ip_start" value={formData.ip_start} onChange={handleChange} type="text" placeholder="e.g., 10.10.10.2" className="w-full p-2 mt-1 rounded-md bg-input" required /></div>
+                    <div><label className="text-sm font-medium">IP End (Remote)</label><input name="ip_end" value={formData.ip_end} onChange={handleChange} type="text" placeholder="e.g., 10.10.10.254" className="w-full p-2 mt-1 rounded-md bg-input" required /></div>
+                  </div>
+                  <div className="flex justify-end"><Button type="submit" className="flex items-center gap-2" disabled={loading}>{loading && <Loader2 className="animate-spin h-4 w-4 mr-2" />}<Save size={16} /> Simpan Aturan</Button></div>
+                </div>
+              </form>
+            </motion.div>
           </motion.div>
-        </motion.div>
-      )}
+        )}
+      </AnimatePresence>
       <ConfirmModal
         isOpen={confirmConfig.isOpen}
         onClose={() => setConfirmConfig(prev => ({ ...prev, isOpen: false }))}
@@ -385,7 +388,7 @@ const IpPoolManagerModal = ({ isOpen, onClose }: IpPoolManagerModalProps) => {
         confirmText={confirmConfig.confirmText}
         isLoading={confirmConfig.isLoading}
       />
-    </AnimatePresence>
+    </>
   );
 };
 export default IpPoolManagerModal;

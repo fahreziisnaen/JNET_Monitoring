@@ -22,6 +22,7 @@ router.route('/:id/connections')
 
 router.route('/:id')
     .put(authorizeAdmin, uploadAsset.single('photo'), assetController.updateAsset)
+    .patch(authorizeAdmin, uploadAsset.single('photo'), assetController.updateAsset)
     .delete(authorizeAdmin, assetController.deleteAsset);
 
 module.exports = router;

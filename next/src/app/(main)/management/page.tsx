@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { Users, UserCheck, UserX, Plus, Settings, Loader2, RefreshCw } from 'lucide-react';
+import { Users, UserCheck, UserX, Plus, Settings, Loader2 } from 'lucide-react';
 import { useAuth } from '@/components/providers/auth-provider';
 import { useMikrotik } from '@/components/providers/mikrotik-provider';
 import { DeviceSelector } from '@/components/ui/device-selector';
@@ -20,7 +20,6 @@ const ManagementPage = () => {
   const [isIpPoolModalOpen, setIsIpPoolModalOpen] = useState(false);
   const [summary, setSummary] = useState({ total: 0, active: 0, inactive: 0 });
   const [loading, setLoading] = useState(false);
-  const [refreshing, setRefreshing] = useState(false);
   const [refreshTrigger, setRefreshTrigger] = useState(0);
   const [activeFilter, setActiveFilter] = useState<'all' | 'active' | 'inactive'>('all');
   const [hasDevices, setHasDevices] = useState<boolean | null>(null);
@@ -101,13 +100,6 @@ const ManagementPage = () => {
     setRefreshTrigger(prev => prev + 1);
   };
 
-  const handleRefresh = useCallback(async () => {
-    setRefreshing(true);
-    await fetchSummary();
-    setRefreshTrigger(prev => prev + 1);
-    setTimeout(() => setRefreshing(false), 500);
-  }, [fetchSummary]);
-
   const renderSummaryCard = (title: string, count: number, icon: React.ReactNode, color: string, filter: 'all' | 'active' | 'inactive') => (
     <button onClick={() => setActiveFilter(filter)} className={`w-full text-left rounded-lg transition-all ${activeFilter === filter ? 'ring-2 ring-primary ring-offset-2 ring-offset-background' : ''}`}>
       <SummaryCard title={title} count={loading ? <Loader2 className="animate-spin" /> : count} icon={icon} colorClass={color} />
@@ -158,9 +150,6 @@ const ManagementPage = () => {
               className="w-full sm:w-auto"
             />
             <div className="flex items-center gap-2 w-full sm:w-auto">
-              <Button variant="outline" onClick={handleRefresh} disabled={refreshing || loading} className="flex-1 sm:flex-none">
-                <RefreshCw size={18} className={`${refreshing ? 'animate-spin' : ''}`} /> <span className="inline">Refresh</span>
-              </Button>
               <Button variant="secondary" onClick={() => setIsIpPoolModalOpen(true)} className="flex-1 sm:flex-none">
                 <Settings size={18} /> <span className="hidden sm:inline">Atur IP Pool</span>
               </Button>

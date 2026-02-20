@@ -93,6 +93,8 @@ const LocationPage = () => {
   const [pathHistory, setPathHistory] = useState<[number, number][][]>([]);
   // Buffer (reactive) to preserve unsaved edits when switching between lines
   const [pendingPathEdits, setPendingPathEdits] = useState<Map<string, [number, number][]>>(new Map());
+  // Pending marker moves (deferred, saved on Simpan)
+  const [pendingMarkerMoves, setPendingMarkerMoves] = useState<Array<{ type: 'asset' | 'client'; id: number; lat: number; lng: number; origLat: number; origLng: number }>>([]);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -469,6 +471,67 @@ const LocationPage = () => {
     }
   };
 
+  const handleMarkerDragEnd = (type: 'asset' | 'client', id: number, lat: number, lng: number) => {
+    // Get the current (original) coordinates before the optimistic update
+    const origLat = type === 'asset'
+      ? (assets.find(a => a.id === id)?.latitude ?? lat)
+      : (clients.find(c => c.id === id)?.latitude ?? lat);
+    const origLng = type === 'asset'
+      ? (assets.find(a => a.id === id)?.longitude ?? lng)
+      : (clients.find(c => c.id === id)?.longitude ?? lng);
+
+    // Optimistic update — update local state immediately so the marker doesn't snap back
+    if (type === 'asset') {
+      setAssets(prev => prev.map(a => a.id === id ? { ...a, latitude: lat, longitude: lng } : a));
+    } else {
+      setClients(prev => prev.map(c => c.id === id ? { ...c, latitude: lat, longitude: lng } : c));
+    }
+
+    // --- Sync editingPathPoints if this marker is an endpoint of the active editing path ---
+    // This prevents the orange overlay line from disconnecting when a connected marker is dragged.
+    if (pathTarget && editingPathPoints.length >= 2) {
+      // Case 1: The dragged marker IS the pathTarget (the "to" endpoint = last point)
+      if (type === pathTarget.type && id === pathTarget.id) {
+        setEditingPathPoints(prev => {
+          if (prev.length < 2) return prev;
+          const updated = [...prev];
+          updated[updated.length - 1] = [lat, lng];
+          return updated;
+        });
+      } else if (type === 'asset') {
+        // Case 2: The dragged asset might be the "from" (parent) of the pathTarget (first point)
+        const targetItem = pathTarget.type === 'asset'
+          ? assets.find(a => a.id === pathTarget.id)
+          : clients.find(c => c.id === pathTarget.id);
+        const fromId = pathTarget.type === 'asset'
+          ? (targetItem as Asset | undefined)?.parent_asset_id
+          : (targetItem as Client | undefined)?.odp_asset_id;
+        if (fromId && id === fromId) {
+          setEditingPathPoints(prev => {
+            if (prev.length < 2) return prev;
+            const updated = [...prev];
+            updated[0] = [lat, lng];
+            return updated;
+          });
+        }
+      }
+    }
+    // --- End sync editingPathPoints ---
+
+    // Store as pending (deferred) move — will be saved when Simpan is clicked
+    // If this marker was already moved, update the existing entry (keep the original origLat/origLng)
+    setPendingMarkerMoves(prev => {
+      const existingIdx = prev.findIndex(m => m.type === type && m.id === id);
+      if (existingIdx >= 0) {
+        // Update the destination but keep the original starting point
+        const updated = [...prev];
+        updated[existingIdx] = { ...updated[existingIdx], lat, lng };
+        return updated;
+      }
+      return [...prev, { type, id, lat, lng, origLat, origLng }];
+    });
+  };
+
   const handleStartEditPath = (type: 'asset' | 'client', item: Asset | Client) => {
     setIsDetailModalOpen(false);
     setIsClientDetailModalOpen(false);
@@ -640,6 +703,29 @@ const LocationPage = () => {
       }
     }
 
+    if (points.length >= 2) {
+      // Fix for stale connection_path endpoints:
+      // The DB stores the marker coordinates AT THE TIME THE PATH WAS SAVED.
+      // If markers have been moved since, the first/last point will be stale.
+      // Override them with the current live coordinates of from/to markers.
+      let fromCoords: [number, number] | null = null;
+      if (type === 'asset') {
+        const assetItem = item as Asset;
+        if (assetItem.parent_asset_id) {
+          const parent = realTimeAssetsBySecrets.find(a => a.id === assetItem.parent_asset_id);
+          if (parent) fromCoords = [parent.latitude, parent.longitude];
+        }
+      } else {
+        const clientItem = item as Client;
+        if (clientItem.odp_asset_id) {
+          const odp = realTimeAssetsBySecrets.find(a => a.id === clientItem.odp_asset_id);
+          if (odp) fromCoords = [odp.latitude, odp.longitude];
+        }
+      }
+      if (fromCoords) points[0] = fromCoords;
+      points[points.length - 1] = [Number(item.latitude), Number(item.longitude)];
+    }
+
     if (points.length < 2) {
       // Default straight line if no path exists
       let fromCoords: [number, number] | null = null;
@@ -709,53 +795,67 @@ const LocationPage = () => {
   }, [pushHistory]);
 
   const handleSavePath = async () => {
-    if (!pathTarget) return;
-
     const apiUrl = process.env.NEXT_PUBLIC_API_BASE_URL;
+    let failCount = 0;
+    let totalSaved = 0;
 
-    // Build full list: current target + all pending edits
-    const allSaves: Array<{ type: 'asset' | 'client', id: number, points: [number, number][] }> = [];
+    // --- Save path edits ---
+    if (pathTarget) {
+      const allSaves: Array<{ type: 'asset' | 'client', id: number, points: [number, number][] }> = [];
+      allSaves.push({ type: pathTarget.type, id: pathTarget.id, points: editingPathPoints });
+      pendingPathEdits.forEach((points, key) => {
+        const [type, idStr] = key.split('-') as ['asset' | 'client', string];
+        const id = parseInt(idStr);
+        if (!(type === pathTarget.type && id === pathTarget.id)) {
+          allSaves.push({ type, id, points });
+        }
+      });
 
-    // Add current active target
-    allSaves.push({ type: pathTarget.type, id: pathTarget.id, points: editingPathPoints });
-
-    // Add all other pending edits
-    pendingPathEdits.forEach((points, key) => {
-      const [type, idStr] = key.split('-') as ['asset' | 'client', string];
-      const id = parseInt(idStr);
-      if (!(type === pathTarget.type && id === pathTarget.id)) {
-        allSaves.push({ type, id, points });
-      }
-    });
-
-    try {
-      let failCount = 0;
       for (const save of allSaves) {
         const endpoint = save.type === 'asset'
           ? `${apiUrl}/api/assets/${save.id}`
           : `${apiUrl}/api/clients/${save.id}`;
+        try {
+          const res = await apiFetch(endpoint, {
+            method: 'PUT',
+            body: JSON.stringify({ connection_path: JSON.stringify(save.points) })
+          });
+          if (!res.ok) failCount++;
+          else totalSaved++;
+        } catch { failCount++; }
+      }
+    }
+
+    // --- Save pending marker moves ---
+    for (const move of pendingMarkerMoves) {
+      const endpoint = move.type === 'asset'
+        ? `${apiUrl}/api/assets/${move.id}`
+        : `${apiUrl}/api/clients/${move.id}`;
+      try {
         const res = await apiFetch(endpoint, {
-          method: 'PUT',
-          body: JSON.stringify({ connection_path: JSON.stringify(save.points) })
+          method: 'PATCH',
+          body: JSON.stringify({ latitude: move.lat, longitude: move.lng })
         });
         if (!res.ok) failCount++;
-      }
-
-      if (failCount > 0) {
-        toast.warning("Penyimpanan Parsial", { description: `⚠️ ${failCount} jalur gagal disimpan.` });
-      } else {
-        toast.success("Penyimpanan Berhasil", { description: `✅ ${allSaves.length} jalur berhasil disimpan!` });
-      }
-
-      setPendingPathEdits(new Map());
-      setPathHistory([]);
-      setIsEditingPath(false);
-      setPathTarget(null);
-      setEditingPathPoints([]);
-      handleSuccess();
-    } catch (error) {
-      toast.error("Gagal Menyimpan", { description: "Gagal menyimpan jalur." });
+        else totalSaved++;
+      } catch { failCount++; }
     }
+
+    // --- Show result ---
+    if (failCount > 0) {
+      toast.warning("Penyimpanan Parsial", { description: `⚠️ ${failCount} item gagal disimpan.` });
+    } else if (totalSaved > 0) {
+      toast.success("Penyimpanan Berhasil", { description: `✅ ${totalSaved} perubahan berhasil disimpan!` });
+    }
+
+    // --- Reset all edit state ---
+    setPendingPathEdits(new Map());
+    setPendingMarkerMoves([]);
+    setPathHistory([]);
+    setIsEditingPath(false);
+    setPathTarget(null);
+    setEditingPathPoints([]);
+    handleSuccess();
   };
 
   // Confirm Modal State
@@ -844,14 +944,6 @@ const LocationPage = () => {
           <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4">
             <h1 className="text-2xl sm:text-3xl font-bold text-foreground">Peta Lokasi Aset</h1>
             <div className="flex gap-2 flex-wrap">
-              <Button
-                variant="destructive"
-                onClick={handleResetPathClick}
-                disabled={!pathTarget}
-              >
-                {loading ? <Loader2 size={18} className="sm:mr-2 animate-spin" /> : <RefreshCw size={18} className="sm:mr-2" />}
-                <span className="hidden sm:inline">Refresh</span>
-              </Button>
               <Button variant="secondary" onClick={() => fileInputRef.current?.click()} disabled={isImporting}>
                 {isImporting ? <Loader2 size={18} className="sm:mr-2 animate-spin" /> : <Upload size={18} className="sm:mr-2" />}
                 <span className="hidden sm:inline">Import KML</span>
@@ -866,7 +958,7 @@ const LocationPage = () => {
                 className={isEditingPath ? "bg-primary text-primary-foreground hover:bg-primary/90" : ""}
               >
                 <GitBranch size={18} className="sm:mr-2" />
-                <span className="hidden sm:inline">{isEditingPath ? "Keluar Edit Jalur" : "Mode Edit Jalur"}</span>
+                <span className="hidden sm:inline">{isEditingPath ? "Keluar Edit Mode" : "Edit Mode"}</span>
               </Button>
               <Button variant="outline" onClick={() => setIsAddClientModalOpen(true)}>
                 <User size={18} className="sm:mr-2" /> <span className="hidden sm:inline">Tambah Client</span>
@@ -879,21 +971,62 @@ const LocationPage = () => {
               <div className="flex items-center gap-3">
                 <div className="w-3 h-3 bg-primary rounded-full animate-ping flex-shrink-0" />
                 <div>
-                  <p className="text-sm font-bold">MODE EDIT JALUR AKTIF</p>
+                  <p className="text-sm font-bold">EDIT MODE AKTIF</p>
                   <p className="text-xs text-muted-foreground">
                     {pathTarget
                       ? "Klik peta untuk menambah belokan, geser titik, atau klik ikon lain untuk pindah edit."
-                      : "Klik garis kabel atau ikon Aset/Client di peta untuk mulai mengedit jalurnya."}
+                      : "Geser Aset/Client untuk pindah lokasi. Klik garis atau ikon untuk edit jalur koneksi."}
                   </p>
                 </div>
               </div>
               <div className="flex gap-2 flex-wrap">
-                <Button variant="outline" size="sm" onClick={() => { setIsEditingPath(false); setEditingPathPoints([]); setPathTarget(null); setPendingPathEdits(new Map()); setPathHistory([]); }}>Selesai</Button>
-                {pathTarget && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    // Batal: rollback semua pending marker moves
+                    pendingMarkerMoves.forEach(move => {
+                      if (move.type === 'asset') {
+                        setAssets(prev => prev.map(a => a.id === move.id ? { ...a, latitude: move.origLat, longitude: move.origLng } : a));
+                      } else {
+                        setClients(prev => prev.map(c => c.id === move.id ? { ...c, latitude: move.origLat, longitude: move.origLng } : c));
+                      }
+                    });
+                    setIsEditingPath(false);
+                    setEditingPathPoints([]);
+                    setPathTarget(null);
+                    setPendingPathEdits(new Map());
+                    setPathHistory([]);
+                    setPendingMarkerMoves([]);
+                  }}
+                >
+                  Batal
+                </Button>
+                {(pathTarget || pendingMarkerMoves.length > 0) && (
                   <>
-                    <Button variant="outline" size="sm" onClick={handleUndo} disabled={pathHistory.length === 0}>Undo</Button>
-                    <Button variant="secondary" size="sm" onClick={handleResetPath}>Reset ke Lurus</Button>
-                    <Button size="sm" onClick={handleSavePath}>Simpan Jalur</Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        // Undo: untuk path edits gunakan handleUndo, untuk marker moves pop yang terakhir
+                        if (pathHistory.length > 0) {
+                          handleUndo();
+                        } else if (pendingMarkerMoves.length > 0) {
+                          const last = pendingMarkerMoves[pendingMarkerMoves.length - 1];
+                          // Rollback optimistic update
+                          if (last.type === 'asset') {
+                            setAssets(prev => prev.map(a => a.id === last.id ? { ...a, latitude: last.origLat, longitude: last.origLng } : a));
+                          } else {
+                            setClients(prev => prev.map(c => c.id === last.id ? { ...c, latitude: last.origLat, longitude: last.origLng } : c));
+                          }
+                          setPendingMarkerMoves(prev => prev.slice(0, -1));
+                        }
+                      }}
+                      disabled={pathHistory.length === 0 && pendingMarkerMoves.length === 0}
+                    >
+                      Undo
+                    </Button>
+                    <Button size="sm" onClick={handleSavePath}>Simpan</Button>
                   </>
                 )}
               </div>
@@ -948,6 +1081,7 @@ const LocationPage = () => {
               isPullingNewPoint={isPullingNewPoint}
               activeDraggedIndex={activeDraggedIndex}
               onMouseUp={handleMouseUp}
+              onMarkerDragEnd={handleMarkerDragEnd}
             />
             <MapLegend />
             <MapFilterPanel

@@ -11,6 +11,7 @@ router.get('/', clientController.getClients);
 router.post('/', uploadClient.single('photo'), clientController.createClient);
 router.get('/:id', clientController.getClient);
 router.put('/:id', uploadClient.single('photo'), clientController.updateClient);
+router.patch('/:id', uploadClient.single('photo'), clientController.updateClient);
 router.delete('/:id', clientController.deleteClient);
 
 module.exports = router;

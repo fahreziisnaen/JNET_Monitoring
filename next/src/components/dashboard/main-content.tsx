@@ -34,7 +34,7 @@ const EtherChart = ({ trafficData, interfaceName }: { trafficData: any; interfac
   const storageKey = `chart-data-${workspaceId}-${interfaceName}`;
   // Tidak ada batasan waktu - data grafik tetap tersimpan meskipun logout lama
   // Polling cron job tetap berjalan di background untuk update dashboard_snapshot
-  
+
   // Load saved data from localStorage on mount
   // Data grafik tetap tersimpan tanpa batasan waktu karena polling cron job
   // terus berjalan di background untuk update dashboard_snapshot
@@ -102,17 +102,17 @@ const EtherChart = ({ trafficData, interfaceName }: { trafficData: any; interfac
         if (lastUpdateRef.current && now - lastUpdateRef.current < 2000) {
           return prevData;
         }
-        
+
         lastUpdateRef.current = now;
-        
+
         const newData = {
-        labels: [...prevData.labels.slice(1), new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })],
-        datasets: [
-          { ...prevData.datasets[0], data: [...(prevData.datasets[0].data as number[]).slice(1), txMbps] },
-          { ...prevData.datasets[1], data: [...(prevData.datasets[1].data as number[]).slice(1), rxMbps] },
-        ]
+          labels: [...prevData.labels.slice(1), new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })],
+          datasets: [
+            { ...prevData.datasets[0], data: [...(prevData.datasets[0].data as number[]).slice(1), txMbps] },
+            { ...prevData.datasets[1], data: [...(prevData.datasets[1].data as number[]).slice(1), rxMbps] },
+          ]
         };
-        
+
         // Save to localStorage setiap update
         try {
           localStorage.setItem(storageKey, JSON.stringify({
@@ -122,7 +122,7 @@ const EtherChart = ({ trafficData, interfaceName }: { trafficData: any; interfac
         } catch (e) {
           console.warn('Failed to save chart data:', e);
         }
-        
+
         return newData;
       });
     }
@@ -182,7 +182,7 @@ const SortableInterfaceCard = ({ id, etherId, currentTraffic, index, itemCount }
         isLastAndOdd && 'md:col-span-2'
       )}
     >
-      <Card 
+      <Card
         className={cn(
           'transition-all duration-500 relative',
           (txBps > 100000 || rxBps > 100000) && glowClass
@@ -265,7 +265,7 @@ const MainContent = () => {
     const fromTraffic = traffic ? Object.keys(traffic) : [];
     const fromList = availableInterfaces?.map((iface: any) => iface.name) || [];
     const allInterfaces = Array.from(new Set([...fromTraffic, ...fromList]));
-    
+
     // Filter out PPPoE interfaces
     return allInterfaces
       .filter(ifaceName => {
@@ -287,7 +287,7 @@ const MainContent = () => {
         const ifaceInfo = availableInterfaces?.find((i: any) => i.name === key);
         const type = (ifaceInfo?.type || '').toLowerCase();
         if (type.includes('pppoe')) return false;
-        
+
         return currentTraffic && (currentTraffic['tx-bits-per-second'] || currentTraffic['rx-bits-per-second']);
       });
       if (interfacesWithTraffic.length > 0) {
@@ -312,9 +312,9 @@ const MainContent = () => {
       .filter(key => {
         const currentTraffic = traffic[key];
         // Tampilkan jika dipilih dan ada data traffic
-        return selectedInterfaces.has(key) && 
-               currentTraffic && 
-               (currentTraffic['tx-bits-per-second'] || currentTraffic['rx-bits-per-second']);
+        return selectedInterfaces.has(key) &&
+          currentTraffic &&
+          (currentTraffic['tx-bits-per-second'] || currentTraffic['rx-bits-per-second']);
       });
 
     // Apply saved order if available
@@ -327,12 +327,11 @@ const MainContent = () => {
     return filtered.sort();
   }, [traffic, selectedInterfaces, interfaceOrder]);
 
-  // Update order when displayedInterfaces changes (add new interfaces to end, remove deleted ones)
+  // Update order when displayedInterfaces changes (add new interfaces to end)
   const displayedInterfacesString = displayedInterfaces.join(',');
   useEffect(() => {
-    if (displayedInterfaces.length === 0) {
-      setInterfaceOrder([]);
-      localStorage.removeItem('dashboard-interface-order');
+    // Only proceed if we've loaded the saved selection and have actual interfaces to show
+    if (!hasLoadedSavedSelection || displayedInterfaces.length === 0) {
       return;
     }
 
@@ -343,20 +342,24 @@ const MainContent = () => {
         localStorage.setItem('dashboard-interface-order', JSON.stringify(initialOrder));
         return initialOrder;
       } else {
-        // Update order: keep existing order, add new interfaces at the end, remove deleted ones
-        const existingOrder = prevOrder.filter(id => displayedInterfaces.includes(id));
+        // Update order: keep ALL existing order (even if not currently in displayedInterfaces),
+        // but add new interfaces at the end.
+        // We don't remove existing ones automatically to prevent wiping out the order
+        // during temporary loading states or if user temporarily deselects them.
         const newInterfaces = displayedInterfaces.filter(id => !prevOrder.includes(id));
-        const updatedOrder = [...existingOrder, ...newInterfaces];
-        
-        if (updatedOrder.length !== prevOrder.length || 
-            updatedOrder.some((id, idx) => id !== prevOrder[idx])) {
-          localStorage.setItem('dashboard-interface-order', JSON.stringify(updatedOrder));
-          return updatedOrder;
+
+        if (newInterfaces.length === 0) {
+          // If no new interfaces, check if we need to filter out things that are no longer checked
+          // actually we want to keep them in the order so they remember their place if re-checked.
+          return prevOrder;
         }
-        return prevOrder;
+
+        const updatedOrder = [...prevOrder, ...newInterfaces];
+        localStorage.setItem('dashboard-interface-order', JSON.stringify(updatedOrder));
+        return updatedOrder;
       }
     });
-  }, [displayedInterfacesString]); // Trigger when interface list changes
+  }, [displayedInterfacesString, hasLoadedSavedSelection]); // Trigger when interface list changes or selection loaded
 
   const handleDragEnd = (event: DragEndEvent) => {
     const { active, over } = event;
@@ -412,9 +415,9 @@ const MainContent = () => {
 
   if (!isConnected) {
     return (
-        <div className="md:col-span-2 flex items-center justify-center bg-secondary rounded-xl p-10 h-full">
-            <Loader2 className="h-8 w-8 animate-spin text-muted-foreground"/>
-        </div>
+      <div className="md:col-span-2 flex items-center justify-center bg-secondary rounded-xl p-10 h-full">
+        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+      </div>
     );
   }
 
@@ -428,8 +431,8 @@ const MainContent = () => {
               <Filter size={18} />
               Pilih Interface ({selectedInterfaces.size}/{allAvailableInterfaces.length})
             </CardTitle>
-            <Button 
-              variant="ghost" 
+            <Button
+              variant="ghost"
               size="sm"
               onClick={() => setShowFilter(!showFilter)}
             >
@@ -446,18 +449,18 @@ const MainContent = () => {
                   const hasTraffic = traffic && traffic[ifaceName];
                   const isSelected = selectedInterfaces.has(ifaceName);
 
-          return (
+                  return (
                     <button
                       key={ifaceName}
                       onClick={() => toggleInterface(ifaceName)}
-              className={cn(
+                      className={cn(
                         "px-3 py-1.5 rounded-md text-sm border transition-all",
-                        isSelected 
-                          ? "bg-primary text-primary-foreground border-primary" 
+                        isSelected
+                          ? "bg-primary text-primary-foreground border-primary"
                           : "bg-secondary text-secondary-foreground border-border hover:bg-secondary/80",
                         !hasTraffic && "opacity-50"
-              )}
-            >
+                      )}
+                    >
                       {ifaceName.toUpperCase()}
                       {ifaceInfo?.type && (
                         <span className="ml-1 text-xs opacity-75">({ifaceInfo.type})</span>
@@ -469,9 +472,9 @@ const MainContent = () => {
                 <p className="text-sm text-muted-foreground">Belum ada interface yang terdeteksi.</p>
               )}
             </div>
-              </CardContent>
+          </CardContent>
         )}
-            </Card>
+      </Card>
 
       {/* Traffic Charts */}
       <DndContext
@@ -495,22 +498,22 @@ const MainContent = () => {
                     index={index}
                     itemCount={itemCount}
                   />
-          );
-        })
-      ) : (
-        <div className="md:col-span-2 flex items-center justify-center bg-secondary rounded-xl p-10 h-full">
-            <div className="text-center space-y-2">
-              <p className="text-muted-foreground">
-                {selectedInterfaces.size === 0 
-                  ? "Pilih interface yang ingin ditampilkan dari filter di atas." 
-                  : "Belum ada data traffic untuk interface yang dipilih."}
-              </p>
-              {allAvailableInterfaces.length === 0 && (
-                <p className="text-xs text-muted-foreground">Pastikan interface aktif dan terhubung ke Mikrotik.</p>
-              )}
-            </div>
-        </div>
-      )}
+                );
+              })
+            ) : (
+              <div className="md:col-span-2 flex items-center justify-center bg-secondary rounded-xl p-10 h-full">
+                <div className="text-center space-y-2">
+                  <p className="text-muted-foreground">
+                    {selectedInterfaces.size === 0
+                      ? "Pilih interface yang ingin ditampilkan dari filter di atas."
+                      : "Belum ada data traffic untuk interface yang dipilih."}
+                  </p>
+                  {allAvailableInterfaces.length === 0 && (
+                    <p className="text-xs text-muted-foreground">Pastikan interface aktif dan terhubung ke Mikrotik.</p>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
         </SortableContext>
       </DndContext>

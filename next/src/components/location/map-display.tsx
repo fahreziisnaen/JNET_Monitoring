@@ -142,13 +142,9 @@ const MapZoomHandler = ({
 };
 
 const MapClickHandler = ({ isEditingPath, onMapClick }: { isEditingPath: boolean, onMapClick?: (latlng: [number, number]) => void }) => {
-  useMapEvents({
-    click: (e: L.LeafletMouseEvent) => {
-      if (isEditingPath && onMapClick) {
-        onMapClick([e.latlng.lat, e.latlng.lng]);
-      }
-    },
-  });
+  // Intentionally disabled: clicking empty map space should NOT add waypoints.
+  // Bends are added exclusively by dragging (mousedown) directly on the line.
+  useMapEvents({});
   return null;
 };
 
@@ -326,8 +322,9 @@ interface MapDisplayProps {
   onWaypointDrag?: (index: number, latlng: [number, number]) => void;
   onWaypointDragStart?: (points: [number, number][], dragIdx?: number) => void;
   isPullingNewPoint?: boolean;
-  activeDraggedIndex?: number | null;
-  onMouseUp?: () => void;
+  activeDraggedIndex: number | null;
+  onMouseUp: () => void;
+  onMarkerDragEnd?: (type: 'asset' | 'client', id: number, lat: number, lng: number) => void;
 }
 
 const MapDisplay = ({
@@ -348,8 +345,9 @@ const MapDisplay = ({
   onWaypointDrag,
   onWaypointDragStart,
   isPullingNewPoint = false,
-  activeDraggedIndex = null,
-  onMouseUp
+  activeDraggedIndex,
+  onMouseUp,
+  onMarkerDragEnd
 }: MapDisplayProps) => {
   // Debug: log assets untuk troubleshooting
   React.useEffect(() => {
@@ -510,7 +508,13 @@ const MapDisplay = ({
                 // Filter out any invalid points
                 const validPath = path.filter(p => Array.isArray(p) && !isNaN(Number(p[0])) && !isNaN(Number(p[1])));
                 if (validPath.length >= 2) {
-                  positions = validPath as [number, number][];
+                  // Always use the LIVE coordinates of from/to markers as the first/last points.
+                  // This ensures lines follow the marker when it is dragged, even if the
+                  // stored connection_path still has the old endpoint coordinates.
+                  const livePositions: [number, number][] = [...validPath] as [number, number][];
+                  livePositions[0] = [line.from.latitude, line.from.longitude];
+                  livePositions[livePositions.length - 1] = [line.to.latitude, line.to.longitude];
+                  positions = livePositions;
                 }
               }
             } catch (e) {
@@ -677,12 +681,25 @@ const MapDisplay = ({
               <Marker
                 key={asset.id}
                 position={[lat, lon]}
+                draggable={isEditingPath}
                 eventHandlers={{
                   click: (e) => {
                     if (isEditingPath) {
                       L.DomEvent.stopPropagation(e.originalEvent || e);
                     }
                     onMarkerClick(asset);
+                  },
+                  dragend: (e) => {
+                    const marker = e.target;
+                    const position = marker.getLatLng();
+                    onMarkerDragEnd?.('asset', asset.id, position.lat, position.lng);
+                  },
+                  dragstart: (e) => {
+                    // Disable map drag during marker drag
+                    const map = (e.target as any)._map;
+                    if (map) {
+                      map.dragging.disable();
+                    }
                   }
                 }}
                 icon={icon}
@@ -731,12 +748,25 @@ const MapDisplay = ({
               <Marker
                 key={`client-${client.id}`}
                 position={[lat, lon]}
+                draggable={isEditingPath}
                 eventHandlers={{
                   click: (e) => {
                     if (isEditingPath) {
                       L.DomEvent.stopPropagation(e.originalEvent || e);
                     }
                     onClientClick?.(client);
+                  },
+                  dragend: (e) => {
+                    const marker = e.target;
+                    const position = marker.getLatLng();
+                    onMarkerDragEnd?.('client', client.id, position.lat, position.lng);
+                  },
+                  dragstart: (e) => {
+                    // Disable map drag during marker drag
+                    const map = (e.target as any)._map;
+                    if (map) {
+                      map.dragging.disable();
+                    }
                   }
                 }}
                 icon={icon}
