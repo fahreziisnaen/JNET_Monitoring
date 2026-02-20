@@ -57,22 +57,22 @@ const SlaPage = () => {
       setLoading(false);
       return;
     }
-    
+
     // Gunakan data WebSocket untuk users (sama seperti page management)
     const secretsArray = Array.isArray(pppoeSecrets) ? pppoeSecrets : [];
-    
+
     // Filter hanya yang disabled=false (sesuai dengan query parameter sebelumnya)
     const enabledSecrets = secretsArray.filter((secret: any) => secret.disabled !== 'true');
-    
+
     // Transform ke format SlaUser
     const transformedUsers: SlaUser[] = enabledSecrets.map((secret: any) => ({
       name: secret.name || '',
       profile: secret.profile || ''
     }));
-    
+
     setAllUsers(transformedUsers);
     setLoading(false);
-    
+
     console.log('[SLA Page] Update users dari WebSocket:', {
       total: transformedUsers.length,
       totalSecrets: secretsArray.length,
@@ -82,7 +82,7 @@ const SlaPage = () => {
 
   const filteredUsers = useMemo(() => {
     const usersToDisplay = allUsers.filter(user =>
-        user.name.toLowerCase().includes(searchTerm.toLowerCase())
+      user.name.toLowerCase().includes(searchTerm.toLowerCase())
     );
     usersToDisplay.sort((a, b) => a.name.localeCompare(b.name));
 
@@ -98,14 +98,14 @@ const SlaPage = () => {
     return (
       <div className="p-4 md:p-8 max-w-6xl mx-auto h-full flex flex-col">
         <div className="flex-shrink-0">
-          <div className="flex justify-between items-center mb-4">
+          <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 mb-4">
             <div>
-              <h1 className="text-3xl font-bold">Laporan SLA Pelanggan</h1>
+              <h1 className="text-2xl sm:text-3xl font-bold">Laporan SLA Pelanggan</h1>
               <p className="text-muted-foreground">
                 Ringkasan performa dan uptime pengguna PPPoE dalam 30 hari terakhir.
               </p>
             </div>
-            <DeviceSelector 
+            <DeviceSelector
               selectedDeviceId={selectedDeviceId}
               onDeviceChange={setSelectedDeviceId}
             />
@@ -122,14 +122,14 @@ const SlaPage = () => {
     return (
       <div className="p-4 md:p-8 max-w-6xl mx-auto h-full flex flex-col">
         <div className="flex-shrink-0">
-          <div className="flex justify-between items-center mb-4">
+          <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 mb-4">
             <div>
-              <h1 className="text-3xl font-bold">Laporan SLA Pelanggan</h1>
+              <h1 className="text-2xl sm:text-3xl font-bold">Laporan SLA Pelanggan</h1>
               <p className="text-muted-foreground">
                 Ringkasan performa dan uptime pengguna PPPoE dalam 30 hari terakhir.
               </p>
             </div>
-            <DeviceSelector 
+            <DeviceSelector
               selectedDeviceId={selectedDeviceId}
               onDeviceChange={setSelectedDeviceId}
             />
@@ -144,27 +144,27 @@ const SlaPage = () => {
     <>
       <div className="p-4 md:p-8 max-w-6xl mx-auto h-full flex flex-col">
         <div className="flex-shrink-0">
-          <div className="flex justify-between items-center mb-4">
+          <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 mb-4">
             <div>
-              <h1 className="text-3xl font-bold">Laporan SLA Pelanggan</h1>
+              <h1 className="text-2xl sm:text-3xl font-bold">Laporan SLA Pelanggan</h1>
               <p className="text-muted-foreground">
                 Ringkasan performa dan uptime pengguna PPPoE dalam 30 hari terakhir.
               </p>
             </div>
-            <DeviceSelector 
+            <DeviceSelector
               selectedDeviceId={selectedDeviceId}
               onDeviceChange={setSelectedDeviceId}
             />
           </div>
           <div className="mb-6 relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
-              <Input
-                  type="text"
-                  placeholder="Cari nama pengguna..."
-                  className="w-full pl-10"
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-              />
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
+            <Input
+              type="text"
+              placeholder="Cari nama pengguna..."
+              className="w-full pl-10"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+            />
           </div>
         </div>
         <Card className="flex-1 min-h-0">
@@ -180,7 +180,7 @@ const SlaPage = () => {
                 </thead>
                 <tbody>
                   {loading ? (
-                    <tr><td colSpan={3} className="text-center p-10"><Loader2 className="h-8 w-8 animate-spin mx-auto text-primary"/></td></tr>
+                    <tr><td colSpan={3} className="text-center p-10"><Loader2 className="h-8 w-8 animate-spin mx-auto text-primary" /></td></tr>
                   ) : filteredUsers.length > 0 ? (
                     filteredUsers.map((user, i) => (
                       <motion.tr
@@ -201,7 +201,7 @@ const SlaPage = () => {
                     ))
                   ) : (
                     <tr><td colSpan={3} className="text-center p-10 text-muted-foreground">
-                        {searchTerm ? `Tidak ada pengguna dengan nama "${searchTerm}".` : 'Tidak ada pengguna PPPoE yang aktif.'}
+                      {searchTerm ? `Tidak ada pengguna dengan nama "${searchTerm}".` : 'Tidak ada pengguna PPPoE yang aktif.'}
                     </td></tr>
                   )}
                 </tbody>

@@ -48,10 +48,10 @@ const MapFilterPanel = ({
   const allOwnersVisible = availableOwners.length > 0 && availableOwners.every(o => visibleOwners.has(o));
 
   return (
-    <Card className="absolute right-4 top-4 z-[1000] w-64 bg-background/95 backdrop-blur-sm shadow-lg">
-      <CardHeader className="pb-3">
+    <Card className="absolute right-2 sm:right-4 top-2 sm:top-4 z-[1000] w-36 sm:w-48 bg-background/95 backdrop-blur-sm shadow-lg">
+      <CardHeader className="px-3 py-2 sm:pb-3">
         <div className="flex items-center justify-between">
-          <CardTitle className="text-sm font-semibold">Filter View</CardTitle>
+          <CardTitle className="text-xs sm:text-sm font-semibold">Filter View</CardTitle>
           <Button
             variant="ghost"
             size="sm"

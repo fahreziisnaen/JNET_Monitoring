@@ -12,9 +12,11 @@ router.get('/interfaces-by-device', workspaceController.getInterfacesByDevice);
 router.put('/whatsapp-group-id', authorizeAdmin, workspaceController.updateWhatsAppGroupId);
 router.get('/members', workspaceController.getMembers);
 router.delete('/members/:userId', authorizeAdmin, workspaceController.removeMember);
+router.patch('/members/:userId/role', authorizeAdmin, workspaceController.updateMemberRole);
 
 // Administrative Routes (Super Admin Only)
 router.get('/all', authorizeSuperAdmin, workspaceController.getAllWorkspaces);
+router.get('/all-users', authorizeSuperAdmin, workspaceController.getAllUsers);
 router.put('/:workspaceId/whatsapp-group-id', authorizeSuperAdmin, workspaceController.adminUpdateWhatsAppGroupId);
 
 module.exports = router;

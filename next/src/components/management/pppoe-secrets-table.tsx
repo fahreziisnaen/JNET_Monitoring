@@ -36,7 +36,7 @@ const PppoeSecretsTable = ({ refreshTrigger, onActionComplete, initialFilter = '
   const [searchQuery, setSearchQuery] = useState('');
   const [sortColumn, setSortColumn] = useState<string | null>(null);
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
-  
+
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [secretToDelete, setSecretToDelete] = useState<PppoeSecret | null>(null);
   const [isActionLoading, setIsActionLoading] = useState(false);
@@ -51,10 +51,10 @@ const PppoeSecretsTable = ({ refreshTrigger, onActionComplete, initialFilter = '
       setLoading(false);
       return;
     }
-    
+
     // Gunakan data WebSocket untuk tabel (sama seperti summary aktif)
     const secretsArray = Array.isArray(pppoeSecrets) ? pppoeSecrets : [];
-    
+
     // Transform secrets dari WebSocket ke format yang diharapkan
     // Data sudah di-enrich di backend dengan isActive, uptime, currentAddress, activeConnectionId
     const transformedSecrets: PppoeSecret[] = secretsArray.map((secret: any) => {
@@ -69,10 +69,10 @@ const PppoeSecretsTable = ({ refreshTrigger, onActionComplete, initialFilter = '
       };
       return secretData;
     });
-    
+
     setAllSecrets(transformedSecrets);
     setLoading(false);
-    
+
     const activeCount = transformedSecrets.filter(s => s.isActive).length;
     console.log('[PppoeSecretsTable] Update secrets dari WebSocket:', {
       total: transformedSecrets.length,
@@ -90,17 +90,41 @@ const PppoeSecretsTable = ({ refreshTrigger, onActionComplete, initialFilter = '
     });
     return map;
   }, [pppoeSecrets]);
-  
+
   // Fungsi untuk menentukan apakah secret aktif
   const isSecretActive = useCallback((secret: PppoeSecret): boolean => {
     return secret.isActive === true;
   }, []);
-  
+
+  const formatCompactUptime = (uptime: string) => {
+    if (!uptime || uptime === '00:00:00' || uptime === 'N/A') return '-';
+
+    // Format: "1w2d05:04:03" or "2d05:04:03" or "05:04:03"
+    const match = uptime.match(/(?:(\d+)w)?(?:(\d+)d)?(?:(\d{2}):(\d{2}):(\d{2}))/);
+    if (!match) return uptime;
+
+    const [_, w, d, h, m] = match;
+    const parts = [];
+    if (w) parts.push(`${w}w`);
+    if (d) parts.push(`${d}d`);
+
+    // Jika tidak ada week/day, tampilkan hour:minute
+    if (!w && !d) {
+      parts.push(`${h}h`);
+      parts.push(`${m}m`);
+    } else if (h && h !== '00') {
+      // Jika ada week/day, tambahkan hour saja jika bukan 00
+      parts.push(`${parseInt(h)}h`);
+    }
+
+    return parts.join(' ') || '<1m';
+  };
+
   // Fungsi untuk mendapatkan uptime dari secret
-  const getUptime = useCallback((secretName: string): string | null => {
-    return secretsUptimeMap.get(secretName) || null;
+  const getUptime = useCallback((secretName: string): string => {
+    return secretsUptimeMap.get(secretName) || '00:00:00';
   }, [secretsUptimeMap]);
-  
+
   const handleSort = (column: string) => {
     if (sortColumn === column) {
       // Toggle direction jika kolom yang sama diklik
@@ -111,10 +135,10 @@ const PppoeSecretsTable = ({ refreshTrigger, onActionComplete, initialFilter = '
       setSortDirection('asc');
     }
   };
-  
+
   const filteredSecrets = useMemo(() => {
     let filtered = allSecrets;
-    
+
     // Filter berdasarkan initialFilter (active/inactive/all)
     if (initialFilter === 'active') {
       // Active: hanya yang aktif dan tidak disabled
@@ -124,7 +148,7 @@ const PppoeSecretsTable = ({ refreshTrigger, onActionComplete, initialFilter = '
       // Ini sesuai dengan perhitungan summary: inactive = total - active
       filtered = filtered.filter(secret => !isSecretActive(secret));
     }
-    
+
     // Filter berdasarkan search query
     if (searchQuery.trim()) {
       const query = searchQuery.toLowerCase().trim();
@@ -135,13 +159,13 @@ const PppoeSecretsTable = ({ refreshTrigger, onActionComplete, initialFilter = '
         return nameMatch || profileMatch || addressMatch;
       });
     }
-    
+
     // Apply sorting
     if (sortColumn) {
       filtered = [...filtered].sort((a, b) => {
         let aValue: any;
         let bValue: any;
-        
+
         switch (sortColumn) {
           case 'status': {
             // Sort by: disabled first, then active/inactive
@@ -183,10 +207,10 @@ const PppoeSecretsTable = ({ refreshTrigger, onActionComplete, initialFilter = '
                 // Format: part1 * 256^3 + part2 * 256^2 + part3 * 256 + part4
                 return parts[0] * 16777216 + parts[1] * 65536 + parts[2] * 256 + parts[3];
               };
-              
+
               // Check if it's a valid IP address format (contains dots and numbers)
               const isIPFormat = (str: string) => /^\d+\.\d+\.\d+\.\d+$/.test(str);
-              
+
               if (isIPFormat(aAddr) && isIPFormat(bAddr)) {
                 // Both are IP addresses, compare numerically
                 aValue = parseIP(aAddr);
@@ -206,21 +230,21 @@ const PppoeSecretsTable = ({ refreshTrigger, onActionComplete, initialFilter = '
             // Format MikroTik: "1w2d3h4m5s" (w=week, d=day, h=hour, m=minute, s=second)
             const parseUptime = (uptime: string | null): number => {
               if (!uptime || uptime === 'N/A' || uptime === '...') return 0;
-              
+
               // Match patterns: w (week), d (day), h (hour), m (minute), s (second)
               const weekMatch = uptime.match(/(\d+)w/);
               const dayMatch = uptime.match(/(\d+)d/);
               const hourMatch = uptime.match(/(\d+)h/);
               const minuteMatch = uptime.match(/(\d+)m/);
               const secondMatch = uptime.match(/(\d+)s/);
-              
+
               let totalSeconds = 0;
               if (weekMatch) totalSeconds += parseInt(weekMatch[1]) * 7 * 24 * 60 * 60;
               if (dayMatch) totalSeconds += parseInt(dayMatch[1]) * 24 * 60 * 60;
               if (hourMatch) totalSeconds += parseInt(hourMatch[1]) * 60 * 60;
               if (minuteMatch) totalSeconds += parseInt(minuteMatch[1]) * 60;
               if (secondMatch) totalSeconds += parseInt(secondMatch[1]);
-              
+
               return totalSeconds;
             };
             aValue = parseUptime(aUptime);
@@ -230,92 +254,92 @@ const PppoeSecretsTable = ({ refreshTrigger, onActionComplete, initialFilter = '
           default:
             return 0;
         }
-        
+
         if (aValue < bValue) return sortDirection === 'asc' ? -1 : 1;
         if (aValue > bValue) return sortDirection === 'asc' ? 1 : -1;
         return 0;
       });
     }
-    
+
     return filtered;
   }, [allSecrets, isSecretActive, initialFilter, searchQuery, sortColumn, sortDirection, getUptime]);
-  
+
   const handleAction = async (action: 'enable' | 'disable' | 'kick', secret: PppoeSecret) => {
     setIsActionLoading(true);
-    
+
     try {
-        if (action === 'kick') {
-            // Untuk kick, kita perlu .id dari /ppp/active/print
-            // Data sudah di-enrich di backend dengan activeConnectionId
-            if (!isSecretActive(secret)) {
-                throw new Error("User tidak aktif, tidak bisa di-kick.");
-            }
-            
-            // Gunakan activeConnectionId yang sudah ada di secret (dari WebSocket data)
-            if (!secret.activeConnectionId) {
-                throw new Error("ID koneksi aktif tidak ditemukan. Silakan refresh halaman.");
-            }
-            
-            try {
-                const encodedId = encodeURIComponent(secret.activeConnectionId);
-                const res = await apiFetch(`${apiUrl}/api/pppoe/active/${encodedId}/kick`, {
-                    method: 'POST'
-                });
-                if(!res.ok) {
-                    const errData = await res.json();
-                    throw new Error(errData.message || "Aksi gagal");
-                }
-            } catch (error: any) {
-                throw new Error(error.message || "Gagal melakukan kick");
-            }
-        } else if (action === 'disable') {
-            // Disable secret terlebih dahulu untuk mencegah reconnect otomatis
-            const encodedId = encodeURIComponent(secret['.id']);
-            const res = await apiFetch(`${apiUrl}/api/pppoe/secrets/${encodedId}/status`, {
-                method: 'PUT',
-                body: JSON.stringify({ disabled: 'yes' })
-            });
-            if(!res.ok) {
-                const errData = await res.json();
-                throw new Error(errData.message || "Aksi gagal");
-            }
-            
-            // Setelah disable, kick user jika masih aktif
-            // Ini memastikan koneksi terputus segera setelah secret di-disable
-            if (isSecretActive(secret) && secret.activeConnectionId) {
-                try {
-                    const encodedActiveId = encodeURIComponent(secret.activeConnectionId);
-                    const kickRes = await apiFetch(`${apiUrl}/api/pppoe/active/${encodedActiveId}/kick`, {
-                        method: 'POST'
-                    });
-                    if (!kickRes.ok) {
-                        const kickErrData = await kickRes.json();
-                        console.warn('Gagal kick user setelah disable:', kickErrData.message);
-                        // Secret sudah di-disable, jadi user tidak bisa reconnect
-                    }
-                } catch (kickError: any) {
-                    console.warn('Error saat kick user setelah disable:', kickError.message);
-                    // Secret sudah di-disable, jadi user tidak bisa reconnect
-                }
-            }
-        } else {
-            // Enable
-            const encodedId = encodeURIComponent(secret['.id']);
-            const res = await apiFetch(`${apiUrl}/api/pppoe/secrets/${encodedId}/status`, {
-                method: 'PUT',
-                body: JSON.stringify({ disabled: 'no' })
-            });
-        if(!res.ok) {
+      if (action === 'kick') {
+        // Untuk kick, kita perlu .id dari /ppp/active/print
+        // Data sudah di-enrich di backend dengan activeConnectionId
+        if (!isSecretActive(secret)) {
+          throw new Error("User tidak aktif, tidak bisa di-kick.");
+        }
+
+        // Gunakan activeConnectionId yang sudah ada di secret (dari WebSocket data)
+        if (!secret.activeConnectionId) {
+          throw new Error("ID koneksi aktif tidak ditemukan. Silakan refresh halaman.");
+        }
+
+        try {
+          const encodedId = encodeURIComponent(secret.activeConnectionId);
+          const res = await apiFetch(`${apiUrl}/api/pppoe/active/${encodedId}/kick`, {
+            method: 'POST'
+          });
+          if (!res.ok) {
             const errData = await res.json();
             throw new Error(errData.message || "Aksi gagal");
+          }
+        } catch (error: any) {
+          throw new Error(error.message || "Gagal melakukan kick");
         }
+      } else if (action === 'disable') {
+        // Disable secret terlebih dahulu untuk mencegah reconnect otomatis
+        const encodedId = encodeURIComponent(secret['.id']);
+        const res = await apiFetch(`${apiUrl}/api/pppoe/secrets/${encodedId}/status`, {
+          method: 'PUT',
+          body: JSON.stringify({ disabled: 'yes' })
+        });
+        if (!res.ok) {
+          const errData = await res.json();
+          throw new Error(errData.message || "Aksi gagal");
         }
-        
-        onActionComplete();
+
+        // Setelah disable, kick user jika masih aktif
+        // Ini memastikan koneksi terputus segera setelah secret di-disable
+        if (isSecretActive(secret) && secret.activeConnectionId) {
+          try {
+            const encodedActiveId = encodeURIComponent(secret.activeConnectionId);
+            const kickRes = await apiFetch(`${apiUrl}/api/pppoe/active/${encodedActiveId}/kick`, {
+              method: 'POST'
+            });
+            if (!kickRes.ok) {
+              const kickErrData = await kickRes.json();
+              console.warn('Gagal kick user setelah disable:', kickErrData.message);
+              // Secret sudah di-disable, jadi user tidak bisa reconnect
+            }
+          } catch (kickError: any) {
+            console.warn('Error saat kick user setelah disable:', kickError.message);
+            // Secret sudah di-disable, jadi user tidak bisa reconnect
+          }
+        }
+      } else {
+        // Enable
+        const encodedId = encodeURIComponent(secret['.id']);
+        const res = await apiFetch(`${apiUrl}/api/pppoe/secrets/${encodedId}/status`, {
+          method: 'PUT',
+          body: JSON.stringify({ disabled: 'no' })
+        });
+        if (!res.ok) {
+          const errData = await res.json();
+          throw new Error(errData.message || "Aksi gagal");
+        }
+      }
+
+      onActionComplete();
     } catch (error: any) {
-        alert(`Gagal melakukan aksi: ${error.message}`);
+      alert(`Gagal melakukan aksi: ${error.message}`);
     } finally {
-        setIsActionLoading(false);
+      setIsActionLoading(false);
     }
   };
 
@@ -323,20 +347,20 @@ const PppoeSecretsTable = ({ refreshTrigger, onActionComplete, initialFilter = '
     setSecretToDelete(secret);
     setIsDeleteModalOpen(true);
   };
-  
+
   const handleDeleteConfirm = async () => {
     if (!secretToDelete) return;
     setIsActionLoading(true);
     try {
-        const encodedId = encodeURIComponent(secretToDelete['.id']);
-        await apiFetch(`${apiUrl}/api/pppoe/secrets/${encodedId}`, { method: 'DELETE' });
-        onActionComplete();
+      const encodedId = encodeURIComponent(secretToDelete['.id']);
+      await apiFetch(`${apiUrl}/api/pppoe/secrets/${encodedId}`, { method: 'DELETE' });
+      onActionComplete();
     } catch (error) {
-        alert("Gagal menghapus secret.");
+      alert("Gagal menghapus secret.");
     } finally {
-        setIsActionLoading(false);
-        setIsDeleteModalOpen(false);
-        setSecretToDelete(null);
+      setIsActionLoading(false);
+      setIsDeleteModalOpen(false);
+      setSecretToDelete(null);
     }
   };
 
@@ -349,184 +373,196 @@ const PppoeSecretsTable = ({ refreshTrigger, onActionComplete, initialFilter = '
     <>
       <Card>
         <CardHeader>
-          <div className="flex justify-between items-center gap-4">
-          <CardTitle>Daftar Secret PPPoE ({loading ? '...' : filteredSecrets.length})</CardTitle>
-            <div className="relative w-full max-w-sm">
+          <div className="flex flex-col lg:flex-row lg:justify-between lg:items-center gap-4">
+            <CardTitle className="text-lg sm:text-xl">Daftar Secret PPPoE ({loading ? '...' : filteredSecrets.length})</CardTitle>
+            <div className="relative w-full lg:max-w-sm">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input
                 type="text"
                 placeholder="Cari nama, profil, atau IP..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-9 bg-input"
+                className="pl-9 bg-input h-9"
               />
             </div>
           </div>
         </CardHeader>
         <CardContent className="p-0">
-          <div className="h-[60vh] overflow-y-auto overscroll-contain">
-            <table className="w-full text-sm">
+          <div className="h-[60vh] overflow-y-auto overflow-x-auto overscroll-contain">
+            <table className="w-full text-xs sm:text-sm">
               <thead className="text-left bg-secondary sticky top-0 z-10">
                 <tr>
-                  <th 
-                    className="p-4 font-semibold cursor-pointer hover:bg-secondary/80 transition-colors select-none"
+                  <th
+                    className="p-2 sm:p-4 font-semibold cursor-pointer hover:bg-secondary/80 transition-colors select-none"
                     onClick={() => handleSort('status')}
                   >
-                    <div className="flex items-center gap-2">
-                      Status
+                    <div className="flex items-center gap-1 sm:gap-2">
+                      <span className="hidden sm:inline">Status</span>
+                      <span className="sm:hidden">Stt</span>
                       {sortColumn === 'status' ? (
-                        sortDirection === 'asc' ? <ChevronUp size={16} /> : <ChevronDown size={16} />
+                        sortDirection === 'asc' ? <ChevronUp size={14} className="sm:w-4 sm:h-4" /> : <ChevronDown size={14} className="sm:w-4 sm:h-4" />
                       ) : (
-                        <ArrowUpDown size={16} className="text-muted-foreground opacity-50" />
+                        <ArrowUpDown size={14} className="text-muted-foreground opacity-50 sm:w-4 sm:h-4" />
                       )}
                     </div>
                   </th>
-                  <th 
-                    className="p-4 font-semibold cursor-pointer hover:bg-secondary/80 transition-colors select-none"
+                  <th
+                    className="p-2 sm:p-4 font-semibold cursor-pointer hover:bg-secondary/80 transition-colors select-none"
                     onClick={() => handleSort('name')}
                   >
-                    <div className="flex items-center gap-2">
-                      Nama
+                    <div className="flex items-center gap-1 sm:gap-2">
+                      <span className="hidden sm:inline">Identitas</span>
+                      <span className="sm:hidden">User / IP</span>
                       {sortColumn === 'name' ? (
-                        sortDirection === 'asc' ? <ChevronUp size={16} /> : <ChevronDown size={16} />
+                        sortDirection === 'asc' ? <ChevronUp size={14} className="sm:w-4 sm:h-4" /> : <ChevronDown size={14} className="sm:w-4 sm:h-4" />
                       ) : (
-                        <ArrowUpDown size={16} className="text-muted-foreground opacity-50" />
+                        <ArrowUpDown size={14} className="text-muted-foreground opacity-50 sm:w-4 sm:h-4" />
                       )}
                     </div>
                   </th>
-                  <th 
-                    className="p-4 font-semibold cursor-pointer hover:bg-secondary/80 transition-colors select-none"
+                  <th
+                    className="p-2 sm:p-4 font-semibold cursor-pointer hover:bg-secondary/80 transition-colors select-none hidden sm:table-cell"
                     onClick={() => handleSort('profile')}
                   >
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-1 sm:gap-2">
                       Profil
                       {sortColumn === 'profile' ? (
-                        sortDirection === 'asc' ? <ChevronUp size={16} /> : <ChevronDown size={16} />
+                        sortDirection === 'asc' ? <ChevronUp size={14} className="sm:w-4 sm:h-4" /> : <ChevronDown size={14} className="sm:w-4 sm:h-4" />
                       ) : (
-                        <ArrowUpDown size={16} className="text-muted-foreground opacity-50" />
+                        <ArrowUpDown size={14} className="text-muted-foreground opacity-50 sm:w-4 sm:h-4" />
                       )}
                     </div>
                   </th>
-                  <th 
-                    className="p-4 font-semibold cursor-pointer hover:bg-secondary/80 transition-colors select-none"
+                  <th
+                    className="p-2 sm:p-4 font-semibold cursor-pointer hover:bg-secondary/80 transition-colors select-none hidden sm:table-cell"
                     onClick={() => handleSort('remote-address')}
                   >
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-1 sm:gap-2">
                       Remote Address
                       {sortColumn === 'remote-address' ? (
-                        sortDirection === 'asc' ? <ChevronUp size={16} /> : <ChevronDown size={16} />
+                        sortDirection === 'asc' ? <ChevronUp size={14} className="sm:w-4 sm:h-4" /> : <ChevronDown size={14} className="sm:w-4 sm:h-4" />
                       ) : (
-                        <ArrowUpDown size={16} className="text-muted-foreground opacity-50" />
+                        <ArrowUpDown size={14} className="text-muted-foreground opacity-50 sm:w-4 sm:h-4" />
                       )}
                     </div>
                   </th>
-                  <th 
-                    className="p-4 font-semibold cursor-pointer hover:bg-secondary/80 transition-colors select-none"
+                  <th
+                    className="p-2 sm:p-4 font-semibold cursor-pointer hover:bg-secondary/80 transition-colors select-none"
                     onClick={() => handleSort('uptime')}
                   >
-                    <div className="flex items-center gap-2">
-                      Uptime
+                    <div className="flex items-center gap-1 sm:gap-2">
+                      <span className="hidden sm:inline">Uptime</span>
+                      <span className="sm:hidden">Up</span>
                       {sortColumn === 'uptime' ? (
-                        sortDirection === 'asc' ? <ChevronUp size={16} /> : <ChevronDown size={16} />
+                        sortDirection === 'asc' ? <ChevronUp size={14} className="sm:w-4 sm:h-4" /> : <ChevronDown size={14} className="sm:w-4 sm:h-4" />
                       ) : (
-                        <ArrowUpDown size={16} className="text-muted-foreground opacity-50" />
+                        <ArrowUpDown size={14} className="text-muted-foreground opacity-50 sm:w-4 sm:h-4" />
                       )}
                     </div>
                   </th>
-                  <th className="p-4 font-semibold text-center">Aksi</th>
+                  <th className="p-2 sm:p-4 font-semibold text-center w-[50px] sm:w-auto">Aksi</th>
                 </tr>
               </thead>
               <tbody>
                 {loading ? (
-                    <tr><td colSpan={6} className="text-center p-10"><Loader2 className="h-6 w-6 animate-spin mx-auto text-muted-foreground"/></td></tr>
+                  <tr><td colSpan={6} className="text-center p-10"><Loader2 className="h-6 w-6 animate-spin mx-auto text-muted-foreground" /></td></tr>
                 ) : filteredSecrets.length > 0 ? (
-                    filteredSecrets.map((user, i) => {
-                      const isActive = isSecretActive(user);
-                      const uptime = getUptime(user.name);
-                      // Gunakan kombinasi .id dan name untuk key yang unik
-                      // Jika .id tidak ada, gunakan name sebagai fallback (name harus unik)
-                      const uniqueKey = user['.id'] || `secret-${user.name}-${i}`;
-                      return (
-                        <motion.tr key={uniqueKey} className="border-b" initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: i * 0.05 }}>
-                          <td className="p-4">
-                            {user.disabled === 'true' ? 
-                              (<span className="flex items-center gap-2 text-muted-foreground"><PowerOff size={14} /> Disabled</span>) : 
-                              isActive ? 
-                              (<span className="flex items-center gap-2 text-green-500"><Power size={14} className="animate-pulse"/> Active</span>) : 
-                              (<span className="flex items-center gap-2 text-red-500"><PowerOff size={14} /> Inactive</span>)
-                            }
-                          </td>
-                          <td className="p-4 font-medium">{user.name}</td>
-                          <td className="p-4">{user.profile}</td>
-                          <td className="p-4 font-mono">
-                            {user['remote-address'] ? (
-                              <a
-                                href={`http://${user['remote-address']}`}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="text-primary hover:underline"
-                              >
-                                {user['remote-address']}
-                              </a>
-                            ) : (
-                              'N/A'
-                            )}
-                          </td>
-                          <td className="p-4 font-mono text-sm">
-                            {formatUptime(uptime)}
-                          </td>
-                          <td className="p-4 text-center">
-                            <DropdownMenu>
-                              <DropdownMenuTrigger asChild><Button variant="ghost" size="icon"><MoreHorizontal size={16} /></Button></DropdownMenuTrigger>
-                              <DropdownMenuContent align="end">
-                                <DropdownMenuItem onClick={() => openEditModal(user)}>
-                                  <Edit className="mr-2 h-4 w-4"/> Edit
+                  filteredSecrets.map((user, i) => {
+                    const isActive = isSecretActive(user);
+                    const uptime = getUptime(user.name);
+                    // Gunakan kombinasi .id dan name untuk key yang unik
+                    // Jika .id tidak ada, gunakan name sebagai fallback (name harus unik)
+                    const uniqueKey = user['.id'] || `secret-${user.name}-${i}`;
+                    return (
+                      <motion.tr key={uniqueKey} className="border-b" initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: (i % 20) * 0.05 }}>
+                        <td className="p-2 sm:p-4">
+                          {user.disabled === 'true' ?
+                            (<span className="flex items-center gap-1 text-muted-foreground"><PowerOff size={14} /> <span className="hidden sm:inline">Disabled</span></span>) :
+                            isActive ?
+                              (<span className="flex items-center gap-1 text-green-500"><Power size={14} className="animate-pulse" /> <span className="hidden sm:inline">Active</span></span>) :
+                              (<span className="flex items-center gap-1 text-red-500"><PowerOff size={14} /> <span className="hidden sm:inline">Inactive</span></span>)
+                          }
+                        </td>
+                        <td className="p-2 sm:p-4">
+                          <div className="flex flex-col gap-0.5">
+                            <span className="font-bold sm:font-medium truncate max-w-[100px] sm:max-w-none">{user.name}</span>
+                            <div className="flex flex-col sm:hidden">
+                              <span className="text-[10px] text-muted-foreground truncate max-w-[100px]">{user.profile}</span>
+                              <span className="text-[10px] text-primary/80 font-mono truncate max-w-[100px]">{user['remote-address'] || 'No IP'}</span>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="p-2 sm:p-4 hidden sm:table-cell">{user.profile}</td>
+                        <td className="p-2 sm:p-4 font-mono text-xs hidden sm:table-cell">
+                          {user['remote-address'] ? (
+                            <a
+                              href={`http://${user['remote-address']}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-primary hover:underline"
+                            >
+                              {user['remote-address']}
+                            </a>
+                          ) : (
+                            'N/A'
+                          )}
+                        </td>
+                        <td className="p-2 sm:p-4 font-mono text-[10px] sm:text-xs whitespace-nowrap">
+                          <span className="sm:hidden">{formatCompactUptime(uptime)}</span>
+                          <span className="hidden sm:inline">{formatUptime(uptime)}</span>
+                        </td>
+                        <td className="p-2 sm:p-4 text-center">
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild><Button variant="ghost" size="icon"><MoreHorizontal size={16} /></Button></DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuItem onClick={() => openEditModal(user)}>
+                                <Edit className="mr-2 h-4 w-4" /> Edit
+                              </DropdownMenuItem>
+                              <DropdownMenuSeparator />
+                              {isActive &&
+                                <DropdownMenuItem onClick={() => handleAction('kick', user)}>
+                                  <ZapOff className="mr-2 h-4 w-4" /> Kick User
                                 </DropdownMenuItem>
-                                <DropdownMenuSeparator />
-                                {isActive && 
-                                  <DropdownMenuItem onClick={() => handleAction('kick', user)}>
-                                    <ZapOff className="mr-2 h-4 w-4"/> Kick User
-                                  </DropdownMenuItem>
-                                }
-                                {user.disabled === 'true' ? 
-                                  (<DropdownMenuItem onClick={() => handleAction('enable', user)}> <Power className="mr-2 h-4 w-4"/> Enable </DropdownMenuItem>) : 
-                                  (<DropdownMenuItem onClick={() => handleAction('disable', user)}> <PowerOff className="mr-2 h-4 w-4"/> Disable </DropdownMenuItem>)
-                                }
-                                <DropdownMenuSeparator />
-                                <DropdownMenuItem className="text-destructive focus:bg-destructive/10 focus:text-destructive" onClick={() => openDeleteModal(user)}>
-                                  <Trash2 className="mr-2 h-4 w-4"/> Hapus
-                                </DropdownMenuItem>
-                              </DropdownMenuContent>
-                            </DropdownMenu>
-                          </td>
-                        </motion.tr>
-                      );
-                    })
+                              }
+                              {user.disabled === 'true' ?
+                                (<DropdownMenuItem onClick={() => handleAction('enable', user)}> <Power className="mr-2 h-4 w-4" /> Enable </DropdownMenuItem>) :
+                                (<DropdownMenuItem onClick={() => handleAction('disable', user)}> <PowerOff className="mr-2 h-4 w-4" /> Disable </DropdownMenuItem>)
+                              }
+                              <DropdownMenuSeparator />
+                              <DropdownMenuItem className="text-destructive focus:bg-destructive/10 focus:text-destructive" onClick={() => openDeleteModal(user)}>
+                                <Trash2 className="mr-2 h-4 w-4" /> Hapus
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </td>
+                      </motion.tr>
+                    );
+                  })
                 ) : (
-                    <tr><td colSpan={6} className="text-center p-10 text-muted-foreground">Tidak ada secret yang cocok dengan filter.</td></tr>
+                  <tr><td colSpan={6} className="text-center p-10 text-muted-foreground">Tidak ada secret yang cocok dengan filter.</td></tr>
                 )}
               </tbody>
             </table>
           </div>
         </CardContent>
       </Card>
-      
-      <ConfirmModal 
-        isOpen={isDeleteModalOpen} 
-        onClose={() => setIsDeleteModalOpen(false)} 
-        onConfirm={handleDeleteConfirm} 
-        title="Konfirmasi Hapus Secret" 
-        description={`Anda yakin ingin menghapus secret PPPoE untuk pengguna "${secretToDelete?.name}"? Aksi ini tidak dapat dibatalkan.`} 
-        confirmText="Ya, Hapus Permanen" 
+
+      <ConfirmModal
+        isOpen={isDeleteModalOpen}
+        onClose={() => setIsDeleteModalOpen(false)}
+        onConfirm={handleDeleteConfirm}
+        title="Konfirmasi Hapus Secret"
+        description={`Anda yakin ingin menghapus secret PPPoE untuk pengguna "${secretToDelete?.name}"? Aksi ini tidak dapat dibatalkan.`}
+        confirmText="Ya, Hapus Permanen"
         isLoading={isActionLoading}
       />
-      
-      <EditPppoeSecretModal 
-        isOpen={isEditModalOpen} 
-        onClose={() => setIsEditModalOpen(false)} 
+
+      <EditPppoeSecretModal
+        isOpen={isEditModalOpen}
+        onClose={() => setIsEditModalOpen(false)}
         onSuccess={() => {
-            setIsEditModalOpen(false);
-            onActionComplete();
+          setIsEditModalOpen(false);
+          onActionComplete();
         }}
         secretToEdit={secretToEdit}
       />

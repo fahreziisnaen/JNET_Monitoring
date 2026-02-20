@@ -47,45 +47,45 @@ const HotspotPage = () => {
 
   const fetchSummary = useCallback(async () => {
     if (!selectedDeviceId || !hasDevices) return;
-    
+
     // Abort request sebelumnya jika ada
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
     }
-    
+
     console.log('[Hotspot Page] Fetching summary...');
     setLoading(true);
     let timeoutId: NodeJS.Timeout | null = null;
-    
+
     try {
       const apiUrl = process.env.NEXT_PUBLIC_API_BASE_URL;
       // Buat AbortController baru untuk request ini
       const controller = new AbortController();
       abortControllerRef.current = controller;
-      
+
       // Tambahkan timeout 25 detik (lebih lama dari backend timeout 18 detik + buffer)
       timeoutId = setTimeout(() => {
         if (!controller.signal.aborted) {
-        console.warn('[Hotspot Page] Request timeout setelah 25 detik');
-        controller.abort();
+          console.warn('[Hotspot Page] Request timeout setelah 25 detik');
+          controller.abort();
         }
       }, 25000); // 25 detik timeout
-      
+
       const res = await apiFetch(`${apiUrl}/api/hotspot/summary?deviceId=${selectedDeviceId}`, {
         signal: controller.signal
       });
-      
+
       // Clear timeout jika request berhasil sebelum timeout
       if (timeoutId) {
         clearTimeout(timeoutId);
         timeoutId = null;
       }
-      
+
       // Cek apakah request sudah di-abort (component mungkin sudah unmount)
       if (controller.signal.aborted) {
         return;
       }
-      
+
       if (!res.ok) {
         console.error('[Hotspot Page] Response tidak OK:', res.status, res.statusText);
         // Jika error, set default values
@@ -100,7 +100,7 @@ const HotspotPage = () => {
         totalUsers: data?.totalUsers ?? 0,
         activeUsers: data?.activeUsers ?? 0
       });
-    } catch (error: any) { 
+    } catch (error: any) {
       // Handle AbortError dengan benar (timeout atau cancelled)
       if (error?.name === 'AbortError' || error?.message?.includes('aborted')) {
         // Jangan log sebagai error jika ini adalah abort yang disengaja
@@ -111,14 +111,14 @@ const HotspotPage = () => {
         // Set default values
         setSummary({ totalUsers: 0, activeUsers: 0 });
       } else {
-      console.error('[Hotspot Page] Error fetching summary:', error);
+        console.error('[Hotspot Page] Error fetching summary:', error);
         // Set default values jika error lainnya
-      setSummary({ totalUsers: 0, activeUsers: 0 });
+        setSummary({ totalUsers: 0, activeUsers: 0 });
       }
-    } finally { 
+    } finally {
       if (timeoutId) clearTimeout(timeoutId);
       // Pastikan loading selalu di-set ke false
-      setLoading(false); 
+      setLoading(false);
       // Clear controller ref jika request ini sudah selesai
       if (abortControllerRef.current?.signal.aborted === false) {
         abortControllerRef.current = null;
@@ -126,10 +126,10 @@ const HotspotPage = () => {
     }
   }, [selectedDeviceId, hasDevices]);
 
-  useEffect(() => { 
-    fetchSummary(); 
+  useEffect(() => {
+    fetchSummary();
   }, [fetchSummary, refreshTrigger]);
-  
+
   // Cleanup saat component unmount - abort request yang sedang berjalan
   useEffect(() => {
     return () => {
@@ -140,15 +140,15 @@ const HotspotPage = () => {
       setLoading(false);
     };
   }, []);
-  
+
   const handleSuccess = () => { setRefreshTrigger(prev => prev + 1); };
 
   if (hasDevices === null) {
     return (
       <div className="p-4 md:p-8 space-y-8">
-        <div className="flex justify-between items-center flex-wrap gap-4">
-          <h1 className="text-3xl font-bold">Manajemen Hotspot</h1>
-          <DeviceSelector 
+        <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4">
+          <h1 className="text-2xl sm:text-3xl font-bold">Manajemen Hotspot</h1>
+          <DeviceSelector
             selectedDeviceId={selectedDeviceId}
             onDeviceChange={setSelectedDeviceId}
           />
@@ -163,9 +163,9 @@ const HotspotPage = () => {
   if (!hasDevices) {
     return (
       <div className="p-4 md:p-8 space-y-8">
-        <div className="flex justify-between items-center flex-wrap gap-4">
-          <h1 className="text-3xl font-bold">Manajemen Hotspot</h1>
-          <DeviceSelector 
+        <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4">
+          <h1 className="text-2xl sm:text-3xl font-bold">Manajemen Hotspot</h1>
+          <DeviceSelector
             selectedDeviceId={selectedDeviceId}
             onDeviceChange={setSelectedDeviceId}
           />
@@ -178,21 +178,21 @@ const HotspotPage = () => {
   return (
     <>
       <div className="p-4 md:p-8 space-y-8">
-        <div className="flex justify-between items-center flex-wrap gap-4">
-          <h1 className="text-3xl font-bold">Manajemen Hotspot</h1>
-          <div className="flex items-center gap-2">
-            <DeviceSelector 
+        <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4">
+          <h1 className="text-2xl sm:text-3xl font-bold">Manajemen Hotspot</h1>
+          <div className="flex items-center gap-2 flex-wrap">
+            <DeviceSelector
               selectedDeviceId={selectedDeviceId}
               onDeviceChange={setSelectedDeviceId}
             />
-          <Button onClick={() => setIsModalOpen(true)}>
-            <Plus size={18} className="mr-2"/> Tambah User
-          </Button>
+            <Button onClick={() => setIsModalOpen(true)}>
+              <Plus size={18} className="sm:mr-2" /> <span className="hidden sm:inline">Tambah User</span>
+            </Button>
           </div>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <SummaryCard title="Total User Hotspot" count={loading ? <Loader2 className="animate-spin"/> : summary.totalUsers} icon={<Users size={28}/>} colorClass="bg-gradient-to-br from-sky-500 to-sky-700" />
-          <SummaryCard title="User Aktif" count={loading ? <Loader2 className="animate-spin"/> : summary.activeUsers} icon={<Wifi size={28}/>} colorClass="bg-gradient-to-br from-emerald-500 to-emerald-700" />
+          <SummaryCard title="Total User Hotspot" count={loading ? <Loader2 className="animate-spin" /> : summary.totalUsers} icon={<Users size={28} />} colorClass="bg-gradient-to-br from-sky-500 to-sky-700" />
+          <SummaryCard title="User Aktif" count={loading ? <Loader2 className="animate-spin" /> : summary.activeUsers} icon={<Wifi size={28} />} colorClass="bg-gradient-to-br from-emerald-500 to-emerald-700" />
         </div>
         <HotspotActiveList />
         <HotspotUserList refreshTrigger={refreshTrigger} onActionComplete={handleSuccess} />

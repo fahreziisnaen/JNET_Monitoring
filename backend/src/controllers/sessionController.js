@@ -5,10 +5,7 @@ exports.getActiveSessions = async (req, res) => {
     const userId = req.user?.id;
     const currentTokenId = req.user?.jti;
 
-    console.log('[Session Controller] getActiveSessions called:', { userId, currentTokenId });
-
     if (!userId) {
-        console.warn('[Session Controller] No userId found');
         return res.status(401).json({ message: 'Tidak terotorisasi.' });
     }
 
@@ -21,7 +18,7 @@ exports.getActiveSessions = async (req, res) => {
             [userId]
         );
 
-        // --- Aggressive Self-Healing Deduplication ---
+        // Deduplikasi session berdasarkan fingerprint (Browser + OS + IP)
         const parser = new UAParser();
         const seenFingerprints = new Set();
         const duplicateIds = [];
@@ -64,13 +61,7 @@ exports.getActiveSessions = async (req, res) => {
                 console.error("[Session Cleanup] Error deleting duplicates:", err);
             });
         }
-        // Use uniqueSessionsList for display
-        const displaySessions = uniqueSessionsList;
-        // --- End Deduplication ---
-
-        console.log(`[Session Controller] Found ${displaySessions.length} unique sessions for user ${userId}`);
-
-        const detailedSessions = displaySessions.map(session => {
+        const detailedSessions = uniqueSessionsList.map(session => {
             parser.setUA(session.user_agent || "");
             const uaResult = parser.getResult();
 
@@ -84,7 +75,6 @@ exports.getActiveSessions = async (req, res) => {
             };
         });
 
-        console.log('[Session Controller] Returning sessions:', detailedSessions.length);
         res.status(200).json(detailedSessions);
     } catch (error) {
         console.error("[Session Controller] GET SESSIONS ERROR:", error);

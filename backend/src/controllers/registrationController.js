@@ -112,8 +112,11 @@ exports.verifyAndRegister = async (req, res) => {
             const payload = { id: result.insertId, username: userData.username, workspace_id: wsResult.insertId, jti: tokenId };
             const token = jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: '7d' });
 
-            // Insert session
-            await pool.query('INSERT INTO user_sessions (user_id, token_id, user_agent, ip_address) VALUES (?, ?, ?, ?)', [result.insertId, tokenId, req.headers['user-agent'], req.ip]);
+            // Insert session - use X-Forwarded-For for real IP behind proxy
+            const forwarded = req.headers['x-forwarded-for'];
+            let rawIp = forwarded ? forwarded.split(',')[0].trim() : req.ip;
+            let normalizedIp = rawIp.includes('::ffff:') ? rawIp.split('::ffff:')[1] : rawIp;
+            await pool.query('INSERT INTO user_sessions (user_id, token_id, user_agent, ip_address) VALUES (?, ?, ?, ?)', [result.insertId, tokenId, req.headers['user-agent'], normalizedIp]);
 
             // Set cookie dengan konfigurasi yang sama seperti login
             const cookieOptions = {
@@ -125,13 +128,6 @@ exports.verifyAndRegister = async (req, res) => {
             };
 
             res.cookie('token', token, cookieOptions);
-
-            // Juga set header Set-Cookie secara eksplisit
-            const cookieString = `token=${token}; HttpOnly; Path=/; Max-Age=${7 * 24 * 60 * 60}; SameSite=Lax${process.env.NODE_ENV === 'production' ? '; Secure' : ''}`;
-            res.setHeader('Set-Cookie', cookieString);
-
-            console.log(`[Registration] Token cookie set untuk user ${result.insertId}`);
-            console.log(`[Registration] Cookie options:`, cookieOptions);
 
             // Query user lengkap untuk response
             const [newUser] = await pool.query('SELECT id, username, display_name, profile_picture_url, workspace_id FROM users WHERE id = ?', [result.insertId]);

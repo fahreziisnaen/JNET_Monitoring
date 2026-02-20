@@ -115,21 +115,13 @@ const protect = async (req, res, next) => {
     }
 
     if (!token) {
-        // Log untuk debugging
-        console.warn('[Auth Middleware] Tidak ada token ditemukan.');
-        console.warn('[Auth Middleware] Cookies object:', req.cookies);
-        console.warn('[Auth Middleware] Headers cookie:', req.headers.cookie);
-        console.warn('[Auth Middleware] Authorization header:', req.headers.authorization);
-        console.warn('[Auth Middleware] Request URL:', req.url);
-        console.warn('[Auth Middleware] Request method:', req.method);
-        console.warn('[Auth Middleware] Request origin:', req.headers.origin);
-        console.warn('[Auth Middleware] Request host:', req.headers.host);
+        console.warn('[Auth Middleware] Tidak ada token ditemukan.', { url: req.url, method: req.method });
         return res.status(401).json({ message: 'Tidak terotorisasi, tidak ada token.' });
     }
 };
 
 const authorizeAdmin = (req, res, next) => {
-    if (req.user && req.user.role === 'admin') {
+    if (req.user && (req.user.role === 'admin' || req.user.is_owner || req.user.is_super_admin)) {
         next();
     } else {
         res.status(403).json({ message: 'Akses ditolak. Fitur ini hanya untuk Admin.' });

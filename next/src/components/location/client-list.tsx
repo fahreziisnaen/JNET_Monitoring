@@ -1,7 +1,7 @@
 'use client';
 
-import React from 'react';
-import { User, Loader2, Search } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { User, Loader2, Search, ChevronDown, ChevronUp } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 
@@ -67,11 +67,30 @@ const ClientList = ({ clients, loading, selectedClientId, onClientSelect, onClie
     return result;
   }, [clients, searchQuery, pppoeSecrets, existingSecretsSet]);
 
+  // Collapsed by default on mobile, always expanded on lg+
+  const [isCollapsed, setIsCollapsed] = useState(true);
+
+  useEffect(() => {
+    const mq = window.matchMedia('(min-width: 1024px)');
+    const handler = (e: MediaQueryListEvent | MediaQueryList) => {
+      if (e.matches) setIsCollapsed(false);
+      else setIsCollapsed(true);
+    };
+    handler(mq);
+    mq.addEventListener('change', handler);
+    return () => mq.removeEventListener('change', handler);
+  }, []);
+
   return (
-    <Card className="h-full flex flex-col">
-      <CardHeader className="pb-2">
+    <Card className={`flex flex-col ${isCollapsed ? '' : 'h-full'}`}>
+      <CardHeader className="pb-2 px-3 py-2 lg:px-6 lg:py-3 cursor-pointer lg:cursor-default" onClick={() => setIsCollapsed(prev => !prev)}>
         <div className="flex items-center justify-between gap-3">
-          <CardTitle className="text-lg whitespace-nowrap">Daftar Client ({filteredClients.length})</CardTitle>
+          <div className="flex items-center gap-2">
+            <CardTitle className="text-base lg:text-lg whitespace-nowrap">Daftar Client ({filteredClients.length})</CardTitle>
+            <button className="lg:hidden text-muted-foreground" aria-label="Toggle">
+              {isCollapsed ? <ChevronDown size={16} /> : <ChevronUp size={16} />}
+            </button>
+          </div>
           {onSearchChange && (
             <div className="relative flex-1">
               <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
@@ -86,51 +105,53 @@ const ClientList = ({ clients, loading, selectedClientId, onClientSelect, onClie
           )}
         </div>
       </CardHeader>
-      <CardContent className="flex-grow overflow-y-auto p-1.5">
-        {loading ? (
-          <div className="flex justify-center items-center h-full"><Loader2 className="animate-spin h-6 w-6 text-muted-foreground" /></div>
-        ) : filteredClients.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-full text-center p-4">
-            <p className="text-muted-foreground text-sm">
-              {searchQuery ? 'Tidak ada client yang sesuai dengan pencarian' : 'Tidak ada client'}
-            </p>
-          </div>
-        ) : (
-          <ul className="space-y-1.5">
-            {filteredClients.map(client => {
-              const isSelected = selectedClientId === client.id;
-              return (
-                <li key={client.id}>
-                  <button
-                    onClick={() => onClientSelect(client)}
-                    onDoubleClick={() => onClientView?.(client)}
-                    className={`w-full flex items-center gap-3 p-3 rounded-lg text-left transition-all duration-200 ${isSelected ? 'bg-primary/10 ring-2 ring-primary' : 'hover:bg-secondary'}`}
-                  >
-                    <div className="flex-shrink-0 w-10 h-10 rounded-lg flex items-center justify-center text-white bg-purple-500">
-                      <User size={20} />
-                    </div>
-                    <div className="flex-grow overflow-hidden">
-                      <div className="flex items-center gap-2">
-                        <p className="font-semibold truncate text-base">{client.pppoe_secret_name}</p>
-                        {pppoeSecrets && pppoeSecrets.length > 0 && !existingSecretsSet.has(client.pppoe_secret_name) && (
-                          <span className="flex-shrink-0 px-1.5 py-0.5 rounded text-[10px] font-bold bg-destructive text-destructive-foreground">
-                            ORPHAN
-                          </span>
+      {!isCollapsed && (
+        <CardContent className="flex-grow overflow-y-auto p-1.5 max-h-[120px] lg:max-h-none">
+          {loading ? (
+            <div className="flex justify-center items-center h-full"><Loader2 className="animate-spin h-6 w-6 text-muted-foreground" /></div>
+          ) : filteredClients.length === 0 ? (
+            <div className="flex flex-col items-center justify-center h-full text-center p-4">
+              <p className="text-muted-foreground text-sm">
+                {searchQuery ? 'Tidak ada client yang sesuai dengan pencarian' : 'Tidak ada client'}
+              </p>
+            </div>
+          ) : (
+            <ul className="space-y-1.5">
+              {filteredClients.map(client => {
+                const isSelected = selectedClientId === client.id;
+                return (
+                  <li key={client.id}>
+                    <button
+                      onClick={() => onClientSelect(client)}
+                      onDoubleClick={() => onClientView?.(client)}
+                      className={`w-full flex items-center gap-2 lg:gap-3 p-2 lg:p-3 rounded-lg text-left transition-all duration-200 ${isSelected ? 'bg-primary/10 ring-2 ring-primary' : 'hover:bg-secondary'}`}
+                    >
+                      <div className="flex-shrink-0 w-8 h-8 lg:w-10 lg:h-10 rounded-lg flex items-center justify-center text-white bg-purple-500">
+                        <User size={16} />
+                      </div>
+                      <div className="flex-grow overflow-hidden">
+                        <div className="flex items-center gap-2">
+                          <p className="font-semibold truncate text-sm lg:text-base">{client.pppoe_secret_name}</p>
+                          {pppoeSecrets && pppoeSecrets.length > 0 && !existingSecretsSet.has(client.pppoe_secret_name) && (
+                            <span className="flex-shrink-0 px-1.5 py-0.5 rounded text-[10px] font-bold bg-destructive text-destructive-foreground">
+                              ORPHAN
+                            </span>
+                          )}
+                        </div>
+                        {client.odp_name ? (
+                          <p className="text-sm text-muted-foreground">ODP: {client.odp_name}</p>
+                        ) : (
+                          <p className="text-sm text-muted-foreground">Belum terhubung ke ODP</p>
                         )}
                       </div>
-                      {client.odp_name ? (
-                        <p className="text-sm text-muted-foreground">ODP: {client.odp_name}</p>
-                      ) : (
-                        <p className="text-sm text-muted-foreground">Belum terhubung ke ODP</p>
-                      )}
-                    </div>
-                  </button>
-                </li>
-              );
-            })}
-          </ul>
-        )}
-      </CardContent>
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </CardContent>
+      )}
     </Card>
   );
 };

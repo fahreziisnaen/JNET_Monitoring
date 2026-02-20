@@ -11,7 +11,6 @@ import {
   useMap,
   useMapEvents,
   ZoomControl,
-  ScaleControl,
 } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
@@ -19,6 +18,30 @@ import { Asset } from './asset-list';
 import { Client } from './client-list';
 
 delete (L.Icon.Default.prototype as any)._getIconUrl;
+
+// Helper: Suntikkan animasi SMIL langsung ke elemen SVG path Leaflet
+// Dipanggil dari event handler 'add' pada Polyline, sehingga kita punya akses langsung
+// ke elemen DOM tanpa perlu mencari lewat className (yang hilang di produksi).
+const injectFlowAnimation = (leafletPath: any) => {
+  // Akses elemen SVG <path> internal Leaflet
+  const pathElement = leafletPath._path as SVGPathElement | undefined;
+  if (!pathElement) return;
+
+  // Pastikan belum ada animasi
+  if (pathElement.querySelector('animate')) return;
+
+  // Set stroke-dasharray langsung di DOM sebagai fallback
+  pathElement.setAttribute('stroke-dasharray', '10, 10');
+
+  // Suntikkan tag <animate> native SVG
+  const animate = document.createElementNS('http://www.w3.org/2000/svg', 'animate');
+  animate.setAttribute('attributeName', 'stroke-dashoffset');
+  animate.setAttribute('from', '20');
+  animate.setAttribute('to', '0');
+  animate.setAttribute('dur', '1s');
+  animate.setAttribute('repeatCount', 'indefinite');
+  pathElement.appendChild(animate);
+};
 
 // Component untuk auto-fit bounds menampilkan semua marker
 const FitBoundsHandler = ({
@@ -337,67 +360,6 @@ const MapDisplay = ({
     }
   }, [assets]);
 
-  // Hilangkan border/grid pada tile map
-  React.useEffect(() => {
-    const styleId = 'leaflet-remove-grid';
-    // Hapus style lama jika ada
-    const existingStyle = document.getElementById(styleId);
-    if (existingStyle) {
-      existingStyle.remove();
-    }
-
-    const style = document.createElement('style');
-    style.id = styleId;
-    style.textContent = `
-      .leaflet-tile {
-        border: none !important;
-        outline: none !important;
-        margin: 0 !important;
-        padding: 0 !important;
-        border-width: 0 !important;
-        box-shadow: none !important;
-      }
-      .leaflet-tile-container img {
-        border: none !important;
-        outline: none !important;
-        margin: 0 !important;
-        padding: 0 !important;
-        display: block !important;
-      }
-      .leaflet-tile-container {
-        overflow: visible !important;
-      }
-      .leaflet-zoom-animated img {
-        border: none !important;
-        outline: none !important;
-        margin: 0 !important;
-        padding: 0 !important;
-      }
-      /* Production-safe Traffic Flow Animation */
-      @keyframes flow {
-        from {
-          stroke-dashoffset: 20;
-        }
-        to {
-          stroke-dashoffset: 0;
-        }
-      }
-      .flow-active {
-        stroke-dasharray: 10, 10 !important;
-        animation: flow 1s linear infinite !important;
-        stroke-linecap: round !important;
-        stroke-linejoin: round !important;
-      }
-    `;
-    document.head.appendChild(style);
-    return () => {
-      const styleToRemove = document.getElementById(styleId);
-      if (styleToRemove) {
-        styleToRemove.remove();
-      }
-    };
-  }, []);
-
   // Pastikan assets adalah array valid
   const validAssets = Array.isArray(assets) ? assets : [];
 
@@ -480,9 +442,6 @@ const MapDisplay = ({
     return lines;
   }, [filteredAssets, assetMap, showLines, visibleTypes, showClients, validClients]);
 
-
-  // Generate key untuk memaksa re-render ketika assets berubah
-  // Kita urutkan ID agar key lebih stabil dan tidak berkedip saat data refresh
   const mapKey = useMemo(() => {
     const assetIds = validAssets.map(a => a.id).sort((a, b) => a - b).join('-');
     const clientIds = validClients.map(c => c.id).sort((a, b) => a - b).join('-');
@@ -498,6 +457,9 @@ const MapDisplay = ({
         minZoom={3}
         maxZoom={21}
         scrollWheelZoom={true}
+        zoomControl={false}
+        preferCanvas={false}
+        renderer={L.svg({ padding: 0.5 })}
         style={{ height: '100%', width: '100%', borderRadius: '0.75rem' }}
       >
         <TileLayer
@@ -532,8 +494,7 @@ const MapDisplay = ({
         {/* Render connection lines */}
         {connectionLines.map((line, index) => {
           // Generate unique key berdasarkan type dari dan ke
-          // Tambahkan status dan isEditingPath ke key agar polyline di-recreate saat status berubah
-          // Ini perlu agar className 'flow-active' (CSS animation) benar-benar ter-apply ulang oleh Leaflet
+          // Tambahkan status dan isEditingPath ke key agar polyline di-recreate saat berubah
           const fromId = 'type' in line.from ? `asset-${line.from.id}` : `client-${line.from.id}`;
           const toId = 'type' in line.to ? `asset-${line.to.id}` : `client-${line.to.id}`;
           const isLineActive = activePathTarget &&
@@ -572,10 +533,17 @@ const MapDisplay = ({
 
           return (
             <Polyline
-              key={lineKey}
+              key={`${lineKey}-${isFlowing}`}
               positions={positions}
               bubblingMouseEvents={false}
               eventHandlers={{
+                add: (e) => {
+                  // Suntikkan animasi SMIL langsung ke path DOM saat Leaflet membuatnya.
+                  // Ini bypass className yang hilang/stripped di production build.
+                  if (isFlowing) {
+                    injectFlowAnimation(e.target);
+                  }
+                },
                 mousedown: (e) => {
                   if (isEditingPath) {
                     const map = (e.target as any)._map;
@@ -602,10 +570,8 @@ const MapDisplay = ({
                 color: isLineActive ? '#f59e0b' : line.color,
                 weight: isLineActive ? 8 : 4,
                 opacity: isLineActive ? 1 : 0.8,
-                // Gunakan dashArray eksplisit agar Leaflet merender garis putus-putus
-                // Lalu CSS flow-active akan menangani animasinya
                 dashArray: isFlowing ? '10, 10' : (line.status === 'rencana' ? '10, 5' : line.status === 'maintenance' ? '5, 5' : undefined),
-                className: `${isEditingPath ? 'cursor-pointer transition-all' : ''} ${isFlowing ? 'flow-active' : ''}`.trim()
+                className: isEditingPath ? 'cursor-pointer transition-all' : undefined
               }}
             />
           );

@@ -6,17 +6,17 @@ exports.getSummary = async (req, res) => {
     try {
         const workspaceId = req.user.workspace_id;
         const deviceId = req.query.deviceId ? parseInt(req.query.deviceId) : null;
-        console.log(`[PPPoE Summary] Request untuk workspace ${workspaceId}, deviceId ${deviceId}`);
-        
+
+
         // Jalankan secara sequential untuk menghindari deadlock dengan locking mechanism
         // Kedua command akan menggunakan koneksi yang sama (karena deviceId sama)
         // Locking mechanism akan memastikan hanya satu koneksi dibuat dan di-reuse
         const secrets = await runCommandForWorkspace(workspaceId, '/ppp/secret/print', [], deviceId);
         const active = await runCommandForWorkspace(workspaceId, '/ppp/active/print', ['?service=pppoe'], deviceId).catch(() => []);
-        
+
         const duration = Date.now() - startTime;
         console.log(`[PPPoE Summary] Berhasil dalam ${duration}ms - total: ${secrets.length}, active: ${active.length}`);
-        
+
         res.json({ total: secrets.length, active: active.length, inactive: secrets.length - active.length });
     } catch (error) {
         const duration = Date.now() - startTime;
@@ -31,24 +31,19 @@ exports.getSecrets = async (req, res) => {
         const workspaceId = req.user.workspace_id;
         const deviceId = req.query.deviceId ? parseInt(req.query.deviceId) : null;
         const disabled = req.query.disabled;
-        console.log(`[PPPoE Secrets] Request untuk workspace ${workspaceId}, deviceId ${deviceId}, disabled=${disabled}`);
-        
+
+
         // Timeout sudah di-handle di runCommandForWorkspace
         // Ambil secrets dan active users secara sequential untuk menghindari race condition
         // Kedua command akan menggunakan koneksi yang sama (karena deviceId sama)
         // Locking mechanism akan memastikan hanya satu koneksi dibuat dan di-reuse
-        console.log(`[PPPoE Secrets] Memulai fetch secrets untuk deviceId ${deviceId}`);
-        const secretsStartTime = Date.now();
         const secrets = await runCommandForWorkspace(workspaceId, '/ppp/secret/print', [], deviceId);
-        console.log(`[PPPoE Secrets] Secrets fetched dalam ${Date.now() - secretsStartTime}ms, jumlah: ${secrets.length}`);
-        
-        const activeStartTime = Date.now();
+
         const activeUsers = await runCommandForWorkspace(workspaceId, '/ppp/active/print', ['?service=pppoe'], deviceId).catch((err) => {
             console.warn(`[PPPoE Secrets] Error fetching active users:`, err.message);
-            return []; // Return empty array jika error
+            return [];
         });
-        console.log(`[PPPoE Secrets] Active users fetched dalam ${Date.now() - activeStartTime}ms, jumlah: ${activeUsers.length}`);
-        
+
         // Filter berdasarkan disabled jika diperlukan
         let filteredSecrets = secrets;
         if (disabled === 'false') {
@@ -56,7 +51,7 @@ exports.getSecrets = async (req, res) => {
         } else if (disabled === 'true') {
             filteredSecrets = secrets.filter(s => s.disabled === 'true');
         }
-        
+
         // Buat Map dari active users untuk lookup cepat (name -> address)
         // Active users memiliki IP address yang sedang digunakan
         const activeUserMap = new Map();
@@ -65,39 +60,39 @@ exports.getSecrets = async (req, res) => {
                 activeUserMap.set(user.name, user.address);
             }
         });
-        
+
         // Buat Set dari nama user yang aktif untuk lookup cepat
         const activeUserNames = new Set(activeUsers.map(user => user.name));
-        
+
         // Tambahkan informasi isActive ke setiap secret dan pastikan semua field ter-preserve
         const secretsWithStatus = filteredSecrets.map(secret => {
             // Build object dengan semua field dari secret
             // Gunakan Object.assign untuk memastikan semua field ter-copy termasuk yang dengan tanda hubung
             const secretData = Object.assign({}, secret);
-            
+
             // Untuk remote-address:
             // 1. Jika secret memiliki remote-address yang di-set, gunakan itu
             // 2. Jika user sedang aktif, gunakan IP dari active connection
             // 3. Jika tidak ada, set null
             let remoteAddress = secret['remote-address'] || null;
-            
+
             // Jika tidak ada remote-address di secret tapi user sedang aktif, ambil dari active connection
             if (!remoteAddress && activeUserMap.has(secret.name)) {
                 remoteAddress = activeUserMap.get(secret.name);
             }
-            
+
             // Set remote-address (selalu ada di response, meskipun null)
             secretData['remote-address'] = remoteAddress;
-            
+
             // Tambahkan isActive
             secretData.isActive = activeUserNames.has(secret.name);
-            
+
             return secretData;
         });
-        
+
         const duration = Date.now() - startTime;
         console.log(`[PPPoE Secrets] Berhasil dalam ${duration}ms - total secrets: ${secrets.length}, filtered: ${filteredSecrets.length}`);
-        
+
         res.json(secretsWithStatus);
     } catch (error) {
         const duration = Date.now() - startTime;
@@ -125,9 +120,9 @@ exports.getNextIp = async (req, res) => {
         }
 
         const { ip_start, ip_end, gateway } = pools[0];
-        
+
         const secrets = await runCommandForWorkspace(workspace_id, '/ppp/secret/print', [`?profile=${profile}`]);
-        
+
         const usedIps = new Set(secrets.map(s => s['remote-address']).filter(Boolean));
         const startIp = ip_start.split('.').map(Number);
         const endIp = ip_end.split('.').map(Number);
@@ -214,7 +209,7 @@ exports.getSlaDetails = async (req, res) => {
     try {
         const thirtyDaysAgo = new Date();
         thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-        
+
         // Hitung downtime yang sudah selesai (dengan duration_seconds)
         const [completedDowntimeResult] = await pool.query(
             `SELECT COALESCE(SUM(duration_seconds), 0) as total_downtime
@@ -223,7 +218,7 @@ exports.getSlaDetails = async (req, res) => {
             [workspaceId, name, thirtyDaysAgo]
         );
         const completedDowntimeSeconds = parseInt(completedDowntimeResult[0].total_downtime, 10);
-        
+
         // Hitung downtime yang masih berlangsung (end_time IS NULL)
         const [ongoingDowntimeResult] = await pool.query(
             `SELECT COALESCE(SUM(TIMESTAMPDIFF(SECOND, start_time, NOW())), 0) as ongoing_downtime
@@ -232,7 +227,7 @@ exports.getSlaDetails = async (req, res) => {
             [workspaceId, name, thirtyDaysAgo]
         );
         const ongoingDowntimeSeconds = parseInt(ongoingDowntimeResult[0].ongoing_downtime, 10);
-        
+
         const totalDowntimeSeconds = completedDowntimeSeconds + ongoingDowntimeSeconds;
 
         const totalSecondsInPeriod = 30 * 24 * 60 * 60;

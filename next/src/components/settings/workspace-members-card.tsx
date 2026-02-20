@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { Users, UserMinus, Shield, ShieldCheck, ShieldAlert, Loader2 } from 'lucide-react';
+import { Users, UserMinus, Shield, ShieldCheck, ShieldAlert, Loader2, ArrowRightLeft, Globe } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { apiFetch } from '@/utils/api';
@@ -14,14 +14,22 @@ interface Member {
     role: 'admin' | 'user';
     profile_picture_url: string;
     is_owner: number | boolean;
+    workspace_id?: number;
+    workspace_name?: string;
 }
 
 const WorkspaceMembersCard = () => {
     const { user: currentUser } = useAuth();
     const [members, setMembers] = useState<Member[]>([]);
+    const [allUsers, setAllUsers] = useState<Member[]>([]);
     const [loading, setLoading] = useState(true);
     const [kickingId, setKickingId] = useState<number | null>(null);
+    const [togglingRoleId, setTogglingRoleId] = useState<number | null>(null);
+    const [viewMode, setViewMode] = useState<'workspace' | 'all'>('workspace');
     const apiUrl = process.env.NEXT_PUBLIC_API_BASE_URL;
+
+    const isSuperAdmin = currentUser?.is_super_admin;
+    const isAdmin = currentUser?.role === 'admin';
 
     const fetchMembers = useCallback(async () => {
         setLoading(true);
@@ -38,9 +46,29 @@ const WorkspaceMembersCard = () => {
         }
     }, [apiUrl]);
 
+    const fetchAllUsers = useCallback(async () => {
+        if (!isSuperAdmin) return;
+        setLoading(true);
+        try {
+            const res = await apiFetch(`${apiUrl}/api/workspaces/all-users`);
+            if (res.ok) {
+                const data = await res.json();
+                setAllUsers(data);
+            }
+        } catch (error) {
+            console.error("Gagal ambil daftar semua user:", error);
+        } finally {
+            setLoading(false);
+        }
+    }, [apiUrl, isSuperAdmin]);
+
     useEffect(() => {
-        fetchMembers();
-    }, [fetchMembers]);
+        if (viewMode === 'workspace') {
+            fetchMembers();
+        } else {
+            fetchAllUsers();
+        }
+    }, [viewMode, fetchMembers, fetchAllUsers]);
 
     const handleKick = async (member: Member) => {
         if (!confirm(`Apakah Anda yakin ingin mengeluarkan ${member.display_name} (@${member.username}) dari workspace ini?`)) {
@@ -55,7 +83,7 @@ const WorkspaceMembersCard = () => {
             const data = await res.json();
             if (res.ok) {
                 alert(data.message);
-                fetchMembers(); // Refresh list
+                fetchMembers();
             } else {
                 throw new Error(data.message);
             }
@@ -63,6 +91,36 @@ const WorkspaceMembersCard = () => {
             alert(`Gagal mengeluarkan anggota: ${error.message}`);
         } finally {
             setKickingId(null);
+        }
+    };
+
+    const handleToggleRole = async (member: Member) => {
+        const newRole = member.role === 'admin' ? 'user' : 'admin';
+        const label = newRole === 'admin' ? 'Admin' : 'User';
+
+        if (!confirm(`Ubah role ${member.display_name} menjadi ${label}?`)) return;
+
+        setTogglingRoleId(member.id);
+        try {
+            const res = await apiFetch(`${apiUrl}/api/workspaces/members/${member.id}/role`, {
+                method: 'PATCH',
+                body: JSON.stringify({ role: newRole })
+            });
+            const data = await res.json();
+            if (res.ok) {
+                // Update local state
+                if (viewMode === 'workspace') {
+                    setMembers(prev => prev.map(m => m.id === member.id ? { ...m, role: newRole } : m));
+                } else {
+                    setAllUsers(prev => prev.map(m => m.id === member.id ? { ...m, role: newRole } : m));
+                }
+            } else {
+                throw new Error(data.message);
+            }
+        } catch (error: any) {
+            alert(`Gagal mengubah role: ${error.message}`);
+        } finally {
+            setTogglingRoleId(null);
         }
     };
 
@@ -88,78 +146,178 @@ const WorkspaceMembersCard = () => {
         );
     };
 
+    const canManageRole = (member: Member) => {
+        // Tidak bisa ubah role sendiri
+        if (member.id === currentUser?.id) return false;
+        // Tidak bisa ubah role owner
+        if (member.is_owner) return false;
+        // Super admin bisa ubah siapapun
+        if (isSuperAdmin) return true;
+        // Admin biasa bisa ubah role member di workspace yang sama
+        if (isAdmin) return true;
+        return false;
+    };
+
+    const canKick = (member: Member) => {
+        if (member.id === currentUser?.id) return false;
+        if (member.is_owner) return false;
+        if (!isAdmin) return false;
+        // Hanya bisa kick member workspace sendiri (bukan mode all)
+        if (viewMode === 'all') return false;
+        return true;
+    };
+
+    const renderMemberRow = (member: Member, showWorkspace = false) => (
+        <div key={member.id} className="py-4 flex items-center justify-between group">
+            <div className="flex items-center gap-4">
+                <div className="relative">
+                    <img
+                        src={member.profile_picture_url ? `${apiUrl}${member.profile_picture_url}` : `${apiUrl}/public/uploads/avatars/default.jpg`}
+                        alt={member.display_name}
+                        className="w-10 h-10 rounded-full object-cover border-2 border-background shadow-sm"
+                        onError={(e) => {
+                            (e.target as HTMLImageElement).src = `${apiUrl}/public/uploads/avatars/default.jpg`;
+                        }}
+                    />
+                    {member.is_owner ? (
+                        <div className="absolute -bottom-1 -right-1 bg-amber-500 rounded-full p-0.5 text-white border-2 border-background">
+                            <ShieldAlert size={8} />
+                        </div>
+                    ) : member.role === 'admin' ? (
+                        <div className="absolute -bottom-1 -right-1 bg-blue-500 rounded-full p-0.5 text-white border-2 border-background">
+                            <ShieldCheck size={8} />
+                        </div>
+                    ) : null}
+                </div>
+                <div>
+                    <div className="flex items-center gap-2 flex-wrap">
+                        <h4 className="text-sm font-semibold">{member.display_name}</h4>
+                        {getRoleBadge(member)}
+                        {member.id === currentUser?.id && (
+                            <span className="text-[10px] bg-secondary px-1.5 py-0.5 rounded text-muted-foreground uppercase font-medium">Anda</span>
+                        )}
+                    </div>
+                    <p className="text-xs text-muted-foreground">@{member.username}</p>
+                    {showWorkspace && member.workspace_name && (
+                        <p className="text-xs text-primary/70 mt-0.5">{member.workspace_name}</p>
+                    )}
+                </div>
+            </div>
+
+            <div className="flex items-center gap-1">
+                {canManageRole(member) && (
+                    <Button
+                        variant="ghost"
+                        size="sm"
+                        className="text-primary hover:text-primary hover:bg-primary/10 opacity-0 group-hover:opacity-100 transition-opacity"
+                        onClick={() => handleToggleRole(member)}
+                        disabled={togglingRoleId === member.id}
+                        title={`Ubah ke ${member.role === 'admin' ? 'User' : 'Admin'}`}
+                    >
+                        {togglingRoleId === member.id ? <Loader2 size={16} className="animate-spin" /> : <ArrowRightLeft size={16} />}
+                        <span className="ml-1 hidden sm:inline text-xs">
+                            {member.role === 'admin' ? '→ User' : '→ Admin'}
+                        </span>
+                    </Button>
+                )}
+
+                {canKick(member) && (
+                    <Button
+                        variant="ghost"
+                        size="sm"
+                        className="text-destructive hover:text-destructive hover:bg-destructive/10 opacity-0 group-hover:opacity-100 transition-opacity"
+                        onClick={() => handleKick(member)}
+                        disabled={kickingId === member.id}
+                    >
+                        {kickingId === member.id ? <Loader2 size={16} className="animate-spin" /> : <UserMinus size={16} />}
+                        <span className="ml-2 hidden sm:inline">Keluarkan</span>
+                    </Button>
+                )}
+            </div>
+        </div>
+    );
+
+    // Group all users by workspace for super admin view
+    const groupedUsers = allUsers.reduce((acc, user) => {
+        const wsName = user.workspace_name || 'Tanpa Workspace';
+        if (!acc[wsName]) acc[wsName] = [];
+        acc[wsName].push(user);
+        return acc;
+    }, {} as Record<string, Member[]>);
+
     return (
         <Card>
             <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                    <Users className="text-primary" /> Anggota Workspace
-                </CardTitle>
+                <div className="flex items-center justify-between">
+                    <CardTitle className="flex items-center gap-2">
+                        <Users className="text-primary" /> Anggota Workspace
+                    </CardTitle>
+                    {isSuperAdmin && (
+                        <div className="flex bg-secondary rounded-lg p-0.5">
+                            <button
+                                onClick={() => setViewMode('workspace')}
+                                className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all ${viewMode === 'workspace'
+                                        ? 'bg-background text-foreground shadow-sm'
+                                        : 'text-muted-foreground hover:text-foreground'
+                                    }`}
+                            >
+                                Workspace Ini
+                            </button>
+                            <button
+                                onClick={() => setViewMode('all')}
+                                className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all flex items-center gap-1 ${viewMode === 'all'
+                                        ? 'bg-background text-foreground shadow-sm'
+                                        : 'text-muted-foreground hover:text-foreground'
+                                    }`}
+                            >
+                                <Globe size={12} /> Semua User
+                            </button>
+                        </div>
+                    )}
+                </div>
             </CardHeader>
             <CardContent>
                 {loading ? (
                     <div className="flex justify-center p-8">
                         <Loader2 className="animate-spin text-muted-foreground" />
                     </div>
-                ) : (
+                ) : viewMode === 'workspace' ? (
                     <div className="space-y-4">
                         <p className="text-sm text-muted-foreground mb-4">
-                            Daftar pengguna yang memiliki akses ke workspace ini. Hanya Admin yang dapat mengelola anggota.
+                            Daftar pengguna yang memiliki akses ke workspace ini. {isAdmin ? 'Hover untuk mengelola role atau mengeluarkan anggota.' : ''}
                         </p>
 
                         <div className="divide-y divide-border">
-                            {members.map((member) => (
-                                <div key={member.id} className="py-4 flex items-center justify-between group">
-                                    <div className="flex items-center gap-4">
-                                        <div className="relative">
-                                            <img
-                                                src={member.profile_picture_url ? `${apiUrl}${member.profile_picture_url}` : `${apiUrl}/public/uploads/avatars/default.jpg`}
-                                                alt={member.display_name}
-                                                className="w-10 h-10 rounded-full object-cover border-2 border-background shadow-sm"
-                                                onError={(e) => {
-                                                    (e.target as HTMLImageElement).src = `${apiUrl}/public/uploads/avatars/default.jpg`;
-                                                }}
-                                            />
-                                            {member.is_owner ? (
-                                                <div className="absolute -bottom-1 -right-1 bg-amber-500 rounded-full p-0.5 text-white border-2 border-background">
-                                                    <ShieldAlert size={8} />
-                                                </div>
-                                            ) : member.role === 'admin' ? (
-                                                <div className="absolute -bottom-1 -right-1 bg-blue-500 rounded-full p-0.5 text-white border-2 border-background">
-                                                    <ShieldCheck size={8} />
-                                                </div>
-                                            ) : null}
-                                        </div>
-                                        <div>
-                                            <div className="flex items-center gap-2">
-                                                <h4 className="text-sm font-semibold">{member.display_name}</h4>
-                                                {getRoleBadge(member)}
-                                                {member.id === currentUser?.id && (
-                                                    <span className="text-[10px] bg-secondary px-1.5 py-0.5 rounded text-muted-foreground uppercase font-medium">Anda</span>
-                                                )}
-                                            </div>
-                                            <p className="text-xs text-muted-foreground">@{member.username}</p>
-                                        </div>
-                                    </div>
-
-                                    {currentUser?.role === 'admin' && !member.is_owner && member.id !== currentUser.id && (
-                                        <Button
-                                            variant="ghost"
-                                            size="sm"
-                                            className="text-destructive hover:text-destructive hover:bg-destructive/10 opacity-0 group-hover:opacity-100 transition-opacity"
-                                            onClick={() => handleKick(member)}
-                                            disabled={kickingId === member.id}
-                                        >
-                                            {kickingId === member.id ? <Loader2 size={16} className="animate-spin" /> : <UserMinus size={16} />}
-                                            <span className="ml-2 hidden sm:inline">Keluarkan</span>
-                                        </Button>
-                                    )}
-                                </div>
-                            ))}
+                            {members.map((member) => renderMemberRow(member))}
                         </div>
 
                         {members.length === 0 && (
                             <p className="text-center py-8 text-muted-foreground text-sm italic">
                                 Tidak ada anggota ditemukan.
+                            </p>
+                        )}
+                    </div>
+                ) : (
+                    <div className="space-y-6">
+                        <p className="text-sm text-muted-foreground mb-4">
+                            Semua user dari seluruh workspace. Hover untuk mengubah role.
+                        </p>
+
+                        {Object.entries(groupedUsers).map(([wsName, users]) => (
+                            <div key={wsName}>
+                                <h3 className="text-sm font-semibold text-primary mb-2 flex items-center gap-2">
+                                    <span className="bg-primary/10 text-primary px-2 py-0.5 rounded-md text-xs">{wsName}</span>
+                                    <span className="text-xs text-muted-foreground font-normal">{users.length} user</span>
+                                </h3>
+                                <div className="divide-y divide-border ml-2 border-l-2 border-primary/10 pl-4">
+                                    {users.map((user) => renderMemberRow(user, false))}
+                                </div>
+                            </div>
+                        ))}
+
+                        {allUsers.length === 0 && (
+                            <p className="text-center py-8 text-muted-foreground text-sm italic">
+                                Tidak ada user ditemukan.
                             </p>
                         )}
                     </div>

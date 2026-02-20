@@ -780,43 +780,43 @@ const LocationPage = () => {
 
       <div className="h-full flex flex-col p-4 md:p-6 lg:p-8">
         <div className="flex-shrink-0 mb-6">
-          <div className="flex justify-between items-center flex-wrap gap-4">
-            <h1 className="text-3xl font-bold text-foreground">Peta Lokasi Aset</h1>
-            <div className="flex gap-2">
+          <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4">
+            <h1 className="text-2xl sm:text-3xl font-bold text-foreground">Peta Lokasi Aset</h1>
+            <div className="flex gap-2 flex-wrap">
               <Button
                 variant="outline"
                 onClick={() => fetchAssets()}
                 disabled={loading}
               >
-                {loading ? <Loader2 size={18} className="mr-2 animate-spin" /> : <RefreshCw size={18} className="mr-2" />}
-                Refresh
+                {loading ? <Loader2 size={18} className="sm:mr-2 animate-spin" /> : <RefreshCw size={18} className="sm:mr-2" />}
+                <span className="hidden sm:inline">Refresh</span>
               </Button>
               <Button variant="secondary" onClick={() => fileInputRef.current?.click()} disabled={isImporting}>
-                {isImporting ? <Loader2 size={18} className="mr-2 animate-spin" /> : <Upload size={18} className="mr-2" />}
-                Import KML
+                {isImporting ? <Loader2 size={18} className="sm:mr-2 animate-spin" /> : <Upload size={18} className="sm:mr-2" />}
+                <span className="hidden sm:inline">Import KML</span>
               </Button>
               <Button variant="outline" onClick={handleKmlExport} disabled={isExporting}>
-                {isExporting ? <Loader2 size={18} className="mr-2 animate-spin" /> : <Download size={18} className="mr-2" />}
-                Backup KML
+                {isExporting ? <Loader2 size={18} className="sm:mr-2 animate-spin" /> : <Download size={18} className="sm:mr-2" />}
+                <span className="hidden sm:inline">Backup KML</span>
               </Button>
               <Button
                 variant={isEditingPath ? "secondary" : "outline"}
                 onClick={() => setIsEditingPath(!isEditingPath)}
                 className={isEditingPath ? "bg-primary text-primary-foreground hover:bg-primary/90" : ""}
               >
-                <GitBranch size={18} className="mr-2" />
-                {isEditingPath ? "Keluar Edit Jalur" : "Mode Edit Jalur"}
+                <GitBranch size={18} className="sm:mr-2" />
+                <span className="hidden sm:inline">{isEditingPath ? "Keluar Edit Jalur" : "Mode Edit Jalur"}</span>
               </Button>
               <Button variant="outline" onClick={() => setIsAddClientModalOpen(true)}>
-                <User size={18} className="mr-2" /> Tambah Client
+                <User size={18} className="sm:mr-2" /> <span className="hidden sm:inline">Tambah Client</span>
               </Button>
-              <Button onClick={() => setIsAddModalOpen(true)}><Plus size={18} className="mr-2" /> Tambah Aset</Button>
+              <Button onClick={() => setIsAddModalOpen(true)}><Plus size={18} className="sm:mr-2" /> <span className="hidden sm:inline">Tambah Aset</span></Button>
             </div>
           </div>
           {isEditingPath && (
-            <div className="mt-4 p-4 bg-primary/10 border border-primary/20 rounded-xl flex items-center justify-between shadow-lg animate-in fade-in slide-in-from-top-4 duration-300">
+            <div className="mt-4 p-4 bg-primary/10 border border-primary/20 rounded-xl flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 shadow-lg animate-in fade-in slide-in-from-top-4 duration-300">
               <div className="flex items-center gap-3">
-                <div className="w-3 h-3 bg-primary rounded-full animate-ping" />
+                <div className="w-3 h-3 bg-primary rounded-full animate-ping flex-shrink-0" />
                 <div>
                   <p className="text-sm font-bold">MODE EDIT JALUR AKTIF</p>
                   <p className="text-xs text-muted-foreground">
@@ -826,7 +826,7 @@ const LocationPage = () => {
                   </p>
                 </div>
               </div>
-              <div className="flex gap-2">
+              <div className="flex gap-2 flex-wrap">
                 <Button variant="outline" size="sm" onClick={() => { setIsEditingPath(false); setEditingPathPoints([]); setPathTarget(null); setPendingPathEdits(new Map()); setPathHistory([]); }}>Selesai</Button>
                 {pathTarget && (
                   <>
@@ -840,9 +840,9 @@ const LocationPage = () => {
           )}
         </div>
 
-        <div className="flex-grow grid grid-cols-1 lg:grid-cols-5 gap-6 min-h-0">
-          <div className="lg:col-span-1 min-h-[600px] lg:min-h-[calc(100vh-200px)] flex flex-col gap-4">
-            <div className="flex-1 min-h-0">
+        <div className="flex-grow grid grid-cols-1 lg:grid-cols-5 gap-4 lg:gap-6 min-h-0">
+          <div className="lg:col-span-1 lg:min-h-[calc(100vh-200px)] flex flex-col gap-2 lg:gap-4">
+            <div className="lg:flex-1 min-h-0">
               <AssetList
                 assets={filteredAssets}
                 loading={loading}
@@ -853,7 +853,7 @@ const LocationPage = () => {
                 onSearchChange={setSearchQuery}
               />
             </div>
-            <div className="flex-1 min-h-0">
+            <div className="lg:flex-1 min-h-0">
               <ClientList
                 clients={filteredClients}
                 loading={clientsLoading}
@@ -866,7 +866,7 @@ const LocationPage = () => {
               />
             </div>
           </div>
-          <div className="lg:col-span-4 min-h-[600px] lg:min-h-[calc(100vh-200px)] relative z-10">
+          <div className="lg:col-span-4 min-h-[400px] lg:min-h-[calc(100vh-200px)] relative z-10">
             <MapDisplay
               assets={displayAssets}
               clients={showClients ? displayClients : []}

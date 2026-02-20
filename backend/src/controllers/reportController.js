@@ -667,53 +667,6 @@ exports.generateMonthlyReport = async (req, res) => {
             }
         }
 
-        // Old Client Statistics Section (removed - now per device)
-        // This section is kept for backward compatibility but should not be reached
-        if (false && clientStats && clientStats.length > 0) {
-            if (currentY > 650) {
-                pageNum = addFooterAndNewPage(doc, pageNum);
-                currentY = 50;
-            }
-
-            doc.fontSize(16)
-                .fillColor('#2d3748')
-                .font('Helvetica-Bold')
-                .text('STATISTIK PER CLIENT (PPPoE SECRET)', 50, currentY);
-            currentY += 25;
-
-            // Add Total Pengguna above the table
-            doc.fontSize(12)
-                .fillColor('#4a5568')
-                .font('Helvetica')
-                .text(`Total Pengguna: ${totalUsers}`, 50, currentY);
-            currentY += 20;
-
-            const clientRows = clientStats.map(client => {
-                const clientName = (client.pppoe_user || 'N/A').length > 25
-                    ? (client.pppoe_user || 'N/A').substring(0, 22) + '...'
-                    : (client.pppoe_user || 'N/A');
-                return [
-                    clientName,
-                    formatDataSize(client.total_usage || 0),
-                    formatDuration(client.total_downtime_seconds || 0),
-                    (client.downtime_events || 0).toString()
-                ];
-            });
-
-            const tableResult2 = drawTableWithHeader(doc, {
-                startY: currentY,
-                columnWidths: [180, 120, 150, 100],
-                headers: ['Client', 'Total Usage', 'Total Downtime', 'Downtime Events'],
-                rows: clientRows,
-                fontSize: 9,
-                headerFontSize: 10,
-                pageBottom: 750,
-                pageNum: pageNum
-            });
-            currentY = tableResult2.currentY;
-            pageNum = tableResult2.pageNum;
-            currentY += 20;
-        }
 
         // Daily Traffic Section
         if (dailyTraffic && dailyTraffic.length > 0) {

@@ -35,15 +35,17 @@ exports.requestLoginOtp = async (req, res) => {
 
             const tokenId = crypto.randomBytes(16).toString('hex');
             const payload = { id: user.id, username: user.username, workspace_id: user.workspace_id, jti: tokenId };
-            // Normalize IP (remove ::ffff: prefix and handle localhost)
-            let normalizedIp = req.ip.includes('::ffff:') ? req.ip.split('::ffff:')[1] : req.ip;
+            // Gunakan X-Forwarded-For untuk mendapatkan IP asli klien (bukan IP proxy Cloudflare)
+            const forwarded = req.headers['x-forwarded-for'];
+            let rawIp = forwarded ? forwarded.split(',')[0].trim() : req.ip;
+            let normalizedIp = rawIp.includes('::ffff:') ? rawIp.split('::ffff:')[1] : rawIp;
             if (normalizedIp === '::1') normalizedIp = '127.0.0.1';
             const userAgent = req.headers['user-agent'] || 'Unknown';
 
             try {
-                // Delete ANY session for this user with same UA or same IP
+                // Hanya hapus session dari perangkat yang PERSIS sama (IP DAN User-Agent cocok)
                 const [delResult] = await pool.query(
-                    'DELETE FROM user_sessions WHERE user_id = ? AND (user_agent = ? OR ip_address = ?)',
+                    'DELETE FROM user_sessions WHERE user_id = ? AND user_agent = ? AND ip_address = ?',
                     [user.id, userAgent, normalizedIp]
                 );
                 if (delResult.affectedRows > 0) {
@@ -115,14 +117,17 @@ exports.verifyLoginOtp = async (req, res) => {
         const [users] = await pool.query('SELECT * FROM users WHERE id = ?', [userId]);
         const user = users[0];
 
-        // ultra-aggressive session cleanup (prevent duplicates on same browser/IP)
-        let normalizedIp = req.ip.includes('::ffff:') ? req.ip.split('::ffff:')[1] : req.ip;
+        // Gunakan X-Forwarded-For untuk IP asli di belakang Cloudflare
+        const forwarded = req.headers['x-forwarded-for'];
+        let rawIp = forwarded ? forwarded.split(',')[0].trim() : req.ip;
+        let normalizedIp = rawIp.includes('::ffff:') ? rawIp.split('::ffff:')[1] : rawIp;
         if (normalizedIp === '::1') normalizedIp = '127.0.0.1';
         const userAgent = req.headers['user-agent'] || 'Unknown';
 
         try {
+            // Hanya hapus session dari perangkat yang PERSIS sama (IP DAN User-Agent cocok)
             const [delResult] = await pool.query(
-                'DELETE FROM user_sessions WHERE user_id = ? AND (user_agent = ? OR ip_address = ?)',
+                'DELETE FROM user_sessions WHERE user_id = ? AND user_agent = ? AND ip_address = ?',
                 [user.id, userAgent, normalizedIp]
             );
             if (delResult.affectedRows > 0) {
@@ -140,38 +145,15 @@ exports.verifyLoginOtp = async (req, res) => {
 
         await pool.query('INSERT INTO user_sessions (user_id, token_id, user_agent, ip_address) VALUES (?, ?, ?, ?)', [user.id, tokenId, userAgent, normalizedIp]);
 
-        // Set cookie dengan konfigurasi yang lebih eksplisit
-        // Untuk development, jangan gunakan secure (hanya untuk HTTPS)
         const cookieOptions = {
             httpOnly: true,
-            secure: false, // Set ke false untuk development (HTTP), true untuk production (HTTPS)
-            maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
-            sameSite: 'lax', // Changed to 'none' if needed for cross-origin, but 'lax' should work for same-site
+            secure: process.env.NODE_ENV === 'production',
+            maxAge: 7 * 24 * 60 * 60 * 1000,
+            sameSite: 'lax',
             path: '/',
-            // Jangan set domain, biarkan browser yang handle
         };
-
-        // Override secure untuk production
-        if (process.env.NODE_ENV === 'production') {
-            cookieOptions.secure = true;
-        }
-
-        // Set cookie dengan explicit header untuk memastikan ter-set
         res.cookie('token', token, cookieOptions);
 
-        // Juga set header Set-Cookie secara eksplisit untuk memastikan
-        const cookieString = `token=${token}; HttpOnly; Path=/; Max-Age=${7 * 24 * 60 * 60}; SameSite=Lax${process.env.NODE_ENV === 'production' ? '; Secure' : ''}`;
-        res.setHeader('Set-Cookie', cookieString);
-
-        console.log(`[Auth] Token cookie set untuk user ${user.id}`);
-        console.log(`[Auth] Cookie options:`, cookieOptions);
-        console.log(`[Auth] Request origin:`, req.headers.origin);
-        console.log(`[Auth] Request host:`, req.headers.host);
-        console.log(`[Auth] Set-Cookie header:`, cookieString);
-
-        // Return token di response body juga sebagai fallback jika cookie tidak bekerja
-        // Frontend bisa simpan di localStorage dan kirim sebagai Authorization header
-        // Set default avatar jika tidak ada
         const superAdminIds = process.env.SUPER_ADMIN_IDS
             ? process.env.SUPER_ADMIN_IDS.split(',').map(id => parseInt(id.trim()))
             : [1];

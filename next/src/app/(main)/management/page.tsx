@@ -61,14 +61,14 @@ const ManagementPage = () => {
       setLoading(false);
       return;
     }
-    
+
     // Gunakan data WebSocket untuk semua summary (sama seperti summary aktif)
     const secretsArray = Array.isArray(pppoeSecrets) ? pppoeSecrets : [];
-    
+
     const totalSecrets = secretsArray.length;
     const activeCount = secretsArray.filter((secret: any) => secret.isActive === true).length;
     const inactiveCount = Math.max(0, totalSecrets - activeCount);
-    
+
     // Update summary dari WebSocket data (real-time, sama seperti aktif)
     setSummary(prev => {
       // Hanya update jika ada perubahan
@@ -79,17 +79,17 @@ const ManagementPage = () => {
           inactive: inactiveCount,
           pppoeSecretsCount: secretsArray.length
         });
-        
+
         return {
           total: totalSecrets,
           active: activeCount,
           inactive: inactiveCount
         };
       }
-      
+
       return prev;
     });
-    
+
     // Set loading ke false jika ada data WebSocket
     if (loading && totalSecrets > 0) {
       console.log('[Management Page] Set loading ke false karena ada data WebSocket');
@@ -98,7 +98,7 @@ const ManagementPage = () => {
   }, [pppoeSecrets, selectedDeviceId, loading]);
 
   const handleSuccess = () => {
-      setRefreshTrigger(prev => prev + 1);
+    setRefreshTrigger(prev => prev + 1);
   };
 
   const handleRefresh = useCallback(async () => {
@@ -107,11 +107,11 @@ const ManagementPage = () => {
     setRefreshTrigger(prev => prev + 1);
     setTimeout(() => setRefreshing(false), 500);
   }, [fetchSummary]);
-  
+
   const renderSummaryCard = (title: string, count: number, icon: React.ReactNode, color: string, filter: 'all' | 'active' | 'inactive') => (
-      <button onClick={() => setActiveFilter(filter)} className={`w-full text-left rounded-lg transition-all ${activeFilter === filter ? 'ring-2 ring-primary ring-offset-2 ring-offset-background' : ''}`}>
-          <SummaryCard title={title} count={loading ? <Loader2 className="animate-spin" /> : count} icon={icon} colorClass={color} />
-      </button>
+    <button onClick={() => setActiveFilter(filter)} className={`w-full text-left rounded-lg transition-all ${activeFilter === filter ? 'ring-2 ring-primary ring-offset-2 ring-offset-background' : ''}`}>
+      <SummaryCard title={title} count={loading ? <Loader2 className="animate-spin" /> : count} icon={icon} colorClass={color} />
+    </button>
   );
 
   if (hasDevices === null) {
@@ -119,7 +119,7 @@ const ManagementPage = () => {
       <div className="p-4 md:p-8">
         <div className="flex justify-between items-center flex-wrap gap-4 mb-6">
           <h1 className="text-3xl font-bold">Manajemen PPPoE</h1>
-          <DeviceSelector 
+          <DeviceSelector
             selectedDeviceId={selectedDeviceId}
             onDeviceChange={setSelectedDeviceId}
           />
@@ -136,7 +136,7 @@ const ManagementPage = () => {
       <div className="p-4 md:p-8">
         <div className="flex justify-between items-center flex-wrap gap-4 mb-6">
           <h1 className="text-3xl font-bold">Manajemen PPPoE</h1>
-          <DeviceSelector 
+          <DeviceSelector
             selectedDeviceId={selectedDeviceId}
             onDeviceChange={setSelectedDeviceId}
           />
@@ -148,29 +148,32 @@ const ManagementPage = () => {
 
   return (
     <>
-      <div className="p-4 md:p-8">
-        <div className="flex justify-between items-center flex-wrap gap-4 mb-6">
-          <h1 className="text-3xl font-bold">Manajemen PPPoE</h1>
-          <div className="flex items-center gap-2">
-            <DeviceSelector 
+      <div className="p-3 sm:p-4 md:p-8">
+        <div className="flex flex-col lg:flex-row lg:justify-between lg:items-center gap-4 mb-6">
+          <h1 className="text-2xl sm:text-3xl font-bold">Manajemen PPPoE</h1>
+          <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap lg:justify-end">
+            <DeviceSelector
               selectedDeviceId={selectedDeviceId}
               onDeviceChange={setSelectedDeviceId}
+              className="w-full sm:w-auto"
             />
-            <Button variant="outline" onClick={handleRefresh} disabled={refreshing || loading}>
-              <RefreshCw size={18} className={`mr-2 ${refreshing ? 'animate-spin' : ''}`}/> Refresh
-            </Button>
-            <Button variant="secondary" onClick={() => setIsIpPoolModalOpen(true)}>
-              <Settings size={18} className="mr-2"/> Atur IP Pool
-            </Button>
-            <Button onClick={() => setIsAddModalOpen(true)}>
-              <Plus size={18} className="mr-2"/> Tambah Secret
-            </Button>
+            <div className="flex items-center gap-2 w-full sm:w-auto">
+              <Button variant="outline" onClick={handleRefresh} disabled={refreshing || loading} className="flex-1 sm:flex-none">
+                <RefreshCw size={18} className={`${refreshing ? 'animate-spin' : ''}`} /> <span className="inline">Refresh</span>
+              </Button>
+              <Button variant="secondary" onClick={() => setIsIpPoolModalOpen(true)} className="flex-1 sm:flex-none">
+                <Settings size={18} /> <span className="hidden sm:inline">Atur IP Pool</span>
+              </Button>
+              <Button onClick={() => setIsAddModalOpen(true)} className="flex-1 sm:flex-none">
+                <Plus size={18} /> <span className="hidden sm:inline text-xs sm:text-sm">Tambah</span>
+              </Button>
+            </div>
           </div>
         </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {renderSummaryCard("Total Secrets", summary.total, <Users size={28}/>, "bg-gradient-to-br from-blue-500 to-blue-700", 'all')}
-          {renderSummaryCard("Aktif", summary.active, <UserCheck size={28}/>, "bg-gradient-to-br from-green-500 to-green-700", 'active')}
-          {renderSummaryCard("Tidak Aktif", summary.inactive, <UserX size={28}/>, "bg-gradient-to-br from-red-500 to-red-700", 'inactive')}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 lg:gap-6">
+          {renderSummaryCard("Total Secrets", summary.total, <Users size={28} />, "bg-gradient-to-br from-blue-500 to-blue-700", 'all')}
+          {renderSummaryCard("Aktif", summary.active, <UserCheck size={28} />, "bg-gradient-to-br from-green-500 to-green-700", 'active')}
+          {renderSummaryCard("Tidak Aktif", summary.inactive, <UserX size={28} />, "bg-gradient-to-br from-red-500 to-red-700", 'inactive')}
         </div>
         <div className="mt-8">
           <PppoeSecretsTable refreshTrigger={refreshTrigger} onActionComplete={handleSuccess} initialFilter={activeFilter} />

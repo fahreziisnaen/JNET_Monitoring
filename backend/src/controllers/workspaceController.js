@@ -216,3 +216,84 @@ exports.adminUpdateWhatsAppGroupId = async (req, res) => {
         res.status(500).json({ message: 'Gagal memperbarui WhatsApp Group ID.' });
     }
 };
+
+exports.updateMemberRole = async (req, res) => {
+    const { userId: targetUserId } = req.params;
+    const { role: newRole } = req.body;
+    const currentUser = req.user;
+
+    // Validasi role
+    if (!['admin', 'user'].includes(newRole)) {
+        return res.status(400).json({ message: 'Role harus "admin" atau "user".' });
+    }
+
+    // Tidak bisa ubah role diri sendiri
+    if (parseInt(targetUserId) === currentUser.id) {
+        return res.status(400).json({ message: 'Anda tidak bisa mengubah role diri sendiri.' });
+    }
+
+    try {
+        // Super admin bisa ubah role siapapun di workspace manapun
+        if (currentUser.is_super_admin) {
+            // Pastikan target user ada
+            const [targetUsers] = await pool.query(
+                'SELECT u.id, u.display_name, u.workspace_id, (w.owner_id = u.id) as is_owner FROM users u LEFT JOIN workspaces w ON u.workspace_id = w.id WHERE u.id = ?',
+                [targetUserId]
+            );
+            if (targetUsers.length === 0) {
+                return res.status(404).json({ message: 'User tidak ditemukan.' });
+            }
+
+            // Tidak bisa ubah role owner
+            if (targetUsers[0].is_owner) {
+                return res.status(403).json({ message: 'Role pemilik workspace tidak bisa diubah.' });
+            }
+
+            await pool.query('UPDATE users SET role = ? WHERE id = ?', [newRole, targetUserId]);
+            return res.status(200).json({
+                message: `Role ${targetUsers[0].display_name} berhasil diubah menjadi ${newRole}.`
+            });
+        }
+
+        // Admin biasa: hanya bisa ubah role anggota di workspace sendiri
+        const workspaceId = currentUser.workspace_id;
+
+        const [targetUsers] = await pool.query(
+            'SELECT u.id, u.display_name, (w.owner_id = u.id) as is_owner FROM users u JOIN workspaces w ON u.workspace_id = w.id WHERE u.id = ? AND u.workspace_id = ?',
+            [targetUserId, workspaceId]
+        );
+
+        if (targetUsers.length === 0) {
+            return res.status(404).json({ message: 'User tidak ditemukan di workspace ini.' });
+        }
+
+        // Tidak bisa ubah role owner
+        if (targetUsers[0].is_owner) {
+            return res.status(403).json({ message: 'Role pemilik workspace tidak bisa diubah.' });
+        }
+
+        await pool.query('UPDATE users SET role = ? WHERE id = ?', [newRole, targetUserId]);
+        res.status(200).json({
+            message: `Role ${targetUsers[0].display_name} berhasil diubah menjadi ${newRole}.`
+        });
+    } catch (error) {
+        console.error("UPDATE MEMBER ROLE ERROR:", error);
+        res.status(500).json({ message: 'Gagal mengubah role anggota.' });
+    }
+};
+
+exports.getAllUsers = async (req, res) => {
+    try {
+        const [users] = await pool.query(
+            `SELECT u.id, u.username, u.display_name, u.role, u.profile_picture_url, 
+             u.workspace_id, w.name as workspace_name, (w.owner_id = u.id) as is_owner
+             FROM users u
+             LEFT JOIN workspaces w ON u.workspace_id = w.id
+             ORDER BY w.name ASC, u.display_name ASC`
+        );
+        res.status(200).json(users);
+    } catch (error) {
+        console.error("GET ALL USERS ERROR:", error);
+        res.status(500).json({ message: 'Gagal mengambil daftar user.' });
+    }
+};
