@@ -13,11 +13,40 @@ const BackupRestoreCard = () => {
     const [restoring, setRestoring] = useState(false);
     const [error, setError] = useState('');
     const [success, setSuccess] = useState('');
+    const [workspaces, setWorkspaces] = useState<any[]>([]);
+    const [exportId, setExportId] = useState<string>('current');
+    const [restoreId, setRestoreId] = useState<string>('current');
     const fileInputRef = useRef<HTMLInputElement>(null);
     const apiUrl = process.env.NEXT_PUBLIC_API_BASE_URL;
 
-    // Hanya Super Admin yang bisa melihat konten card ini
-    if (!user?.is_super_admin) return null;
+    // Load workspaces for Super Admin
+    React.useEffect(() => {
+        if (user?.is_super_admin) {
+            const fetchWorkspaces = async () => {
+                try {
+                    const res = await apiFetch(`${apiUrl}/api/workspaces/all`);
+                    if (res.ok) {
+                        const data = await res.json();
+                        setWorkspaces(data);
+                    }
+                } catch (err) {
+                    console.error('Failed to fetch workspaces:', err);
+                }
+            };
+            fetchWorkspaces();
+        }
+    }, [user?.is_super_admin, apiUrl]);
+
+    // Hanya Super Admin atau Owner yang bisa melihat konten card ini
+    if (!user?.is_super_admin && !user?.is_owner) return null;
+
+    // Helper to get effective workspace ID for API
+    const getTargetId = (id: string) => {
+        if (!user?.is_super_admin) return user?.workspace_id;
+        if (id === 'all') return 'all';
+        if (id === 'current') return user?.workspace_id;
+        return id;
+    };
 
     const handleExport = async () => {
         setExporting(true);
@@ -26,7 +55,8 @@ const BackupRestoreCard = () => {
 
         try {
             const token = getAuthToken();
-            const response = await fetch(`${apiUrl}/api/backup/export`, {
+            const targetId = getTargetId(exportId);
+            const response = await fetch(`${apiUrl}/api/backup/export?targetWorkspaceId=${targetId}`, {
                 headers: {
                     'Authorization': `Bearer ${token}`
                 }
@@ -61,7 +91,12 @@ const BackupRestoreCard = () => {
         const file = e.target.files?.[0];
         if (!file) return;
 
-        if (!confirm('PERINGATAN KRITIS: Melakukan restore akan MENGHAPUS SEMUA DATA saat ini dan menggantinya dengan data dari backup. Apakah Anda yakin ingin melanjutkan?')) {
+        const isNew = restoreId === 'new';
+        const warning = isNew
+            ? 'Anda akan melakukan restore data ke WORKSPACE BARU. Workspace baru akan dibuat secara otomatis. Lanjutkan?'
+            : 'PERINGATAN KRITIS: Melakukan restore akan MENGHAPUS SEMUA DATA di workspace target saat ini dan menggantinya dengan data dari backup. Apakah Anda yakin ingin melanjutkan?';
+
+        if (!confirm(warning)) {
             if (fileInputRef.current) fileInputRef.current.value = '';
             return;
         }
@@ -75,7 +110,8 @@ const BackupRestoreCard = () => {
 
         try {
             const token = getAuthToken();
-            const res = await fetch(`${apiUrl}/api/backup/restore`, {
+            const targetId = getTargetId(restoreId);
+            const res = await fetch(`${apiUrl}/api/backup/restore?targetWorkspaceId=${targetId}`, {
                 method: 'POST',
                 headers: {
                     'Authorization': `Bearer ${token}`
@@ -105,7 +141,7 @@ const BackupRestoreCard = () => {
                     <Database size={24} /> Backup & Restore Data
                 </CardTitle>
                 <CardDescription>
-                    Pindahkan seluruh data server (Database, KML, dan Avatar) ke server baru atau simpan untuk cadangan.
+                    Pindahkan data server (Database, KML, dan Foto) ke server baru atau simpan untuk cadangan.
                 </CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
@@ -119,6 +155,26 @@ const BackupRestoreCard = () => {
                             <p className="text-sm text-muted-foreground mb-4">
                                 Unduh file ZIP berisi seluruh data aplikasi. Simpan file ini di tempat yang aman.
                             </p>
+
+                            {/* Export Selection for Super Admin */}
+                            {user?.is_super_admin && (
+                                <div className="mb-4 space-y-2">
+                                    <label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Pilih Sumber Data:</label>
+                                    <select
+                                        value={exportId}
+                                        onChange={(e) => setExportId(e.target.value)}
+                                        className="w-full text-sm border rounded-md p-2 bg-background text-foreground cursor-pointer"
+                                    >
+                                        <option value="current">Workspace Saya Saat Ini</option>
+                                        <option value="all">Semua Workspace (Full Backup)</option>
+                                        <optgroup label="Spesifik Workspace">
+                                            {workspaces.map(ws => (
+                                                <option key={ws.id} value={ws.id}>{ws.name} (ID: {ws.id})</option>
+                                            ))}
+                                        </optgroup>
+                                    </select>
+                                </div>
+                            )}
                         </div>
                         <Button
                             onClick={handleExport}
@@ -139,6 +195,27 @@ const BackupRestoreCard = () => {
                             <p className="text-sm text-muted-foreground mb-4">
                                 Unggah file ZIP backup untuk mengganti seluruh data server ini dengan data lama.
                             </p>
+
+                            {/* Restore Selection for Super Admin */}
+                            {user?.is_super_admin && (
+                                <div className="mb-4 space-y-2">
+                                    <label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Pilih Target Restore:</label>
+                                    <select
+                                        value={restoreId}
+                                        onChange={(e) => setRestoreId(e.target.value)}
+                                        className="w-full text-sm border rounded-md p-2 bg-background text-foreground cursor-pointer"
+                                    >
+                                        <option value="current">Workspace Saya Saat Ini</option>
+                                        <option value="new">Restore sebagai Workspace Baru (Clone)</option>
+                                        <optgroup label="Timpa Workspace Spesifik">
+                                            {workspaces.map(ws => (
+                                                <option key={ws.id} value={ws.id}>{ws.name} (ID: {ws.id})</option>
+                                            ))}
+                                        </optgroup>
+                                        <option value="all">Full Server (Semua Data - Berbahaya)</option>
+                                    </select>
+                                </div>
+                            )}
                         </div>
                         <input
                             type="file"

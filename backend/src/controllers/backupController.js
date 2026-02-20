@@ -26,39 +26,93 @@ const TABLES = [
 ];
 
 exports.exportBackup = async (req, res) => {
+    const { targetWorkspaceId } = req.query;
+    const currentUser = req.user;
+
+    // Tentukan workspace mana yang akan di-backup
+    let scopeId = null; // null means FULL backup
+    if (!currentUser.is_super_admin) {
+        // Jika bukan super admin, paksa ke workspace saat ini
+        scopeId = currentUser.workspace_id;
+    } else if (targetWorkspaceId && targetWorkspaceId !== 'all') {
+        // Super admin memilih workspace tertentu
+        scopeId = parseInt(targetWorkspaceId);
+    }
+
     try {
         const backupData = {};
+        const photoFiles = new Set(); // Melacak file foto yang harus disertakan
 
-        // 1. Fetch all data from tables
+        // 1. Fetch data based on scope
         for (const table of TABLES) {
-            const [rows] = await pool.query(`SELECT * FROM ${table}`);
+            let query = `SELECT * FROM ${table}`;
+            let params = [];
+
+            if (scopeId) {
+                // Filter berdasarkan workspace_id jika scopeId ditentukan
+                if (table === 'workspaces') {
+                    query += ` WHERE id = ?`;
+                    params = [scopeId];
+                } else if (['users', 'mikrotik_devices', 'ip_pools', 'network_assets', 'clients', 'odp_user_connections', 'downtime_events', 'pppoe_user_status', 'workspace_invites', 'pppoe_usage_logs', 'resource_logs', 'alarms', 'dashboard_snapshot'].includes(table)) {
+                    query += ` WHERE workspace_id = ?`;
+                    params = [scopeId];
+                } else if (['user_sessions', 'login_otps', 'pending_registrations'].includes(table)) {
+                    // Kecualikan data sesi global dari backup per-workspace agar aman
+                    continue;
+                }
+            }
+
+            const [rows] = await pool.query(query, params);
             backupData[table] = rows;
+
+            // Kumpulkan referensi foto
+            if (rows.length > 0) {
+                rows.forEach(row => {
+                    if (table === 'network_assets' && row.photo_url) {
+                        const filename = path.basename(row.photo_url);
+                        if (filename) photoFiles.add({ folder: 'assets', filename });
+                    }
+                    if (table === 'clients' && row.photo_url) {
+                        const filename = path.basename(row.photo_url);
+                        if (filename) photoFiles.add({ folder: 'clients', filename });
+                    }
+                    if (table === 'users' && row.profile_picture_url) {
+                        const filename = path.basename(row.profile_picture_url);
+                        if (filename && !filename.startsWith('default')) {
+                            photoFiles.add({ folder: 'avatars', filename });
+                        }
+                    }
+                });
+            }
         }
 
         // 2. Prepare ZIP
         const zip = new AdmZip();
 
+        // Add metadata
+        const metadata = {
+            version: '2.0',
+            scope: scopeId ? 'workspace' : 'full',
+            workspace_id: scopeId,
+            timestamp: new Date().toISOString(),
+            exported_by: currentUser.id
+        };
+        zip.addFile('metadata.json', Buffer.from(JSON.stringify(metadata, null, 2), 'utf8'));
+
         // Add database JSON
         zip.addFile('database_backup.json', Buffer.from(JSON.stringify(backupData, null, 2), 'utf8'));
 
-        // 3. Add Avatars
-        const avatarDir = path.join(__dirname, '../../public/uploads/avatars');
-        if (fs.existsSync(avatarDir)) {
-            const files = fs.readdirSync(avatarDir);
-            files.forEach(file => {
-                const filePath = path.join(avatarDir, file);
-                if (fs.statSync(filePath).isFile()) {
-                    zip.addLocalFile(filePath, 'avatars');
-                }
-            });
-        }
-
-        // 4. Generate and add KML (reusing logic or just exporting the whole network_assets table is enough as KML can be reconstructed)
-        // However, for user convenience, we can add a .kml file too.
-        // But since we have network_assets in JSON, it's safer for restore.
+        // 3. Add Photos using the collected Set
+        photoFiles.forEach(item => {
+            const filePath = path.join(__dirname, '../../public/uploads', item.folder, item.filename);
+            if (fs.existsSync(filePath)) {
+                zip.addLocalFile(filePath, item.folder);
+            }
+        });
 
         const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
-        const filename = `jnet-backup-${timestamp}.zip`;
+        const prefix = scopeId ? `jnet-ws${scopeId}-backup` : 'jnet-full-backup';
+        const filename = `${prefix}-${timestamp}.zip`;
         const zipBuffer = zip.toBuffer();
 
         res.setHeader('Content-Type', 'application/zip');
@@ -76,59 +130,87 @@ exports.restoreBackup = async (req, res) => {
         return res.status(400).json({ message: 'Tidak ada file backup yang diunggah.' });
     }
 
+    const { targetWorkspaceId } = req.query;
+    const currentUser = req.user;
     const conn = await pool.getConnection();
+
     try {
         const zip = new AdmZip(req.file.buffer);
         const zipEntries = zip.getEntries();
 
-        // 1. Find and parse database_backup.json
+        // 1. Parse Metadata dan Database JSON
+        const metadataEntry = zipEntries.find(e => e.entryName === 'metadata.json');
         const dbEntry = zipEntries.find(e => e.entryName === 'database_backup.json');
+
         if (!dbEntry) {
             throw new Error('File database_backup.json tidak ditemukan dalam ZIP.');
         }
 
+        const metadata = metadataEntry ? JSON.parse(metadataEntry.getData().toString('utf8')) : { scope: 'full' };
         const backupData = JSON.parse(dbEntry.getData().toString('utf8'));
 
+        // Proteksi: Non-super admin hanya bisa restore workspace miliknya sendiri
+        if (!currentUser.is_super_admin) {
+            if (metadata.scope !== 'workspace' || parseInt(metadata.workspace_id) !== currentUser.workspace_id) {
+                return res.status(403).json({ message: 'Akses ditolak. Anda hanya dapat me-restore backup milik workspace Anda sendiri.' });
+            }
+        }
+
         await conn.beginTransaction();
+
+        // ── TARGET REMAPPING LOGIC ───────────────────────────────────────
+        let remappingId = null;
+        if (currentUser.is_super_admin) {
+            if (targetWorkspaceId === 'new') {
+                // Buat workspace baru dengan nama dari backup jika ada, atau default
+                const backupWorkspaceName = backupData.workspaces?.[0]?.name || 'Restored Workspace';
+                const [wsResult] = await conn.query(
+                    'INSERT INTO workspaces (name, owner_id) VALUES (?, ?)',
+                    [`${backupWorkspaceName} (Clone)`, currentUser.id]
+                );
+                remappingId = wsResult.insertId;
+                console.log(`[Restore] Created new workspace ${remappingId} for restoration.`);
+            } else if (targetWorkspaceId && targetWorkspaceId !== 'all' && targetWorkspaceId !== 'current') {
+                remappingId = parseInt(targetWorkspaceId);
+                console.log(`[Restore] Target set to existing workspace ${remappingId}.`);
+            }
+        }
+        // ──────────────────────────────────────────────────────────────────
+
         await conn.query('SET FOREIGN_KEY_CHECKS = 0');
 
-        // 2. Truncate and Insert Data
-        // Order matters for some tables if we don't use SET FOREIGN_KEY_CHECKS = 0, but since we do, it's easier.
-        // However, it's good practice to clear them first.
-        for (const table of TABLES) {
-            await conn.query(`DELETE FROM ${table}`);
+        // 2. Clear and Restore Data
+        const scopeId = remappingId || (metadata.scope === 'workspace' ? parseInt(metadata.workspace_id) : null);
 
+        for (const table of TABLES) {
+            // Hapus data lama sesuai scope (hanya jika bukan "Restored as New")
+            // Jika target adalah workspace baru, kita tidak perlu hapus apa-apa
+            if (scopeId && targetWorkspaceId !== 'new') {
+                if (table === 'workspaces') {
+                    await conn.query(`DELETE FROM ${table} WHERE id = ?`, [scopeId]);
+                } else if (['users', 'mikrotik_devices', 'ip_pools', 'network_assets', 'clients', 'odp_user_connections', 'downtime_events', 'pppoe_user_status', 'workspace_invites', 'pppoe_usage_logs', 'resource_logs', 'alarms', 'dashboard_snapshot'].includes(table)) {
+                    await conn.query(`DELETE FROM ${table} WHERE workspace_id = ?`, [scopeId]);
+                } else if (['user_sessions', 'login_otps', 'pending_registrations'].includes(table)) {
+                    continue;
+                }
+            } else if (!scopeId) {
+                // Full restore: truncate ALL
+                await conn.query(`DELETE FROM ${table}`);
+            }
+
+            // Insert data baru
             const rows = backupData[table];
             if (rows && rows.length > 0) {
-                // Pre-process rows to handle missing device_id in newer schema
-                // Identify if table needs device_id but data might be missing it
-                const needsDeviceId = ['pppoe_user_status', 'downtime_events', 'pppoe_usage_logs', 'resource_logs', 'dashboard_snapshot'].includes(table);
-
-                let processedRows = rows;
-                let keys = Object.keys(rows[0]);
-
-                if (needsDeviceId && !keys.includes('device_id')) {
-                    console.log(`[Restore] Table ${table} lacks device_id in backup. Attempting fallback...`);
-                    // Fetch devices for mapping
-                    const [devices] = await conn.query('SELECT id, workspace_id FROM mikrotik_devices');
-                    const workspaceToDeviceMap = new Map();
-                    devices.forEach(d => {
-                        if (!workspaceToDeviceMap.has(d.workspace_id)) {
-                            workspaceToDeviceMap.set(d.workspace_id, d.id);
-                        }
-                    });
-
-                    // Add device_id to keys and rows
-                    keys.push('device_id');
-                    processedRows = rows.map(row => {
-                        const deviceId = workspaceToDeviceMap.get(row.workspace_id);
-                        return { ...row, device_id: deviceId || null };
-                    });
-                }
-
-                const values = processedRows.map(row => keys.map(key => {
+                const keys = Object.keys(rows[0]);
+                const values = rows.map(row => keys.map(key => {
                     let value = row[key];
-                    // Jika value adalah string ISO Date (2025-12-03T...Z), ubah ke format MySQL (YYYY-MM-DD HH:mm:ss)
+
+                    // Remapping Workspace ID
+                    if (remappingId) {
+                        if (table === 'workspaces' && key === 'id') return remappingId;
+                        if (key === 'workspace_id') return remappingId;
+                    }
+
                     if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{3})?Z$/.test(value)) {
                         value = value.replace('T', ' ').replace(/\.\d{3}Z$/, '').replace('Z', '');
                     }
@@ -143,26 +225,29 @@ exports.restoreBackup = async (req, res) => {
         await conn.query('SET FOREIGN_KEY_CHECKS = 1');
         await conn.commit();
 
-        // 3. Restore Avatars
-        const avatarDir = path.join(__dirname, '../../public/uploads/avatars');
-        if (!fs.existsSync(avatarDir)) {
-            fs.mkdirSync(avatarDir, { recursive: true });
-        }
+        // 3. Extract Photos (Assets, Clients, Avatars)
+        const folders = ['assets', 'clients', 'avatars'];
+        folders.forEach(folder => {
+            const destDir = path.join(__dirname, '../../public/uploads', folder);
+            if (!fs.existsSync(destDir)) fs.mkdirSync(destDir, { recursive: true });
 
-        zipEntries.forEach(entry => {
-            if (entry.entryName.startsWith('avatars/') && !entry.isDirectory) {
-                const fileName = path.basename(entry.entryName);
-                if (fileName) {
-                    fs.writeFileSync(path.join(avatarDir, fileName), entry.getData());
+            zipEntries.forEach(entry => {
+                if (entry.entryName.startsWith(folder + '/') && !entry.isDirectory) {
+                    const fileName = path.basename(entry.entryName);
+                    if (fileName) {
+                        fs.writeFileSync(path.join(destDir, fileName), entry.getData());
+                    }
                 }
-            }
+            });
         });
 
-        res.status(200).json({ message: 'Restore backup berhasil! Silakan login ulang jika diperlukan.' });
+        res.status(200).json({
+            message: `Restore ${metadata.scope === 'workspace' ? 'Workspace' : 'Full'} berhasil! Silakan refresh halaman.`
+        });
 
     } catch (error) {
-        await conn.rollback();
-        await conn.query('SET FOREIGN_KEY_CHECKS = 1');
+        await conn.rollback().catch(() => { });
+        await conn.query('SET FOREIGN_KEY_CHECKS = 1').catch(() => { });
         console.error("RESTORE BACKUP ERROR:", error);
         res.status(500).json({ message: 'Gagal melakukan restore backup.', error: error.message });
     } finally {

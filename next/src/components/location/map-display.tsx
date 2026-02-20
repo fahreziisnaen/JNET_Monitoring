@@ -373,6 +373,7 @@ const MapDisplay = ({
         margin: 0 !important;
         padding: 0 !important;
       }
+      /* Production-safe Traffic Flow Animation */
       @keyframes flow {
         from {
           stroke-dashoffset: 20;
@@ -382,8 +383,10 @@ const MapDisplay = ({
         }
       }
       .flow-active {
-        stroke-dasharray: 10, 10;
-        animation: flow 1s linear infinite;
+        stroke-dasharray: 10, 10 !important;
+        animation: flow 1s linear infinite !important;
+        stroke-linecap: round !important;
+        stroke-linejoin: round !important;
       }
     `;
     document.head.appendChild(style);
@@ -479,9 +482,12 @@ const MapDisplay = ({
 
 
   // Generate key untuk memaksa re-render ketika assets berubah
+  // Kita urutkan ID agar key lebih stabil dan tidak berkedip saat data refresh
   const mapKey = useMemo(() => {
-    return `map-${validAssets.length}-${validAssets.map(a => a.id).join('-')}`;
-  }, [validAssets]);
+    const assetIds = validAssets.map(a => a.id).sort((a, b) => a - b).join('-');
+    const clientIds = validClients.map(c => c.id).sort((a, b) => a - b).join('-');
+    return `map-v2-${assetIds}-${clientIds}`;
+  }, [validAssets, validClients]);
 
   return (
     <div id="map" style={{ height: '100%', width: '100%' }}>
@@ -526,10 +532,15 @@ const MapDisplay = ({
         {/* Render connection lines */}
         {connectionLines.map((line, index) => {
           // Generate unique key berdasarkan type dari dan ke
-          // Gunakan prefix untuk membedakan Asset dan Client
+          // Tambahkan status dan isEditingPath ke key agar polyline di-recreate saat status berubah
+          // Ini perlu agar className 'flow-active' (CSS animation) benar-benar ter-apply ulang oleh Leaflet
           const fromId = 'type' in line.from ? `asset-${line.from.id}` : `client-${line.from.id}`;
           const toId = 'type' in line.to ? `asset-${line.to.id}` : `client-${line.to.id}`;
-          const lineKey = `line-${fromId}-${toId}-${line.status}-${index}`;
+          const isLineActive = activePathTarget &&
+            activePathTarget.id === line.to.id &&
+            activePathTarget.type === ('type' in line.to ? 'asset' : 'client');
+
+          const lineKey = `line-${fromId}-${toId}-${line.status}-${isEditingPath}-${isLineActive}-${index}`;
 
           // Parse connection_path jika ada
           let positions: [number, number][] = [
@@ -555,11 +566,9 @@ const MapDisplay = ({
             }
           }
 
-          const isLineActive = activePathTarget &&
-            activePathTarget.id === line.to.id &&
-            activePathTarget.type === ('type' in line.to ? 'asset' : 'client');
-
           if (isLineActive) return null;
+
+          const isFlowing = !isEditingPath && (line.status === 'terpasang' || line.status === 'active');
 
           return (
             <Polyline
@@ -593,8 +602,10 @@ const MapDisplay = ({
                 color: isLineActive ? '#f59e0b' : line.color,
                 weight: isLineActive ? 8 : 4,
                 opacity: isLineActive ? 1 : 0.8,
-                dashArray: line.status === 'rencana' ? '10, 5' : line.status === 'maintenance' ? '5, 5' : (line.status === 'terpasang' || line.status === 'active' ? '10, 10' : undefined),
-                className: `${isEditingPath ? 'cursor-pointer transition-all' : ''} ${!isEditingPath && (line.status === 'terpasang' || line.status === 'active') ? 'flow-active' : ''}`.trim()
+                // Gunakan dashArray eksplisit agar Leaflet merender garis putus-putus
+                // Lalu CSS flow-active akan menangani animasinya
+                dashArray: isFlowing ? '10, 10' : (line.status === 'rencana' ? '10, 5' : line.status === 'maintenance' ? '5, 5' : undefined),
+                className: `${isEditingPath ? 'cursor-pointer transition-all' : ''} ${isFlowing ? 'flow-active' : ''}`.trim()
               }}
             />
           );

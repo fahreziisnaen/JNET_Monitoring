@@ -6,8 +6,8 @@ const { protect, authorizeAdmin, authorizeSuperAdmin } = require('../middleware/
 
 const upload = multer({ storage: multer.memoryStorage() });
 
-router.get('/export', protect, authorizeSuperAdmin, backupController.exportBackup);
-router.post('/restore', protect, authorizeSuperAdmin, upload.single('backupFile'), backupController.restoreBackup);
+router.get('/export', protect, authorizeAdmin, backupController.exportBackup);
+router.post('/restore', protect, authorizeAdmin, upload.single('backupFile'), backupController.restoreBackup);
 router.post('/factory-reset', protect, authorizeAdmin, backupController.factoryReset);
 
 module.exports = router;

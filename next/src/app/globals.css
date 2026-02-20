@@ -162,3 +162,12 @@
   height: 100%;
   width: 100%;
 }
+
+/* Map Traffic Flow Animation - Robust for Production */
+
+.leaflet-container path.flow-active {
+  stroke-dasharray: 10, 10 !important;
+  animation: flow 1s linear infinite !important;
+  stroke-linecap: round !important;
+  stroke-linejoin: round !important;
+}

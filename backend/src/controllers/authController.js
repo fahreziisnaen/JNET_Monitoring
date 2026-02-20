@@ -55,6 +55,8 @@ exports.requestLoginOtp = async (req, res) => {
 
             await pool.query('INSERT INTO user_sessions (user_id, token_id, user_agent, ip_address) VALUES (?, ?, ?, ?)', [user.id, tokenId, userAgent, normalizedIp]);
 
+            const token = jwt.sign(payload, process.env.JWT_SECRET || 'fallback_secret', { expiresIn: '7d' });
+
             const cookieOptions = {
                 httpOnly: true,
                 secure: process.env.NODE_ENV === 'production',
@@ -131,6 +133,11 @@ exports.verifyLoginOtp = async (req, res) => {
         }
 
         await pool.query('DELETE FROM login_otps WHERE user_id = ?', [userId]);
+
+        const tokenId = crypto.randomBytes(16).toString('hex');
+        const payload = { id: user.id, username: user.username, workspace_id: user.workspace_id, jti: tokenId };
+        const token = jwt.sign(payload, process.env.JWT_SECRET || 'fallback_secret', { expiresIn: '7d' });
+
         await pool.query('INSERT INTO user_sessions (user_id, token_id, user_agent, ip_address) VALUES (?, ?, ?, ?)', [user.id, tokenId, userAgent, normalizedIp]);
 
         // Set cookie dengan konfigurasi yang lebih eksplisit

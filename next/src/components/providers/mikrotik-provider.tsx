@@ -199,6 +199,15 @@ export const MikrotikProvider = ({ children }: { children: React.ReactNode }) =>
                     setIsConnected(false);
                     ws.current = null;
 
+                    // Dispatch status event for other components (like ConnectionStatusToast)
+                    window.dispatchEvent(new CustomEvent('mikrotik-connection-status', {
+                        detail: {
+                            status: 'disconnected',
+                            message: event.reason || 'Koneksi ke server terputus.',
+                            code: event.code
+                        }
+                    }));
+
                     // Log close reason jika ada
                     if (event.code !== 1000) { // 1000 = normal closure
                         console.warn(`[WebSocket] Koneksi ditutup dengan code ${event.code}, reason: ${event.reason || 'Tidak ada alasan'}`);
@@ -229,6 +238,14 @@ export const MikrotikProvider = ({ children }: { children: React.ReactNode }) =>
                     }
                     console.warn('[WebSocket Error]:', error);
                     setIsConnected(false);
+
+                    // Dispatch status event for other components
+                    window.dispatchEvent(new CustomEvent('mikrotik-connection-status', {
+                        detail: {
+                            status: 'disconnected',
+                            message: 'Terjadi kesalahan pada koneksi WebSocket.'
+                        }
+                    }));
                 };
 
                 socket.onmessage = (event) => {
