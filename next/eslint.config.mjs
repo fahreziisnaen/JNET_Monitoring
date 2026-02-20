@@ -55,9 +55,8 @@ export default tseslint.config(
     rules: {
       ...(eslint.configs.recommended.rules || {}),
       ...(tseslint.configs.recommended?.rules || {}),
-      ...(reactPlugin.configs.recommended?.rules || {}),
+      ...(reactPlugin.configs?.['jsx-runtime']?.rules || reactPlugin.configs?.recommended?.rules || {}),
       ...(hooksPlugin.configs.recommended?.rules || {}),
-      ...(jsxA11yPlugin.configs.recommended?.rules || {}),
       ...(nextPlugin.configs.recommended?.rules || {}),
       ...(nextPlugin.configs['core-web-vitals']?.rules || {}),
       'react/react-in-jsx-scope': 'off',

@@ -4,7 +4,6 @@ import React, { useState, useEffect } from 'react';
 import { Monitor, Smartphone, LogOut, Loader2 } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
 import { toast } from 'sonner';
 import ConfirmModal from '../ui/confirm-modal';
 import { apiFetch } from '@/utils/api';
