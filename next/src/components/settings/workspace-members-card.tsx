@@ -4,6 +4,8 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { Users, UserMinus, Shield, ShieldCheck, ShieldAlert, Loader2, ArrowRightLeft, Globe } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { toast } from 'sonner';
+import ConfirmModal from '@/components/ui/confirm-modal';
 import { apiFetch } from '@/utils/api';
 import { useAuth } from '../providers/auth-provider';
 
@@ -70,11 +72,49 @@ const WorkspaceMembersCard = () => {
         }
     }, [viewMode, fetchMembers, fetchAllUsers]);
 
-    const handleKick = async (member: Member) => {
-        if (!confirm(`Apakah Anda yakin ingin mengeluarkan ${member.display_name} (@${member.username}) dari workspace ini?`)) {
-            return;
-        }
+    // Confirm Modal State
+    const [confirmConfig, setConfirmConfig] = useState({
+        isOpen: false,
+        title: '',
+        description: '',
+        confirmText: 'Konfirmasi',
+        action: async () => { }, // Placeholder
+        isLoading: false
+    });
 
+    const openConfirm = (title: string, description: string, confirmText: string, action: () => Promise<void>) => {
+        setConfirmConfig({
+            isOpen: true,
+            title,
+            description,
+            confirmText,
+            action,
+            isLoading: false
+        });
+    };
+
+    const handleConfirmAction = async () => {
+        setConfirmConfig(prev => ({ ...prev, isLoading: true }));
+        try {
+            await confirmConfig.action();
+            setConfirmConfig(prev => ({ ...prev, isOpen: false }));
+        } catch (error) {
+            console.error(error);
+        } finally {
+            setConfirmConfig(prev => ({ ...prev, isLoading: false }));
+        }
+    };
+
+    const handleKickClick = (member: Member) => {
+        openConfirm(
+            "Keluarkan Anggota",
+            `Apakah Anda yakin ingin mengeluarkan ${member.display_name} (@${member.username}) dari workspace ini?`,
+            "Ya, Keluarkan",
+            () => executeKick(member)
+        );
+    };
+
+    const executeKick = async (member: Member) => {
         setKickingId(member.id);
         try {
             const res = await apiFetch(`${apiUrl}/api/workspaces/members/${member.id}`, {
@@ -82,24 +122,31 @@ const WorkspaceMembersCard = () => {
             });
             const data = await res.json();
             if (res.ok) {
-                alert(data.message);
+                toast.success("Anggota Dikeluarkan", { description: data.message });
                 fetchMembers();
             } else {
                 throw new Error(data.message);
             }
         } catch (error: any) {
-            alert(`Gagal mengeluarkan anggota: ${error.message}`);
+            toast.error("Gagal Mengeluarkan Anggota", { description: error.message });
         } finally {
             setKickingId(null);
         }
     };
 
-    const handleToggleRole = async (member: Member) => {
+    const handleToggleRoleClick = (member: Member) => {
         const newRole = member.role === 'admin' ? 'user' : 'admin';
         const label = newRole === 'admin' ? 'Admin' : 'User';
 
-        if (!confirm(`Ubah role ${member.display_name} menjadi ${label}?`)) return;
+        openConfirm(
+            "Ubah Role Anggota",
+            `Ubah role ${member.display_name} menjadi ${label}?`,
+            "Ya, Ubah Role",
+            () => executeToggleRole(member, newRole)
+        );
+    };
 
+    const executeToggleRole = async (member: Member, newRole: 'admin' | 'user') => {
         setTogglingRoleId(member.id);
         try {
             const res = await apiFetch(`${apiUrl}/api/workspaces/members/${member.id}/role`, {
@@ -114,11 +161,12 @@ const WorkspaceMembersCard = () => {
                 } else {
                     setAllUsers(prev => prev.map(m => m.id === member.id ? { ...m, role: newRole } : m));
                 }
+                toast.success("Role Berhasil Diubah", { description: `Role ${member.display_name} diubah menjadi ${newRole}.` });
             } else {
                 throw new Error(data.message);
             }
         } catch (error: any) {
-            alert(`Gagal mengubah role: ${error.message}`);
+            toast.error("Gagal Mengubah Role", { description: error.message });
         } finally {
             setTogglingRoleId(null);
         }
@@ -210,7 +258,7 @@ const WorkspaceMembersCard = () => {
                         variant="ghost"
                         size="sm"
                         className="text-primary hover:text-primary hover:bg-primary/10 opacity-0 group-hover:opacity-100 transition-opacity"
-                        onClick={() => handleToggleRole(member)}
+                        onClick={() => handleToggleRoleClick(member)}
                         disabled={togglingRoleId === member.id}
                         title={`Ubah ke ${member.role === 'admin' ? 'User' : 'Admin'}`}
                     >
@@ -226,7 +274,7 @@ const WorkspaceMembersCard = () => {
                         variant="ghost"
                         size="sm"
                         className="text-destructive hover:text-destructive hover:bg-destructive/10 opacity-0 group-hover:opacity-100 transition-opacity"
-                        onClick={() => handleKick(member)}
+                        onClick={() => handleKickClick(member)}
                         disabled={kickingId === member.id}
                     >
                         {kickingId === member.id ? <Loader2 size={16} className="animate-spin" /> : <UserMinus size={16} />}
@@ -257,8 +305,8 @@ const WorkspaceMembersCard = () => {
                             <button
                                 onClick={() => setViewMode('workspace')}
                                 className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all ${viewMode === 'workspace'
-                                        ? 'bg-background text-foreground shadow-sm'
-                                        : 'text-muted-foreground hover:text-foreground'
+                                    ? 'bg-background text-foreground shadow-sm'
+                                    : 'text-muted-foreground hover:text-foreground'
                                     }`}
                             >
                                 Workspace Ini
@@ -266,8 +314,8 @@ const WorkspaceMembersCard = () => {
                             <button
                                 onClick={() => setViewMode('all')}
                                 className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all flex items-center gap-1 ${viewMode === 'all'
-                                        ? 'bg-background text-foreground shadow-sm'
-                                        : 'text-muted-foreground hover:text-foreground'
+                                    ? 'bg-background text-foreground shadow-sm'
+                                    : 'text-muted-foreground hover:text-foreground'
                                     }`}
                             >
                                 <Globe size={12} /> Semua User
@@ -322,8 +370,19 @@ const WorkspaceMembersCard = () => {
                         )}
                     </div>
                 )}
+
             </CardContent>
-        </Card>
+
+            <ConfirmModal
+                isOpen={confirmConfig.isOpen}
+                onClose={() => setConfirmConfig(prev => ({ ...prev, isOpen: false }))}
+                onConfirm={handleConfirmAction}
+                title={confirmConfig.title}
+                description={confirmConfig.description}
+                confirmText={confirmConfig.confirmText}
+                isLoading={confirmConfig.isLoading}
+            />
+        </Card >
     );
 };
 

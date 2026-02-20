@@ -4,6 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { ShieldAlert, Loader2, RotateCcw, ChevronDown, Building2 } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { toast } from 'sonner';
 import {
     DropdownMenu,
     DropdownMenuContent,
@@ -55,11 +56,17 @@ const DangerZoneCard = () => {
             });
             if (!res.ok) throw new Error('Gagal menghapus akun.');
 
-            alert('Akun Anda telah berhasil dihapus.');
+            if (!res.ok) throw new Error('Gagal menghapus akun.');
+
+            toast.success('Akun Berhasil Dihapus', {
+                description: 'Akun Anda telah dihapus secara permanen.'
+            });
             await logout();
 
         } catch (error) {
-            alert('Terjadi kesalahan saat mencoba menghapus akun.');
+            toast.error('Gagal Menghapus Akun', {
+                description: 'Terjadi kesalahan saat mencoba menghapus akun.'
+            });
             setDeleteLoading(false);
         }
     };
@@ -99,14 +106,20 @@ const DangerZoneCard = () => {
             window.URL.revokeObjectURL(url);
 
             setIsResetModalOpen(false);
-            alert(`✅ Factory Reset berhasil! Backup untuk workspace ID ${selectedWorkspaceId || user?.workspace_id} telah diunduh.`);
+            setIsResetModalOpen(false);
+
+            toast.success('Factory Reset Berhasil', {
+                description: `Backup untuk workspace ID ${selectedWorkspaceId || user?.workspace_id} telah diunduh.`
+            });
 
             // Re-fetch workspaces if super admin (count might have changed, or just to refresh)
             if (user?.is_super_admin) window.location.reload();
             else window.location.reload();
 
         } catch (error: any) {
-            alert(`❌ Gagal: ${error.message}`);
+            toast.error('Gagal Factory Reset', {
+                description: error.message
+            });
         } finally {
             setResetLoading(false);
         }

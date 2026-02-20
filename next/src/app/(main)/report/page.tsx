@@ -5,6 +5,7 @@ import { FileText, Download, Loader2, Calendar, Plus, X, Server, ChevronDown, Ch
 import { Button } from '@/components/ui/button';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { apiFetch, getAuthToken } from '@/utils/api';
+import { toast } from 'sonner';
 
 interface Device {
   id: number;
@@ -91,7 +92,7 @@ const ReportPage = () => {
       isCollapsed: newSelections[index].isCollapsed ?? false
     };
     setDeviceSelections(newSelections);
-    
+
     // Force close any open dropdowns by blurring active element
     if (document.activeElement && document.activeElement instanceof HTMLElement) {
       document.activeElement.blur();
@@ -111,7 +112,7 @@ const ReportPage = () => {
     );
 
     if (!hasSelection) {
-      alert('Pilih minimal satu MikroTik.');
+      toast.error("Pilih Perangkat", { description: "Pilih minimal satu MikroTik untuk membuat laporan." });
       return;
     }
 
@@ -160,9 +161,11 @@ const ReportPage = () => {
       a.click();
       window.URL.revokeObjectURL(url);
       document.body.removeChild(a);
+
+      toast.success("Laporan Berhasil Dibuat", { description: "File PDF laporan telah diunduh." });
     } catch (error: any) {
       console.error(error);
-      alert(`Gagal membuat laporan: ${error.message}`);
+      toast.error("Gagal Membuat Laporan", { description: error.message });
     } finally {
       setIsGenerating(false);
     }
@@ -285,33 +288,33 @@ const ReportPage = () => {
                 </CardHeader>
                 {!selection.isCollapsed && (
                   <CardContent className="space-y-4">
-                  <div className="relative">
-                    <label className="block text-sm font-medium mb-2">
-                      Pilih MikroTik
-                    </label>
-                    <select
-                      value={selection.deviceId || ''}
-                      onChange={(e) => {
-                        const value = parseInt(e.target.value);
-                        if (value) {
-                          handleDeviceChange(index, value);
-                        }
-                        // Force blur to close dropdown immediately
-                        setTimeout(() => {
-                          (e.target as HTMLSelectElement).blur();
-                        }, 0);
-                      }}
-                      className="w-full p-2 rounded-md bg-input border-border appearance-none cursor-pointer"
-                      style={{ zIndex: 1 }}
-                    >
-                      <option value="">-- Pilih MikroTik --</option>
-                      {devices.map((device) => (
-                        <option key={device.id} value={device.id}>
-                          {device.name} ({device.host})
-                        </option>
-                      ))}
-                    </select>
-                  </div>
+                    <div className="relative">
+                      <label className="block text-sm font-medium mb-2">
+                        Pilih MikroTik
+                      </label>
+                      <select
+                        value={selection.deviceId || ''}
+                        onChange={(e) => {
+                          const value = parseInt(e.target.value);
+                          if (value) {
+                            handleDeviceChange(index, value);
+                          }
+                          // Force blur to close dropdown immediately
+                          setTimeout(() => {
+                            (e.target as HTMLSelectElement).blur();
+                          }, 0);
+                        }}
+                        className="w-full p-2 rounded-md bg-input border-border appearance-none cursor-pointer"
+                        style={{ zIndex: 1 }}
+                      >
+                        <option value="">-- Pilih MikroTik --</option>
+                        {devices.map((device) => (
+                          <option key={device.id} value={device.id}>
+                            {device.name} ({device.host})
+                          </option>
+                        ))}
+                      </select>
+                    </div>
                   </CardContent>
                 )}
               </Card>

@@ -4,6 +4,8 @@ import React, { useState, useEffect } from 'react';
 import { Monitor, Smartphone, LogOut, Loader2 } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import { toast } from 'sonner';
 import ConfirmModal from '../ui/confirm-modal';
 import { apiFetch } from '@/utils/api';
 
@@ -19,9 +21,9 @@ interface Session {
 const getDeviceIcon = (os: string) => {
     const lowerOs = os.toLowerCase();
     if (lowerOs.includes('windows') || lowerOs.includes('mac') || lowerOs.includes('linux')) {
-        return <Monitor className="text-muted-foreground"/>;
+        return <Monitor className="text-muted-foreground" />;
     }
-    return <Smartphone className="text-muted-foreground"/>;
+    return <Smartphone className="text-muted-foreground" />;
 };
 
 const ActiveSessionsCard = () => {
@@ -33,21 +35,21 @@ const ActiveSessionsCard = () => {
         setLoading(true);
         try {
             const res = await apiFetch(`${apiUrl}/api/sessions`);
-            
+
             // Jika unauthorized, mungkin user belum login atau token expired
             if (res.status === 401) {
                 console.warn('[Active Sessions] Unauthorized - mungkin perlu login ulang');
                 setSessions([]);
                 return;
             }
-            
+
             if (!res.ok) {
                 const data = await res.json().catch(() => ({}));
                 console.error('[Active Sessions] Error response:', res.status, data);
                 setSessions([]);
                 return;
             }
-            
+
             const data = await res.json();
             console.log('[Active Sessions] Data diterima:', data);
             setSessions(Array.isArray(data) ? data : []);
@@ -71,9 +73,10 @@ const ActiveSessionsCard = () => {
                 method: 'DELETE'
             });
             fetchSessions();
+            toast.success("Sesi Berhasil Dihentikan", { description: "Sesi telah berhasil dihentikan." });
         } catch (error) {
             console.error('[Active Sessions] Error logout session:', error);
-            alert('Gagal menghentikan sesi.');
+            toast.error("Gagal Menghentikan Sesi", { description: "Terjadi kesalahan saat mencoba logout sesi." });
         } finally {
             setSessionToLogout(null);
         }

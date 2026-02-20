@@ -14,9 +14,7 @@ export const metadata: Metadata = {
   title: "JNET - Dashboard",
   description: "Mikrotik Monitoring Tools",
   icons: {
-    icon: '/favicon.ico',
-    shortcut: '/favicon.ico',
-    apple: '/favicon.ico',
+    icon: '/favicon.ico?v=2',
   },
 };
 

@@ -6,6 +6,7 @@ import { Card, CardHeader, CardTitle, CardContent, CardDescription } from '@/com
 import { Button } from '@/components/ui/button';
 import { apiFetch, getAuthToken } from '@/utils/api';
 import { useAuth } from '@/components/providers/auth-provider';
+import ConfirmModal from '@/components/ui/confirm-modal';
 
 const BackupRestoreCard = () => {
     const { user } = useAuth();
@@ -18,6 +19,12 @@ const BackupRestoreCard = () => {
     const [restoreId, setRestoreId] = useState<string>('current');
     const fileInputRef = useRef<HTMLInputElement>(null);
     const apiUrl = process.env.NEXT_PUBLIC_API_BASE_URL;
+
+    // State for ConfirmModal
+    const [isConfirmModalOpen, setIsConfirmModalOpen] = useState(false);
+    const [confirmTitle, setConfirmTitle] = useState('');
+    const [confirmDescription, setConfirmDescription] = useState('');
+    const [pendingFile, setPendingFile] = useState<File | null>(null);
 
     // Load workspaces for Super Admin
     React.useEffect(() => {
@@ -67,9 +74,23 @@ const BackupRestoreCard = () => {
             const blob = await response.blob();
             const url = window.URL.createObjectURL(blob);
             const a = document.createElement('a');
+
             const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
+
+            let filename = `jnet-backup-${timestamp}.zip`;
+
+            if (targetId === 'all') {
+                filename = `jnet-all-ws-backup-${timestamp}.zip`;
+            } else {
+                const ws = workspaces.find(w => w.id.toString() === targetId?.toString());
+                const cleanWsName = ws
+                    ? ws.name.toLowerCase().trim().replace(/[^a-z0-9]/g, '-')
+                    : `id-${targetId}`;
+                filename = `jnet-ws-${cleanWsName}-backup-${timestamp}.zip`;
+            }
+
             a.href = url;
-            a.download = `jnet-backup-${timestamp}.zip`;
+            a.download = filename;
             document.body.appendChild(a);
             a.click();
             a.remove();
@@ -87,26 +108,32 @@ const BackupRestoreCard = () => {
         fileInputRef.current?.click();
     };
 
-    const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (!file) return;
 
         const isNew = restoreId === 'new';
-        const warning = isNew
+        const title = isNew ? 'Konfirmasi Restore (Workspace Baru)' : 'PERINGATAN KRITIS: Restore Data';
+        const description = isNew
             ? 'Anda akan melakukan restore data ke WORKSPACE BARU. Workspace baru akan dibuat secara otomatis. Lanjutkan?'
-            : 'PERINGATAN KRITIS: Melakukan restore akan MENGHAPUS SEMUA DATA di workspace target saat ini dan menggantinya dengan data dari backup. Apakah Anda yakin ingin melanjutkan?';
+            : 'Melakukan restore akan MENGHAPUS SEMUA DATA di workspace target saat ini dan menggantinya dengan data dari backup. Tindakan ini tidak dapat dibatalkan. Apakah Anda yakin ingin melanjutkan?';
 
-        if (!confirm(warning)) {
-            if (fileInputRef.current) fileInputRef.current.value = '';
-            return;
-        }
+        setPendingFile(file);
+        setConfirmTitle(title);
+        setConfirmDescription(description);
+        setIsConfirmModalOpen(true);
+    };
+
+    const executeRestore = async () => {
+        if (!pendingFile) return;
 
         setRestoring(true);
         setError('');
         setSuccess('');
+        setIsConfirmModalOpen(false); // Close modal immediately, show loading in button
 
         const formData = new FormData();
-        formData.append('backupFile', file);
+        formData.append('backupFile', pendingFile);
 
         try {
             const token = getAuthToken();
@@ -130,8 +157,15 @@ const BackupRestoreCard = () => {
             setError(err.message);
         } finally {
             setRestoring(false);
+            setPendingFile(null);
             if (fileInputRef.current) fileInputRef.current.value = '';
         }
+    };
+
+    const handleCancelRestore = () => {
+        setIsConfirmModalOpen(false);
+        setPendingFile(null);
+        if (fileInputRef.current) fileInputRef.current.value = '';
     };
 
     return (
@@ -258,7 +292,18 @@ const BackupRestoreCard = () => {
                     )}
                 </div>
             </CardContent>
-        </Card>
+
+
+            <ConfirmModal
+                isOpen={isConfirmModalOpen}
+                onClose={handleCancelRestore}
+                onConfirm={executeRestore}
+                title={confirmTitle}
+                description={confirmDescription}
+                confirmText="Ya, Kembalikan Data"
+                isLoading={restoring}
+            />
+        </Card >
     );
 };
 

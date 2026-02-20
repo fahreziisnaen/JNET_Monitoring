@@ -402,20 +402,11 @@ const MapDisplay = ({
       if (asset.parent_asset_id) {
         const parent = assetMap.get(asset.parent_asset_id);
         if (parent && (!visibleTypes || visibleTypes.has(parent.type))) {
-          // Ambil status dari asset.connection_status, default 'terpasang'
-          const status = asset.connection_status || 'terpasang';
+          // Infrastructure connections are always blue
+          const color = '#3b82f6'; // Blue for Infrastructure
+          const assetStatus = asset.connection_status || 'terpasang';
 
-          // Tentukan warna berdasarkan status
-          let color = '#10b981'; // green untuk Terpasang
-          if (status === 'rencana') {
-            color = '#3b82f6'; // blue untuk Rencana
-          } else if (status === 'maintenance') {
-            color = '#eab308'; // yellow untuk Maintenance
-          } else if (status === 'putus') {
-            color = '#ef4444'; // red untuk Putus
-          }
-
-          lines.push({ from: parent, to: asset, color, status });
+          lines.push({ from: parent, to: asset, color, status: assetStatus });
         }
       }
     });
@@ -431,9 +422,9 @@ const MapDisplay = ({
             // Tentukan warna berdasarkan status client (active/inactive)
             const isActive = client.isActive === true;
             const color = isActive ? '#10b981' : '#ef4444'; // hijau untuk active, merah untuk inactive
-            const status = isActive ? 'active' : 'inactive';
+            const clientStatus = isActive ? 'active' : 'inactive';
 
-            lines.push({ from: odp, to: client, color, status });
+            lines.push({ from: odp, to: client, color, status: clientStatus });
           }
         }
       });
@@ -570,7 +561,7 @@ const MapDisplay = ({
                 color: isLineActive ? '#f59e0b' : line.color,
                 weight: isLineActive ? 8 : 4,
                 opacity: isLineActive ? 1 : 0.8,
-                dashArray: isFlowing ? '10, 10' : (line.status === 'rencana' ? '10, 5' : line.status === 'maintenance' ? '5, 5' : undefined),
+                dashArray: isFlowing ? '10, 10' : undefined,
                 className: isEditingPath ? 'cursor-pointer transition-all' : undefined
               }}
             />

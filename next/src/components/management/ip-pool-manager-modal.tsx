@@ -4,6 +4,8 @@ import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from '@/components/motion';
 import { X, Save, Trash2, Database, Loader2, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import ConfirmModal from '@/components/ui/confirm-modal';
+import { toast } from 'sonner';
 import { useMikrotik } from '@/components/providers/mikrotik-provider';
 import { apiFetch } from '@/utils/api';
 
@@ -250,22 +252,68 @@ const IpPoolManagerModal = ({ isOpen, onClose }: IpPoolManagerModalProps) => {
     }
   };
 
-  const handleDelete = async (poolId: number) => {
-    if (!window.confirm("Yakin ingin menghapus aturan IP Pool ini?")) return;
-    setLoading(true);
+  // Confirm Modal State
+  const [confirmConfig, setConfirmConfig] = useState({
+    isOpen: false,
+    title: '',
+    description: '',
+    confirmText: 'Konfirmasi',
+    action: async () => { }, // Placeholder
+    isLoading: false
+  });
+
+  const openConfirm = (title: string, description: string, confirmText: string, action: () => Promise<void>) => {
+    setConfirmConfig({
+      isOpen: true,
+      title,
+      description,
+      confirmText,
+      action,
+      isLoading: false
+    });
+  };
+
+  const handleConfirmAction = async () => {
+    setConfirmConfig(prev => ({ ...prev, isLoading: true }));
     try {
-      await apiFetch(`${apiUrl}/api/ip-pools/${poolId}`, { method: 'DELETE' });
-      fetchData();
-    } catch (err) {
-      setError("Gagal menghapus pool.");
+      await confirmConfig.action();
+      setConfirmConfig(prev => ({ ...prev, isOpen: false }));
+    } catch (error) {
+      console.error(error);
     } finally {
-      setLoading(false);
+      setConfirmConfig(prev => ({ ...prev, isLoading: false }));
     }
   };
 
+  const handleDeleteClick = (poolId: number) => {
+    openConfirm(
+      "Hapus Aturan IP Pool",
+      "Yakin ingin menghapus aturan IP Pool ini?",
+      "Ya, Hapus",
+      () => handleDelete(poolId)
+    );
+  };
+
+  const handleDelete = async (poolId: number) => {
+    try {
+      await apiFetch(`${apiUrl}/api/ip-pools/${poolId}`, { method: 'DELETE' });
+      toast.success("Aturan Dihapus", { description: "Aturan IP Pool berhasil dihapus." });
+      fetchData();
+    } catch (err) {
+      toast.error("Gagal Menghapus", { description: "Gagal menghapus pool." });
+    }
+  };
+
+  const handleSyncClick = () => {
+    openConfirm(
+      "Sync dari Mikrotik",
+      "Ini akan mengimpor IP Pool dari Mikrotik dan mengupdate yang sudah ada. Lanjutkan?",
+      "Ya, Sinkronisasi",
+      handleSyncFromMikrotik
+    );
+  };
+
   const handleSyncFromMikrotik = async () => {
-    if (!window.confirm("Ini akan mengimpor IP Pool dari Mikrotik dan mengupdate yang sudah ada. Lanjutkan?")) return;
-    setLoading(true);
     setError('');
     try {
       // Kirim deviceId jika ada untuk optimasi
@@ -278,13 +326,13 @@ const IpPoolManagerModal = ({ isOpen, onClose }: IpPoolManagerModalProps) => {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.message || 'Gagal sinkronisasi');
-      alert(data.message || 'Sinkronisasi berhasil!');
+
+      toast.success("Sinkronisasi Berhasil", { description: data.message || 'Data IP Pool telah diperbarui.' });
+
       // Skip auto sync karena ini adalah sync manual
       fetchData(true);
     } catch (err: any) {
-      setError(err.message || 'Gagal sinkronisasi IP Pool dari Mikrotik.');
-    } finally {
-      setLoading(false);
+      toast.error("Gagal Sinkronisasi", { description: err.message || 'Gagal sinkronisasi IP Pool dari Mikrotik.' });
     }
   };
 
@@ -298,7 +346,7 @@ const IpPoolManagerModal = ({ isOpen, onClose }: IpPoolManagerModalProps) => {
               <div className="flex justify-between items-center">
                 <h3 className="font-semibold text-muted-foreground">Aturan Aktif</h3>
                 <Button
-                  onClick={handleSyncFromMikrotik}
+                  onClick={handleSyncClick}
                   variant="outline"
                   size="sm"
                   disabled={loading}
@@ -308,7 +356,7 @@ const IpPoolManagerModal = ({ isOpen, onClose }: IpPoolManagerModalProps) => {
                   Sync dari Mikrotik
                 </Button>
               </div>
-              {loading ? <div className="flex justify-center p-4"><Loader2 className="animate-spin" /></div> : pools.length > 0 ? <div className="space-y-2">{pools.map(pool => (<div key={pool.id} className="text-sm p-3 bg-secondary rounded-lg flex justify-between items-center"><div><p className="font-bold text-primary">{pool.profile_name}</p><p className="text-xs font-mono text-muted-foreground">Range: {pool.ip_start} - {pool.ip_end}</p><p className="text-xs font-mono text-muted-foreground">Gateway: {pool.gateway}</p></div><Button onClick={() => handleDelete(pool.id)} variant="ghost" size="icon" className="text-muted-foreground hover:text-destructive"><Trash2 size={16} /></Button></div>))}</div> : <p className="text-center text-muted-foreground text-sm">Belum ada aturan IP Pool yang dibuat.</p>}
+              {loading ? <div className="flex justify-center p-4"><Loader2 className="animate-spin" /></div> : pools.length > 0 ? <div className="space-y-2">{pools.map(pool => (<div key={pool.id} className="text-sm p-3 bg-secondary rounded-lg flex justify-between items-center"><div><p className="font-bold text-primary">{pool.profile_name}</p><p className="text-xs font-mono text-muted-foreground">Range: {pool.ip_start} - {pool.ip_end}</p><p className="text-xs font-mono text-muted-foreground">Gateway: {pool.gateway}</p></div><Button onClick={() => handleDeleteClick(pool.id)} variant="ghost" size="icon" className="text-muted-foreground hover:text-destructive"><Trash2 size={16} /></Button></div>))}</div> : <p className="text-center text-muted-foreground text-sm">Belum ada aturan IP Pool yang dibuat.</p>}
             </div>
             <form onSubmit={handleSubmit}>
               <div className="flex-shrink-0 p-6 border-t space-y-4 bg-background">
@@ -328,6 +376,15 @@ const IpPoolManagerModal = ({ isOpen, onClose }: IpPoolManagerModalProps) => {
           </motion.div>
         </motion.div>
       )}
+      <ConfirmModal
+        isOpen={confirmConfig.isOpen}
+        onClose={() => setConfirmConfig(prev => ({ ...prev, isOpen: false }))}
+        onConfirm={handleConfirmAction}
+        title={confirmConfig.title}
+        description={confirmConfig.description}
+        confirmText={confirmConfig.confirmText}
+        isLoading={confirmConfig.isLoading}
+      />
     </AnimatePresence>
   );
 };

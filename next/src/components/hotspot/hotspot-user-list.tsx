@@ -8,6 +8,7 @@ import { useMikrotik } from '@/components/providers/mikrotik-provider';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
 import { Button } from '@/components/ui/button';
 import ConfirmModal from '@/components/ui/confirm-modal';
+import { toast } from 'sonner';
 
 interface HotspotUser {
   '.id': string;
@@ -32,7 +33,7 @@ const HotspotUserList = ({ refreshTrigger, onActionComplete }: HotspotUserListPr
 
   const fetchUsers = useCallback(async () => {
     if (!selectedDeviceId) return;
-    
+
     setLoading(true);
     try {
       const { apiFetch } = await import('@/utils/api');
@@ -45,18 +46,18 @@ const HotspotUserList = ({ refreshTrigger, onActionComplete }: HotspotUserListPr
       const data = await res.json();
       // Pastikan data adalah array, jika tidak set empty array
       setAllUsers(Array.isArray(data) ? data : []);
-    } catch (error) { 
+    } catch (error) {
       console.error('[Hotspot Users] Error:', error);
       // Set empty array jika error
       setAllUsers([]);
-    } 
-    finally { 
-      setLoading(false); 
+    }
+    finally {
+      setLoading(false);
     }
   }, [apiUrl, selectedDeviceId]);
 
   useEffect(() => { fetchUsers(); }, [fetchUsers, refreshTrigger]);
-  
+
   const activeUsersSet = useMemo(() => new Set(hotspotActive?.map((user: any) => user.user) || []), [hotspotActive]);
 
   const handleAction = async (action: 'enable' | 'disable' | 'kick' | 'delete', user: HotspotUser) => {
@@ -64,42 +65,45 @@ const HotspotUserList = ({ refreshTrigger, onActionComplete }: HotspotUserListPr
     let options: RequestInit = {};
 
     switch (action) {
-        case 'kick': {
-            const activeUser = hotspotActive.find((u: any) => u.user === user.name);
-            if(!activeUser || !activeUser['.id']) return alert("User tidak aktif, tidak bisa di-kick.");
-            url = `${apiUrl}/api/hotspot/active/${activeUser['.id']}/kick`;
-            options.method = 'POST';
-            break;
-        }
-        case 'enable':
-        case 'disable':
-            url = `${apiUrl}/api/hotspot/users/${user['.id']}/status`;
-            options.method = 'PUT';
-            options.body = JSON.stringify({ disabled: action === 'disable' });
-            break;
-        case 'delete':
-            setUserToDelete(user);
-            setIsDeleteModalOpen(true);
-            return;
+      case 'kick': {
+        const activeUser = hotspotActive.find((u: any) => u.user === user.name);
+        if (!activeUser || !activeUser['.id']) return toast.error("Gagal Kick User", { description: "User tidak aktif, tidak bisa di-kick." });
+        url = `${apiUrl}/api/hotspot/active/${activeUser['.id']}/kick`;
+        options.method = 'POST';
+        break;
+      }
+      case 'enable':
+      case 'disable':
+        url = `${apiUrl}/api/hotspot/users/${user['.id']}/status`;
+        options.method = 'PUT';
+        options.body = JSON.stringify({ disabled: action === 'disable' });
+        break;
+      case 'delete':
+        setUserToDelete(user);
+        setIsDeleteModalOpen(true);
+        return;
     }
-    
+
     try {
       const { apiFetch } = await import('@/utils/api');
       const res = await apiFetch(url, options);
-      if(!res.ok) throw new Error(`Aksi ${action} gagal`);
+      if (!res.ok) throw new Error(`Aksi ${action} gagal`);
       onActionComplete();
-    } catch (error) { alert(`Gagal melakukan aksi: ${error}`); }
+      toast.success("Aksi Berhasil", { description: `Berhasil melakukan aksi ${action} pada user ${user.name}` });
+    } catch (error: any) { toast.error(`Gagal Melakukan Aksi`, { description: error.message || String(error) }); }
   };
 
   const handleDeleteConfirm = async () => {
     if (!userToDelete) return;
     const url = `${apiUrl}/api/hotspot/users/${userToDelete['.id']}`;
     try {
-        const { apiFetch } = await import('@/utils/api');
-        const res = await apiFetch(url, { method: 'DELETE' });
-        if(!res.ok) throw new Error("Gagal menghapus user.");
-        onActionComplete();
-    } catch (error) { alert(`Gagal menghapus: ${error}`);
+      const { apiFetch } = await import('@/utils/api');
+      const res = await apiFetch(url, { method: 'DELETE' });
+      if (!res.ok) throw new Error("Gagal menghapus user.");
+      onActionComplete();
+      toast.success("User Berhasil Dihapus", { description: `User ${userToDelete.name} telah dihapus permanen.` });
+    } catch (error: any) {
+      toast.error("Gagal Menghapus User", { description: error.message || String(error) });
     } finally { setIsDeleteModalOpen(false); setUserToDelete(null); }
   };
 
@@ -128,33 +132,33 @@ const HotspotUserList = ({ refreshTrigger, onActionComplete }: HotspotUserListPr
                   </tr>
                 ) : (
                   allUsers.map((user, i) => {
-                  const isActive = activeUsersSet.has(user.name);
-                  return (
-                    <motion.tr key={user['.id']} className="border-b" initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: i * 0.05 }}>
-                      <td className="p-4">
-                        {user.disabled === 'true' ? (<span className="flex items-center gap-2 text-muted-foreground"><PowerOff size={14} /> Disabled</span>)
-                        : isActive ? (<span className="flex items-center gap-2 text-green-500"><Power size={14} className="animate-pulse"/> Active</span>)
-                        : (<span className="flex items-center gap-2 text-red-500"><PowerOff size={14} /> Inactive</span>)}
-                      </td>
-                      <td className="p-4 font-medium">{user.name}</td><td className="p-4">{user.profile}</td>
-                      <td className="p-4 font-mono">{user['limit-uptime'] || '∞'}</td>
-                      <td className="p-4 text-center">
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild><Button variant="ghost" size="icon"><MoreHorizontal size={16} /></Button></DropdownMenuTrigger>
-                          <DropdownMenuContent align="end">
-                            <DropdownMenuItem disabled> <Edit className="mr-2 h-4 w-4"/> Edit </DropdownMenuItem>
-                            <DropdownMenuSeparator />
-                            {isActive && <DropdownMenuItem onClick={() => handleAction('kick', user)}> <ZapOff className="mr-2 h-4 w-4"/> Kick User </DropdownMenuItem>}
-                            {user.disabled === 'true' ? 
-                              (<DropdownMenuItem onClick={() => handleAction('enable', user)}> <Power className="mr-2 h-4 w-4"/> Enable </DropdownMenuItem>) : 
-                              (<DropdownMenuItem onClick={() => handleAction('disable', user)}> <PowerOff className="mr-2 h-4 w-4"/> Disable </DropdownMenuItem>)}
-                            <DropdownMenuSeparator />
-                            <DropdownMenuItem className="text-destructive focus:bg-destructive/10 focus:text-destructive" onClick={() => handleAction('delete', user)}><Trash2 className="mr-2 h-4 w-4"/> Hapus</DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                      </td>
-                    </motion.tr>
-                  );
+                    const isActive = activeUsersSet.has(user.name);
+                    return (
+                      <motion.tr key={user['.id']} className="border-b" initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: i * 0.05 }}>
+                        <td className="p-4">
+                          {user.disabled === 'true' ? (<span className="flex items-center gap-2 text-muted-foreground"><PowerOff size={14} /> Disabled</span>)
+                            : isActive ? (<span className="flex items-center gap-2 text-green-500"><Power size={14} className="animate-pulse" /> Active</span>)
+                              : (<span className="flex items-center gap-2 text-red-500"><PowerOff size={14} /> Inactive</span>)}
+                        </td>
+                        <td className="p-4 font-medium">{user.name}</td><td className="p-4">{user.profile}</td>
+                        <td className="p-4 font-mono">{user['limit-uptime'] || '∞'}</td>
+                        <td className="p-4 text-center">
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild><Button variant="ghost" size="icon"><MoreHorizontal size={16} /></Button></DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuItem disabled> <Edit className="mr-2 h-4 w-4" /> Edit </DropdownMenuItem>
+                              <DropdownMenuSeparator />
+                              {isActive && <DropdownMenuItem onClick={() => handleAction('kick', user)}> <ZapOff className="mr-2 h-4 w-4" /> Kick User </DropdownMenuItem>}
+                              {user.disabled === 'true' ?
+                                (<DropdownMenuItem onClick={() => handleAction('enable', user)}> <Power className="mr-2 h-4 w-4" /> Enable </DropdownMenuItem>) :
+                                (<DropdownMenuItem onClick={() => handleAction('disable', user)}> <PowerOff className="mr-2 h-4 w-4" /> Disable </DropdownMenuItem>)}
+                              <DropdownMenuSeparator />
+                              <DropdownMenuItem className="text-destructive focus:bg-destructive/10 focus:text-destructive" onClick={() => handleAction('delete', user)}><Trash2 className="mr-2 h-4 w-4" /> Hapus</DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </td>
+                      </motion.tr>
+                    );
                   })
                 )}
               </tbody>
@@ -162,7 +166,7 @@ const HotspotUserList = ({ refreshTrigger, onActionComplete }: HotspotUserListPr
           </div>
         </CardContent>
       </Card>
-      <ConfirmModal isOpen={isDeleteModalOpen} onClose={() => setIsDeleteModalOpen(false)} onConfirm={handleDeleteConfirm} title="Konfirmasi Hapus User Hotspot" description={`Yakin ingin menghapus user "${userToDelete?.name}" secara permanen?`} confirmText="Ya, Hapus"/>
+      <ConfirmModal isOpen={isDeleteModalOpen} onClose={() => setIsDeleteModalOpen(false)} onConfirm={handleDeleteConfirm} title="Konfirmasi Hapus User Hotspot" description={`Yakin ingin menghapus user "${userToDelete?.name}" secara permanen?`} confirmText="Ya, Hapus" />
     </>
   );
 };

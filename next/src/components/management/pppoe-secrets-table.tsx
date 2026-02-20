@@ -6,6 +6,7 @@ import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Power, PowerOff, MoreHorizontal, Loader2, Edit, Trash2, ZapOff, Search, ArrowUpDown, ChevronUp, ChevronDown } from 'lucide-react';
 import { useMikrotik } from '@/components/providers/mikrotik-provider';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
+import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import ConfirmModal from '@/components/ui/confirm-modal';
@@ -337,7 +338,7 @@ const PppoeSecretsTable = ({ refreshTrigger, onActionComplete, initialFilter = '
 
       onActionComplete();
     } catch (error: any) {
-      alert(`Gagal melakukan aksi: ${error.message}`);
+      toast.error(`Gagal Melakukan Aksi`, { description: error.message });
     } finally {
       setIsActionLoading(false);
     }
@@ -356,7 +357,7 @@ const PppoeSecretsTable = ({ refreshTrigger, onActionComplete, initialFilter = '
       await apiFetch(`${apiUrl}/api/pppoe/secrets/${encodedId}`, { method: 'DELETE' });
       onActionComplete();
     } catch (error) {
-      alert("Gagal menghapus secret.");
+      toast.error("Gagal Menghapus Secret", { description: "Terjadi kesalahan saat menghapus data." });
     } finally {
       setIsActionLoading(false);
       setIsDeleteModalOpen(false);

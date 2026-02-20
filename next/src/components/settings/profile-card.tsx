@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { useAuth } from '@/components/providers/auth-provider';
 import AvatarCropModal from './avatar-crop-modal';
 import { apiFetch, getAuthToken } from '@/utils/api';
+import { toast } from 'sonner';
 
 const ProfileCard = () => {
   const { user, loading: authLoading, checkLoggedIn } = useAuth();
@@ -35,11 +36,15 @@ const ProfileCard = () => {
           whatsapp_number: whatsappNumber
         })
       });
-      if (!res.ok) throw new Error("Gagal menyimpan profil.");
-      await checkLoggedIn();
-      alert("Profil berhasil disimpan!");
+      if (res.ok) {
+        await checkLoggedIn();
+        toast.success("Profil Berhasil Disimpan", { description: "Perubahan profil Anda telah tersimpan." });
+        // window.location.reload(); // Reloading here might be too aggressive, checkLoggedIn should update context
+      } else {
+        toast.error("Gagal Menyimpan Profil", { description: "Terjadi kesalahan saat menyimpan perubahan." });
+      }
     } catch (error) {
-      alert("Gagal menyimpan profil.");
+      toast.error("Gagal Menyimpan Profil", { description: "Terjadi kesalahan saat menyimpan perubahan." });
     } finally {
       setLoading(false);
     }
@@ -73,16 +78,21 @@ const ProfileCard = () => {
         headers['Authorization'] = `Bearer ${token}`;
       }
 
-      await fetch(`${apiUrl}/api/user/avatar`, {
+      const res = await fetch(`${apiUrl}/api/user/avatar`, {
         method: 'POST',
         credentials: 'include',
         headers,
         body: formData,
       });
-      await checkLoggedIn();
-      alert("Avatar berhasil diubah!");
+      if (res.ok) {
+        await checkLoggedIn();
+        toast.success("Avatar Berhasil Diubah", { description: "Foto profil Anda telah diperbarui." });
+        // window.location.reload(); // Reloading here might be too aggressive, checkLoggedIn should update context
+      } else {
+        toast.error("Gagal Mengubah Avatar", { description: "Terjadi kesalahan saat mengunggah foto." });
+      }
     } catch (err) {
-      alert("Gagal mengubah avatar.");
+      toast.error("Gagal Mengubah Avatar", { description: "Terjadi kesalahan saat mengunggah foto." });
     } finally {
       setLoading(false);
       setIsCropModalOpen(false);

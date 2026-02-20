@@ -56,18 +56,6 @@ const MapLegend = () => {
               ))}
             </div>
           </div>
-
-          <div>
-            <h4 className="text-xs font-semibold mb-2 text-muted-foreground">Line Status</h4>
-            <div className="space-y-1.5">
-              {lineStatusItems.map((item) => (
-                <div key={item.label} className="flex items-center gap-2 text-xs">
-                  {item.icon}
-                  <span>{item.label}</span>
-                </div>
-              ))}
-            </div>
-          </div>
         </CardContent>
       )}
     </Card>

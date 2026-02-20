@@ -6,6 +6,7 @@ import { UserPlus, User, KeyRound, MessageSquare, BadgeInfo, Loader2 } from 'luc
 import { Button } from '@/components/ui/button';
 import OtpVerificationModal from '@/components/auth/otp-verification-modal';
 import { useRouter } from 'next/navigation';
+import { toast } from 'sonner';
 
 const RegisterPage = () => {
   const router = useRouter();
@@ -39,7 +40,7 @@ const RegisterPage = () => {
 
       // Jika OTP dibypass oleh backend (WA mati)
       if (resData.otpRequired === false) {
-        alert("Registrasi berhasil (OTP Bypass). Silakan login.");
+        toast.success("Registrasi Berhasil", { description: "Akun Anda telah dibuat. Silakan login." });
         router.push('/login');
         return;
       }

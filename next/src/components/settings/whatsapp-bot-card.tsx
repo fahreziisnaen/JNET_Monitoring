@@ -4,6 +4,8 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { Bot, Loader2, Save, Send, QrCode as QrIcon } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { toast } from 'sonner';
+import ConfirmModal from '@/components/ui/confirm-modal';
 import { apiFetch } from '@/utils/api';
 import { useAuth } from '../providers/auth-provider';
 import { QRCodeSVG } from 'qrcode.react';
@@ -39,7 +41,7 @@ const WhatsappBotCard = () => {
 
     const handleSendTestMessage = async (jid: string, identifier: string | number) => {
         if (!jid) {
-            alert('Silakan pilih grup atau masukkan ID WhatsApp terlebih dahulu.');
+            toast.error("Pilih Tujuan", { description: "Silakan pilih grup atau masukkan ID WhatsApp terlebih dahulu." });
             return;
         }
         setTestingWsId(identifier);
@@ -50,9 +52,9 @@ const WhatsappBotCard = () => {
             });
             const data = await res.json();
             if (!res.ok) throw new Error(data.message || 'Gagal mengirim pesan tes');
-            alert('Pesan tes berhasil dikirim! Silakan periksa grup/nomor tujuan.');
+            toast.success("Pesan Terkirim", { description: "Pesan tes berhasil dikirim! Silakan periksa grup/nomor tujuan." });
         } catch (error: any) {
-            alert(`Gagal mengirim pesan tes: ${error.message}`);
+            toast.error("Gagal Mengirim Pesan", { description: error.message });
         } finally {
             setTestingWsId(null);
         }
@@ -187,14 +189,14 @@ const WhatsappBotCard = () => {
             });
             const data = await res.json();
             if (!res.ok) throw new Error(data.message || 'Gagal memperbarui WhatsApp Group ID');
-            alert(`WhatsApp Group ID untuk workspace berhasil diperbarui!`);
+            toast.success("Berhasil Diperbarui", { description: "WhatsApp Group ID untuk workspace berhasil diperbarui!" });
 
             // Update local selection state
             setWsGroupSelections(prev => ({ ...prev, [workspaceId]: groupId.trim() }));
 
             fetchAllWorkspaces();
         } catch (error: any) {
-            alert(`Gagal memperbarui: ${error.message}`);
+            toast.error("Gagal Memperbarui", { description: error.message });
         } finally {
             setUpdatingWsId(null);
         }
@@ -203,14 +205,18 @@ const WhatsappBotCard = () => {
     const [resetting, setResetting] = useState(false);
     const [otpRequired, setOtpRequired] = useState(false);
     const [otp, setOtp] = useState('');
+    const [isResetConfirmOpen, setIsResetConfirmOpen] = useState(false);
+
+    const handleResetClick = () => {
+        if (!otpRequired) {
+            setIsResetConfirmOpen(true);
+        } else {
+            handleResetSession();
+        }
+    };
 
     const handleResetSession = async () => {
-        if (!otpRequired) {
-            if (!confirm('Apakah Anda yakin ingin me-reset sesi WhatsApp? \n\nTindakan ini akan menghapus semua data login WhatsApp Bot dan merestart sistem.')) {
-                return;
-            }
-        }
-
+        setIsResetConfirmOpen(false);
         setResetting(true);
         try {
             // Jika belum minta OTP, minta dulu
@@ -224,7 +230,7 @@ const WhatsappBotCard = () => {
 
                 if (reqData.otpRequired) {
                     setOtpRequired(true);
-                    alert(reqData.message);
+                    toast.info("OTP Diperlukan", { description: reqData.message });
                     setResetting(false);
                     return;
                 }
@@ -239,7 +245,7 @@ const WhatsappBotCard = () => {
             const data = await res.json();
             if (!res.ok) throw new Error(data.message);
 
-            alert(data.message);
+            toast.success("Sesi Direset", { description: data.message });
             setOtpRequired(false);
             setOtp('');
 
@@ -247,7 +253,7 @@ const WhatsappBotCard = () => {
                 window.location.reload();
             }, 3000);
         } catch (error: any) {
-            alert(`Gagal reset sesi: ${error.message}`);
+            toast.error("Gagal Reset Sesi", { description: error.message });
         } finally {
             setResetting(false);
         }
@@ -473,7 +479,7 @@ const WhatsappBotCard = () => {
                                 <Button
                                     variant="destructive"
                                     size="sm"
-                                    onClick={handleResetSession}
+                                    onClick={handleResetClick}
                                     disabled={resetting || (otpRequired && otp.length < 6)}
                                 >
                                     {resetting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
@@ -495,6 +501,16 @@ const WhatsappBotCard = () => {
                     </div>
                 )}
             </CardContent>
+
+            <ConfirmModal
+                isOpen={isResetConfirmOpen}
+                onClose={() => setIsResetConfirmOpen(false)}
+                onConfirm={handleResetSession}
+                title="Reset Sesi WhatsApp"
+                description="Tindakan ini akan MENGHAPUS SEMUA data login WhatsApp Bot dan me-restart sistem. Anda harus scan QR code lagi setelah ini. Lanjutkan?"
+                confirmText="Ya, Reset Sesi"
+                isLoading={resetting}
+            />
         </Card>
     );
 };

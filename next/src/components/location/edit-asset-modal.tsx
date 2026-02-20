@@ -663,7 +663,6 @@ const EditAssetModal = ({
                     className="w-full p-2 rounded-md bg-input"
                   >
                     <option value="terpasang">Terpasang</option>
-                    <option value="rencana">Rencana</option>
                     <option value="maintenance">Maintenance</option>
                     <option value="putus">Putus</option>
                   </select>

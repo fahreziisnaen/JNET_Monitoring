@@ -6,7 +6,6 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Button } from '@/components/ui/button';
 import { ChevronUp, ChevronDown, User } from 'lucide-react';
 import { assetTypes } from './asset-filter';
-import { cn } from '@/lib/utils';
 
 interface MapFilterPanelProps {
   visibleTypes: Set<string>;
@@ -17,7 +16,6 @@ interface MapFilterPanelProps {
   visibleOwners?: Set<string>;
   availableOwners?: string[];
   onOwnerToggle?: (owner: string) => void;
-  onToggleAllOwners?: () => void;
   showClients?: boolean;
   onToggleClients?: (show: boolean) => void;
   showUp?: boolean;
@@ -35,7 +33,6 @@ const MapFilterPanel = ({
   visibleOwners = new Set(),
   availableOwners = [],
   onOwnerToggle,
-  onToggleAllOwners,
   showClients = true,
   onToggleClients,
   showUp = true,
@@ -44,8 +41,6 @@ const MapFilterPanel = ({
   onToggleDown,
 }: MapFilterPanelProps) => {
   const [isMinimized, setIsMinimized] = useState(true);
-  const allTypesVisible = assetTypes.every(t => visibleTypes.has(t.id));
-  const allOwnersVisible = availableOwners.length > 0 && availableOwners.every(o => visibleOwners.has(o));
 
   return (
     <Card className="absolute right-2 sm:right-4 top-2 sm:top-4 z-[1000] w-36 sm:w-48 bg-background/95 backdrop-blur-sm shadow-lg">
@@ -65,7 +60,7 @@ const MapFilterPanel = ({
       {!isMinimized && (
         <CardContent className="space-y-4">
           <div>
-            <h4 className="text-xs font-semibold mb-2 text-muted-foreground">Equipment Type</h4>
+            <h4 className="text-xs font-semibold mb-2 text-muted-foreground">Tipe Perangkat</h4>
             <div className="space-y-2">
               {assetTypes.map((type) => (
                 <div key={type.id} className="flex items-center gap-2">
@@ -107,21 +102,11 @@ const MapFilterPanel = ({
                   </div>
                 ))}
               </div>
-              {onToggleAllOwners && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="w-full text-xs mt-2 h-6"
-                  onClick={onToggleAllOwners}
-                >
-                  {allOwnersVisible ? 'Hapus Semua' : 'Pilih Semua'}
-                </Button>
-              )}
             </div>
           )}
 
           <div>
-            <h4 className="text-xs font-semibold mb-2 text-muted-foreground">Display</h4>
+            <h4 className="text-xs font-semibold mb-2 text-muted-foreground">Tampilan</h4>
             <div className="space-y-2">
               <div className="flex items-center gap-2">
                 <Checkbox
@@ -133,7 +118,7 @@ const MapFilterPanel = ({
                   htmlFor="filter-lines"
                   className="text-xs cursor-pointer"
                 >
-                  Show Lines
+                  Tampilkan Garis
                 </label>
               </div>
               {onToggleClients && (
@@ -148,7 +133,7 @@ const MapFilterPanel = ({
                     className="text-xs cursor-pointer flex items-center gap-2"
                   >
                     <User size={12} />
-                    Show Clients
+                    Tampilkan Client
                   </label>
                 </div>
               )}
@@ -193,7 +178,10 @@ const MapFilterPanel = ({
             className="w-full text-xs"
             onClick={onToggleAll}
           >
-            {allTypesVisible ? 'Hide All' : 'Show All'}
+            {(visibleTypes.size > 0 || visibleOwners.size > 0 || showLines || showClients || showUp || showDown)
+              ? 'Hapus Semua'
+              : 'Pilih Semua'
+            }
           </Button>
         </CardContent>
       )}

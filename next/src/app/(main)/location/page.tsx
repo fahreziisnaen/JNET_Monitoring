@@ -19,6 +19,7 @@ import MapLegend from '@/components/location/map-legend';
 import MapFilterPanel from '@/components/location/map-filter-panel';
 import { apiFetch, getAuthToken } from '@/utils/api';
 import { useMikrotik } from '@/components/providers/mikrotik-provider';
+import { toast } from 'sonner';
 
 const MapDisplay = dynamic(() => import('@/components/location/map-display'), {
   ssr: false,
@@ -184,12 +185,14 @@ const LocationPage = () => {
     return Array.from(owners).sort();
   }, [assets]);
 
-  // Set default visibleOwners to all owners when availableOwners changes
+  // Set default visibleOwners to all owners when availableOwners changes (first time only)
+  const hasInitializedOwners = useRef(false);
   useEffect(() => {
-    if (availableOwners.length > 0 && visibleOwners.size === 0) {
+    if (availableOwners.length > 0 && !hasInitializedOwners.current) {
       setVisibleOwners(new Set(availableOwners));
+      hasInitializedOwners.current = true;
     }
-  }, [availableOwners.length]); // Only depend on length to avoid infinite loop
+  }, [availableOwners]);
 
   const filteredAssets = useMemo(() => {
     // Check if all owners are selected
@@ -268,10 +271,24 @@ const LocationPage = () => {
   };
 
   const handleToggleAll = () => {
-    if (visibleTypes.size === assetTypes.length) {
+    const isAnythingChecked = visibleTypes.size > 0 ||
+      (availableOwners.length > 0 && visibleOwners.size > 0) ||
+      showLines || showClients || showUp || showDown;
+
+    if (isAnythingChecked) {
       setVisibleTypes(new Set());
+      setVisibleOwners(new Set());
+      setShowLines(false);
+      setShowClients(false);
+      setShowUp(false);
+      setShowDown(false);
     } else {
       setVisibleTypes(new Set(assetTypes.map(t => t.id)));
+      setVisibleOwners(new Set(availableOwners));
+      setShowLines(true);
+      setShowClients(true);
+      setShowUp(true);
+      setShowDown(true);
     }
   };
 
@@ -288,7 +305,7 @@ const LocationPage = () => {
   };
 
   const handleToggleAllOwners = () => {
-    if (visibleOwners.size === availableOwners.length) {
+    if (visibleOwners.size > 0) {
       setVisibleOwners(new Set());
     } else {
       setVisibleOwners(new Set(availableOwners));
@@ -323,6 +340,7 @@ const LocationPage = () => {
         body: formData,
       });
       if (!res.ok) throw new Error('Gagal mengimpor file KML.');
+      toast.success("Import Berhasil", { description: "File KML berhasil diimpor." });
       handleSuccess();
     } catch (error) {
       console.error(error);
@@ -362,7 +380,7 @@ const LocationPage = () => {
       document.body.removeChild(a);
     } catch (error) {
       console.error(error);
-      alert('Gagal mengekspor file KML.');
+      toast.error("Gagal Ekspor KML", { description: "Terjadi kesalahan saat mengekspor file KML." });
     } finally {
       setIsExporting(false);
     }
@@ -724,9 +742,9 @@ const LocationPage = () => {
       }
 
       if (failCount > 0) {
-        alert(`⚠️ ${failCount} jalur gagal disimpan.`);
+        toast.warning("Penyimpanan Parsial", { description: `⚠️ ${failCount} jalur gagal disimpan.` });
       } else {
-        alert(`✅ ${allSaves.length} jalur berhasil disimpan!`);
+        toast.success("Penyimpanan Berhasil", { description: `✅ ${allSaves.length} jalur berhasil disimpan!` });
       }
 
       setPendingPathEdits(new Map());
@@ -736,13 +754,55 @@ const LocationPage = () => {
       setEditingPathPoints([]);
       handleSuccess();
     } catch (error) {
-      alert('❌ Gagal menyimpan jalur.');
+      toast.error("Gagal Menyimpan", { description: "Gagal menyimpan jalur." });
     }
+  };
+
+  // Confirm Modal State
+  const [confirmConfig, setConfirmConfig] = useState({
+    isOpen: false,
+    title: '',
+    description: '',
+    confirmText: 'Konfirmasi',
+    action: async () => { }, // Placeholder
+    isLoading: false
+  });
+
+  const openConfirm = (title: string, description: string, confirmText: string, action: () => Promise<void>) => {
+    setConfirmConfig({
+      isOpen: true,
+      title,
+      description,
+      confirmText,
+      action,
+      isLoading: false
+    });
+  };
+
+  const handleConfirmAction = async () => {
+    setConfirmConfig(prev => ({ ...prev, isLoading: true }));
+    try {
+      await confirmConfig.action();
+      setConfirmConfig(prev => ({ ...prev, isOpen: false }));
+    } catch (error) {
+      console.error(error);
+    } finally {
+      setConfirmConfig(prev => ({ ...prev, isLoading: false }));
+    }
+  };
+
+  const handleResetPathClick = () => {
+    if (!pathTarget) return;
+    openConfirm(
+      "Reset Jalur Konseksi",
+      "Apakah Anda yakin ingin menghapus jalur kustom dan kembali ke garis lurus?",
+      "Ya, Reset Jalur",
+      handleResetPath
+    );
   };
 
   const handleResetPath = async () => {
     if (!pathTarget) return;
-    if (!confirm('Apakah Anda yakin ingin menghapus jalur kustom dan kembali ke garis lurus?')) return;
 
     const apiUrl = process.env.NEXT_PUBLIC_API_BASE_URL;
     const endpoint = pathTarget.type === 'asset'
@@ -762,8 +822,9 @@ const LocationPage = () => {
       setPathTarget(null);
       setEditingPathPoints([]);
       handleSuccess();
+      toast.success("Jalur Direset", { description: "Jalur koneksi berhasil dikembalikan ke default." });
     } catch (error) {
-      alert('❌ Gagal mereset jalur.');
+      toast.error("Gagal Reset", { description: "Gagal mereset jalur." });
     }
   };
 
@@ -784,9 +845,9 @@ const LocationPage = () => {
             <h1 className="text-2xl sm:text-3xl font-bold text-foreground">Peta Lokasi Aset</h1>
             <div className="flex gap-2 flex-wrap">
               <Button
-                variant="outline"
-                onClick={() => fetchAssets()}
-                disabled={loading}
+                variant="destructive"
+                onClick={handleResetPathClick}
+                disabled={!pathTarget}
               >
                 {loading ? <Loader2 size={18} className="sm:mr-2 animate-spin" /> : <RefreshCw size={18} className="sm:mr-2" />}
                 <span className="hidden sm:inline">Refresh</span>
@@ -898,7 +959,6 @@ const LocationPage = () => {
               visibleOwners={visibleOwners}
               availableOwners={availableOwners}
               onOwnerToggle={handleToggleOwner}
-              onToggleAllOwners={handleToggleAllOwners}
               showClients={showClients}
               onToggleClients={setShowClients}
               showUp={showUp}
