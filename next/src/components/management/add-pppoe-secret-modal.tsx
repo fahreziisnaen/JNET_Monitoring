@@ -38,7 +38,7 @@ const AddPppoeSecretModal = ({
           if (!res.ok) throw new Error("Gagal memuat profil");
           const data = await res.json();
           // Pastikan data terurut, unik, dan tidak ada empty string
-          const sortedData = [...new Set(data.filter((p: string) => p && p.trim()))].sort((a: string, b: string) => a.toLowerCase().localeCompare(b.toLowerCase()));
+          const sortedData = Array.from(new Set<string>((data as string[]).filter((p) => Boolean(p && p.trim())))).sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()));
           setProfiles(sortedData);
           if (sortedData.length > 0) {
             setFormData((prev) => ({ ...prev, profile: sortedData[0] }));

@@ -37,11 +37,13 @@ const EditAssetModal = ({
   const [assetOwners, setAssetOwners] = useState<{ id: number; name: string }[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [isDragging, setIsDragging] = useState(false);
   const [parentSearchQuery, setParentSearchQuery] = useState("");
   const [isParentDropdownOpen, setIsParentDropdownOpen] = useState(false);
   const [ownerInputMode, setOwnerInputMode] = useState<'dropdown' | 'manual'>('dropdown');
   const [ownerSearchQuery, setOwnerSearchQuery] = useState("");
   const [isOwnerDropdownOpen, setIsOwnerDropdownOpen] = useState(false);
+  const [isChangingParent, setIsChangingParent] = useState(false);
   const parentDropdownRef = useRef<HTMLDivElement>(null);
   const ownerDropdownRef = useRef<HTMLDivElement>(null);
 
@@ -86,6 +88,7 @@ const EditAssetModal = ({
       }
       setSelectedPhoto(null);
       setIsPhotoDeleted(false);
+      setIsChangingParent(false);
     }
   }, [assetToEdit, isOpen]);
 
@@ -106,9 +109,8 @@ const EditAssetModal = ({
     if (formData.parentAssetId && availableParents.length > 0) {
       const selected = availableParents.find((p) => String(p.id) === formData.parentAssetId);
       if (selected) {
-        const expectedQuery = `${selected.name} (${selected.type})`;
-        if (parentSearchQuery !== expectedQuery) {
-          setParentSearchQuery(expectedQuery);
+        if (parentSearchQuery !== selected.name) {
+          setParentSearchQuery(selected.name);
         }
       }
     } else if (!formData.parentAssetId && parentSearchQuery) {
@@ -293,6 +295,40 @@ const EditAssetModal = ({
     }
   };
 
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+
+    const file = e.dataTransfer.files?.[0];
+    if (file && file.type.startsWith('image/')) {
+      setSelectedPhoto(file);
+      setPhotoPreview(URL.createObjectURL(file));
+      setIsPhotoDeleted(false);
+    }
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      setSelectedPhoto(file);
+      setPhotoPreview(URL.createObjectURL(file));
+      setIsPhotoDeleted(false);
+    }
+  };
+
   if (!isOpen) return null;
 
   return (
@@ -441,18 +477,28 @@ const EditAssetModal = ({
                       </button>
                     </div>
                   )}
+                  <div
+                    onDragOver={handleDragOver}
+                    onDragLeave={handleDragLeave}
+                    onDrop={handleDrop}
+                    onClick={() => document.getElementById("edit-asset-photo-upload")?.click()}
+                    className={`w-full aspect-video rounded-lg border-2 border-dashed flex flex-col items-center justify-center gap-2 cursor-pointer transition-all ${isDragging
+                      ? "border-primary bg-primary/10 scale-[1.02]"
+                      : "border-muted-foreground/25 hover:bg-secondary/50"
+                      }`}
+                  >
+                    <Search className="text-muted-foreground opacity-50" size={32} />
+                    <div className="text-center">
+                      <p className="text-xs font-medium">Klik atau Drag & Drop foto baru di sini</p>
+                      <p className="text-[10px] text-muted-foreground">PNG, JPG up to 5MB</p>
+                    </div>
+                  </div>
                   <input
+                    id="edit-asset-photo-upload"
                     type="file"
                     accept="image/*"
-                    onChange={(e) => {
-                      const file = e.target.files?.[0];
-                      if (file) {
-                        setSelectedPhoto(file);
-                        setPhotoPreview(URL.createObjectURL(file));
-                        setIsPhotoDeleted(false);
-                      }
-                    }}
-                    className="text-xs text-muted-foreground file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-xs file:font-semibold file:bg-primary file:text-primary-foreground hover:file:bg-primary/90"
+                    onChange={handleFileChange}
+                    className="hidden"
                   />
                   <p className="text-[10px] text-muted-foreground italic">
                     * Kosongkan jika tidak ingin mengubah foto.
@@ -577,67 +623,89 @@ const EditAssetModal = ({
                     htmlFor="parentAssetId"
                     className="block text-sm font-medium mb-1"
                   >
-                    Parent Asset {formData.type === "ODP" ? "(ODC/ODP)" : formData.type === "ODC" ? "(OLT)" : "(Mikrotik)"}
+                    Parent Asset
                   </label>
-                  <div className="relative">
-                    <div className="relative">
-                      <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground" size={16} />
-                      <input
-                        type="text"
-                        value={parentSearchQuery}
-                        onChange={(e) => {
-                          setParentSearchQuery(e.target.value);
-                          setIsParentDropdownOpen(true);
-                          if (!e.target.value) {
-                            setFormData((prev) => ({ ...prev, parentAssetId: "" }));
-                          }
-                        }}
-                        onFocus={() => setIsParentDropdownOpen(true)}
-                        placeholder={selectedParent ? `${selectedParent.name} (${selectedParent.type})` : "Cari parent asset..."}
-                        className="w-full p-2 pl-10 pr-10 rounded-md bg-input border border-input"
-                      />
-                      <ChevronDown
-                        className="absolute right-3 top-1/2 transform -translate-y-1/2 text-muted-foreground cursor-pointer"
-                        size={16}
-                        onClick={() => setIsParentDropdownOpen(!isParentDropdownOpen)}
-                      />
-                    </div>
-                    {isParentDropdownOpen && (
-                      <div className="absolute z-50 w-full mt-1 bg-card border border-border rounded-md shadow-lg max-h-60 overflow-y-auto">
-                        <div
-                          className="px-3 py-2 cursor-pointer hover:bg-secondary text-sm"
-                          onClick={() => {
-                            setFormData((prev) => ({ ...prev, parentAssetId: "" }));
-                            setParentSearchQuery("");
-                            setIsParentDropdownOpen(false);
-                          }}
-                        >
-                          <span className="text-muted-foreground">Tidak ada parent</span>
-                        </div>
-                        {filteredParents.length > 0 ? (
-                          filteredParents.map((parent) => (
-                            <div
-                              key={parent.id}
-                              className={`px-3 py-2 cursor-pointer hover:bg-secondary text-sm ${String(parent.id) === formData.parentAssetId ? "bg-secondary" : ""
-                                }`}
-                              onClick={() => {
-                                setFormData((prev) => ({ ...prev, parentAssetId: String(parent.id) }));
-                                setParentSearchQuery(parent.name);
-                                setIsParentDropdownOpen(false);
-                              }}
-                            >
-                              <span className="font-medium">{parent.name}</span>{" "}
-                              <span className="text-muted-foreground">({parent.type})</span>
-                            </div>
-                          ))
-                        ) : (
-                          <div className="px-3 py-2 text-sm text-muted-foreground">
-                            Tidak ada asset yang ditemukan
-                          </div>
-                        )}
+                  {formData.parentAssetId && !isChangingParent ? (
+                    <div className="flex items-center justify-between p-2 rounded-md bg-secondary/30 border border-input">
+                      <div className="flex flex-col">
+                        <span className="text-sm font-medium">
+                          {selectedParent ? selectedParent.name : "Memuat..."}
+                        </span>
+                        <span className="text-[10px] text-muted-foreground uppercase">
+                          {selectedParent ? selectedParent.type : ""}
+                        </span>
                       </div>
-                    )}
-                  </div>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setIsChangingParent(true)}
+                        className="text-xs h-8"
+                      >
+                        Ganti Parent
+                      </Button>
+                    </div>
+                  ) : (
+                    <div className="relative">
+                      <div className="relative">
+                        <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground" size={16} />
+                        <input
+                          type="text"
+                          value={parentSearchQuery}
+                          onChange={(e) => {
+                            setParentSearchQuery(e.target.value);
+                            setIsParentDropdownOpen(true);
+                            if (!e.target.value) {
+                              setFormData((prev) => ({ ...prev, parentAssetId: "" }));
+                            }
+                          }}
+                          onFocus={() => setIsParentDropdownOpen(true)}
+                          placeholder={selectedParent ? selectedParent.name : "Cari parent asset..."}
+                          className="w-full p-2 pl-10 pr-10 rounded-md bg-input border border-input"
+                        />
+                        <ChevronDown
+                          className="absolute right-3 top-1/2 transform -translate-y-1/2 text-muted-foreground cursor-pointer"
+                          size={16}
+                          onClick={() => setIsParentDropdownOpen(!isParentDropdownOpen)}
+                        />
+                      </div>
+                      {isParentDropdownOpen && (
+                        <div className="absolute z-50 w-full mt-1 bg-card border border-border rounded-md shadow-lg max-h-60 overflow-y-auto">
+                          <div
+                            className="px-3 py-2 cursor-pointer hover:bg-secondary text-sm"
+                            onClick={() => {
+                              setFormData((prev) => ({ ...prev, parentAssetId: "" }));
+                              setParentSearchQuery("");
+                              setIsParentDropdownOpen(false);
+                            }}
+                          >
+                            <span className="text-muted-foreground">Tidak ada parent</span>
+                          </div>
+                          {filteredParents.length > 0 ? (
+                            filteredParents.map((parent) => (
+                              <div
+                                key={parent.id}
+                                className={`px-3 py-2 cursor-pointer hover:bg-secondary text-sm ${String(parent.id) === formData.parentAssetId ? "bg-secondary" : ""
+                                  }`}
+                                onClick={() => {
+                                  setFormData((prev) => ({ ...prev, parentAssetId: String(parent.id) }));
+                                  setParentSearchQuery(parent.name);
+                                  setIsParentDropdownOpen(false);
+                                }}
+                              >
+                                <span className="font-medium">{parent.name}</span>{" "}
+                                <span className="text-muted-foreground">({parent.type})</span>
+                              </div>
+                            ))
+                          ) : (
+                            <div className="px-3 py-2 text-sm text-muted-foreground">
+                              Tidak ada asset yang ditemukan
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )}
                   <p className="text-xs text-muted-foreground mt-1">
                     {formData.type === "ODP"
                       ? "Pilih ODC atau ODP sebagai parent untuk membuat garis koneksi"

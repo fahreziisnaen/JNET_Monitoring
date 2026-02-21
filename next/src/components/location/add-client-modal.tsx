@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from '@/components/motion';
-import { X, User, Loader2, MapPin, Unlink, Camera, Image as ImageIcon } from 'lucide-react';
+import { X, User, Loader2, MapPin, Unlink, Camera, Image as ImageIcon, Search, ChevronDown } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { apiFetch } from '@/utils/api';
@@ -36,6 +36,10 @@ const AddClientModal = ({ isOpen, onClose, onSuccess, assets = [] }: AddClientMo
   const [error, setError] = useState('');
   const [selectedPhoto, setSelectedPhoto] = useState<File | null>(null);
   const [photoPreview, setPhotoPreview] = useState<string | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
+  const [odpSearchQuery, setOdpSearchQuery] = useState('');
+  const [isOdpDropdownOpen, setIsOdpDropdownOpen] = useState(false);
+  const odpDropdownRef = React.useRef<HTMLDivElement>(null);
   const apiUrl = process.env.NEXT_PUBLIC_API_BASE_URL;
 
   // Filter assets untuk hanya ODP
@@ -80,6 +84,17 @@ const AddClientModal = ({ isOpen, onClose, onSuccess, assets = [] }: AddClientMo
     }
   }, [isOpen, apiUrl, user?.workspace_id]);
 
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (odpDropdownRef.current && !odpDropdownRef.current.contains(event.target as Node)) {
+        setIsOdpDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
   // Filter unlinked secrets dari WebSocket data (sama seperti management page)
   const unlinkedSecrets = useMemo(() => {
     if (!pppoeSecrets || !selectedDeviceId) {
@@ -116,6 +131,25 @@ const AddClientModal = ({ isOpen, onClose, onSuccess, assets = [] }: AddClientMo
       setError("Semua PPPoE secrets sudah menjadi client.");
     }
   }, [unlinkedSecrets, selectedSecret, loading]);
+
+  // Filter ODP assets based on search query
+  const filteredOdpAssets = useMemo(() => {
+    return odpAssets.filter(asset =>
+      asset.name.toLowerCase().includes(odpSearchQuery.toLowerCase())
+    );
+  }, [odpAssets, odpSearchQuery]);
+
+  const selectedOdp = useMemo(() => {
+    return odpAssets.find(a => a.id.toString() === odpAssetId);
+  }, [odpAssets, odpAssetId]);
+
+  // Update search query when ODP is selected or auto-selected
+  useEffect(() => {
+    if (odpAssetId && !odpSearchQuery) {
+      const selected = odpAssets.find(a => a.id.toString() === odpAssetId);
+      if (selected) setOdpSearchQuery(selected.name);
+    }
+  }, [odpAssetId, odpAssets]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -161,6 +195,38 @@ const AddClientModal = ({ isOpen, onClose, onSuccess, assets = [] }: AddClientMo
       setError(err.message || 'Gagal membuat client.');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+
+    const file = e.dataTransfer.files?.[0];
+    if (file && file.type.startsWith('image/')) {
+      setSelectedPhoto(file);
+      setPhotoPreview(URL.createObjectURL(file));
+    }
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      setSelectedPhoto(file);
+      setPhotoPreview(URL.createObjectURL(file));
     }
   };
 
@@ -268,23 +334,67 @@ const AddClientModal = ({ isOpen, onClose, onSuccess, assets = [] }: AddClientMo
                 </div>
               </div>
 
-              <div>
+              <div ref={odpDropdownRef} className="relative">
                 <label htmlFor="odp-asset" className="block text-sm font-medium mb-2 flex items-center gap-2">
                   <Unlink size={14} /> Hubungkan ke ODP (Opsional)
                 </label>
-                <select
-                  id="odp-asset"
-                  value={odpAssetId}
-                  onChange={(e) => setOdpAssetId(e.target.value)}
-                  className="w-full p-2 rounded-md bg-input border"
-                >
-                  <option value="">Tidak terhubung ke ODP</option>
-                  {odpAssets.map(asset => (
-                    <option key={asset.id} value={asset.id.toString()}>
-                      {asset.name}
-                    </option>
-                  ))}
-                </select>
+                <div className="relative">
+                  <div className="relative">
+                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground" size={16} />
+                    <input
+                      type="text"
+                      value={odpSearchQuery}
+                      onChange={(e) => {
+                        setOdpSearchQuery(e.target.value);
+                        setIsOdpDropdownOpen(true);
+                        if (!e.target.value) {
+                          setOdpAssetId('');
+                        }
+                      }}
+                      onFocus={() => setIsOdpDropdownOpen(true)}
+                      placeholder={selectedOdp ? selectedOdp.name : "Cari ODP..."}
+                      className="w-full p-2 pl-10 pr-10 rounded-md bg-input border"
+                    />
+                    <ChevronDown
+                      className="absolute right-3 top-1/2 transform -translate-y-1/2 text-muted-foreground cursor-pointer"
+                      size={16}
+                      onClick={() => setIsOdpDropdownOpen(!isOdpDropdownOpen)}
+                    />
+                  </div>
+                  {isOdpDropdownOpen && (
+                    <div className="absolute z-50 w-full mt-1 bg-card border rounded-md shadow-lg max-h-60 overflow-y-auto">
+                      <div
+                        className="px-3 py-2 cursor-pointer hover:bg-secondary text-sm"
+                        onClick={() => {
+                          setOdpAssetId('');
+                          setOdpSearchQuery('');
+                          setIsOdpDropdownOpen(false);
+                        }}
+                      >
+                        <span className="text-muted-foreground">Tidak terhubung ke ODP</span>
+                      </div>
+                      {filteredOdpAssets.length > 0 ? (
+                        filteredOdpAssets.map((asset) => (
+                          <div
+                            key={asset.id}
+                            className={`px-3 py-2 cursor-pointer hover:bg-secondary text-sm ${asset.id.toString() === odpAssetId ? 'bg-secondary' : ''}`}
+                            onClick={() => {
+                              setOdpAssetId(asset.id.toString());
+                              setOdpSearchQuery(asset.name);
+                              setIsOdpDropdownOpen(false);
+                            }}
+                          >
+                            <span className="font-medium">{asset.name}</span>
+                          </div>
+                        ))
+                      ) : (
+                        <div className="px-3 py-2 text-sm text-muted-foreground">
+                          Tidak ada ODP ditemukan
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
                 {odpAssets.length === 0 && (
                   <p className="text-xs text-muted-foreground mt-1">
                     Belum ada ODP tersedia.
@@ -317,24 +427,27 @@ const AddClientModal = ({ isOpen, onClose, onSuccess, assets = [] }: AddClientMo
                     </div>
                   ) : (
                     <div
+                      onDragOver={handleDragOver}
+                      onDragLeave={handleDragLeave}
+                      onDrop={handleDrop}
                       onClick={() => document.getElementById('client-photo-upload')?.click()}
-                      className="w-full aspect-video rounded-lg border-2 border-dashed border-muted-foreground/25 flex flex-col items-center justify-center gap-2 hover:bg-secondary/50 cursor-pointer transition-colors"
+                      className={`w-full aspect-video rounded-lg border-2 border-dashed flex flex-col items-center justify-center gap-2 cursor-pointer transition-all ${isDragging
+                        ? 'border-primary bg-primary/10 scale-[1.02]'
+                        : 'border-muted-foreground/25 hover:bg-secondary/50'
+                        }`}
                     >
-                      <ImageIcon className="text-muted-foreground" size={32} />
-                      <span className="text-xs text-muted-foreground">Klik untuk upload foto</span>
+                      <ImageIcon className="text-muted-foreground opacity-50" size={32} />
+                      <div className="text-center">
+                        <p className="text-xs font-medium">Klik atau Drag & Drop foto di sini</p>
+                        <p className="text-[10px] text-muted-foreground">PNG, JPG up to 5MB</p>
+                      </div>
                     </div>
                   )}
                   <input
                     id="client-photo-upload"
                     type="file"
                     accept="image/*"
-                    onChange={(e) => {
-                      const file = e.target.files?.[0];
-                      if (file) {
-                        setSelectedPhoto(file);
-                        setPhotoPreview(URL.createObjectURL(file));
-                      }
-                    }}
+                    onChange={handleFileChange}
                     className="hidden"
                   />
                 </div>

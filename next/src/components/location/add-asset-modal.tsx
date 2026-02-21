@@ -30,6 +30,7 @@ const AddAssetModal = ({ isOpen, onClose, onSuccess }: AddAssetModalProps) => {
   const [assetOwners, setAssetOwners] = useState<{ id: number; name: string }[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [isDragging, setIsDragging] = useState(false);
   const [parentSearchQuery, setParentSearchQuery] = useState("");
   const [isParentDropdownOpen, setIsParentDropdownOpen] = useState(false);
   const [ownerInputMode, setOwnerInputMode] = useState<'dropdown' | 'manual'>('dropdown');
@@ -228,6 +229,38 @@ const AddAssetModal = ({ isOpen, onClose, onSuccess }: AddAssetModalProps) => {
     }
   };
 
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+
+    const file = e.dataTransfer.files?.[0];
+    if (file && file.type.startsWith('image/')) {
+      setSelectedPhoto(file);
+      setPhotoPreview(URL.createObjectURL(file));
+    }
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      setSelectedPhoto(file);
+      setPhotoPreview(URL.createObjectURL(file));
+    }
+  };
+
   return (
     <AnimatePresence>
       {isOpen && (
@@ -376,17 +409,29 @@ const AddAssetModal = ({ isOpen, onClose, onSuccess }: AddAssetModalProps) => {
                         </button>
                       </div>
                     )}
+                    <div
+                      onDragOver={handleDragOver}
+                      onDragLeave={handleDragLeave}
+                      onDrop={handleDrop}
+                      onClick={() => document.getElementById("add-asset-photo-upload")?.click()}
+                      className={`w-full aspect-video rounded-lg border-2 border-dashed flex flex-col items-center justify-center gap-2 cursor-pointer transition-all ${isDragging
+                        ? "border-primary bg-primary/10 scale-[1.02]"
+                        : "border-muted-foreground/25 hover:bg-secondary/50"
+                        }`}
+                    >
+                      <X className="hidden" /> {/* Dummy to avoid direct icon issue if any */}
+                      <Search className="text-muted-foreground opacity-50" size={32} />
+                      <div className="text-center">
+                        <p className="text-xs font-medium">Klik atau Drag & Drop foto di sini</p>
+                        <p className="text-[10px] text-muted-foreground">PNG, JPG up to 5MB</p>
+                      </div>
+                    </div>
                     <input
+                      id="add-asset-photo-upload"
                       type="file"
                       accept="image/*"
-                      onChange={(e) => {
-                        const file = e.target.files?.[0];
-                        if (file) {
-                          setSelectedPhoto(file);
-                          setPhotoPreview(URL.createObjectURL(file));
-                        }
-                      }}
-                      className="text-xs text-muted-foreground file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-xs file:font-semibold file:bg-primary file:text-primary-foreground hover:file:bg-primary/90"
+                      onChange={handleFileChange}
+                      className="hidden"
                     />
                     <p className="text-[10px] text-muted-foreground italic">
                       * Disarankan mengunggah foto fisik perangkat (ODP/ODC/OLT) untuk memudahkan teknisi.
@@ -511,7 +556,7 @@ const AddAssetModal = ({ isOpen, onClose, onSuccess }: AddAssetModalProps) => {
                       htmlFor="parentAssetId"
                       className="block text-sm font-medium mb-1"
                     >
-                      Parent Asset {formData.type === "ODP" ? "(ODC/ODP)" : formData.type === "ODC" ? "(OLT)" : "(Mikrotik)"}
+                      Parent Asset
                     </label>
                     <div className="relative">
                       <div className="relative">
@@ -527,7 +572,7 @@ const AddAssetModal = ({ isOpen, onClose, onSuccess }: AddAssetModalProps) => {
                             }
                           }}
                           onFocus={() => setIsParentDropdownOpen(true)}
-                          placeholder={selectedParent ? `${selectedParent.name} (${selectedParent.type})` : "Cari parent asset..."}
+                          placeholder={selectedParent ? selectedParent.name : "Cari parent asset..."}
                           className="w-full p-2 pl-10 pr-10 rounded-md bg-input border border-input"
                         />
                         <ChevronDown

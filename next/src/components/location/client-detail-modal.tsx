@@ -37,6 +37,7 @@ interface PppoeDetails {
   disabled: boolean;
   isActive: boolean;
   uptime: string | null;
+  lastLoggedOut: string | null;
   comment: string | null;
   error?: string;
 }
@@ -127,6 +128,7 @@ const ClientDetailModal = ({
       disabled: secret.disabled === 'true' || secret.disabled === true,
       isActive: secret.isActive === true,
       uptime: secret.uptime || null,
+      lastLoggedOut: secret['last-logged-out'] || null,
       comment: secret.comment || null,
     };
   }, [pppoeSecrets, client]);
@@ -369,6 +371,16 @@ const ClientDetailModal = ({
                           <div className="flex-1 min-w-0">
                             <p className="text-xs text-muted-foreground">Uptime</p>
                             <p className="text-sm font-semibold">{formatUptime(pppoe.uptime)}</p>
+                          </div>
+                        </div>
+                      )}
+
+                      {!pppoe.isActive && pppoe.lastLoggedOut && (
+                        <div className="flex items-center gap-3">
+                          <History size={16} className="text-muted-foreground" />
+                          <div className="flex-1 min-w-0">
+                            <p className="text-xs text-muted-foreground">Terakhir Disconnect</p>
+                            <p className="text-sm font-semibold text-muted-foreground">{pppoe.lastLoggedOut}</p>
                           </div>
                         </div>
                       )}

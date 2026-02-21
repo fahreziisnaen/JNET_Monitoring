@@ -41,7 +41,7 @@ const EditPppoeSecretModal = ({ isOpen, onClose, onSuccess, secretToEdit }: Edit
         // Jika cache masih valid (< 5 menit), gunakan cache
         if (now - timestamp < CACHE_TTL) {
           // Pastikan data terurut, unik, dan tidak ada empty string
-          const sortedData = [...new Set(data.filter((p: string) => p && p.trim()))].sort((a: string, b: string) => a.toLowerCase().localeCompare(b.toLowerCase()));
+          const sortedData = Array.from(new Set<string>((data as string[]).filter((p) => Boolean(p && p.trim())))).sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()));
           setProfiles(sortedData);
           return;
         }
@@ -56,7 +56,7 @@ const EditPppoeSecretModal = ({ isOpen, onClose, onSuccess, secretToEdit }: Edit
       const res = await apiFetch(`${apiUrl}/api/pppoe/profiles`);
       if (!res.ok) throw new Error('Gagal memuat profil');
       const data = await res.json();
-      const sortedData = [...new Set(data.filter((p: string) => p && p.trim()))].sort((a: string, b: string) => a.toLowerCase().localeCompare(b.toLowerCase()));
+      const sortedData = Array.from(new Set<string>((data as string[]).filter((p) => Boolean(p && p.trim())))).sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()));
       setProfiles(sortedData);
 
       // Simpan ke cache
