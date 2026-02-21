@@ -1,10 +1,11 @@
 "use client";
 
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import { motion, AnimatePresence } from "@/components/motion";
 import { X, Zap, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { apiFetch } from "@/utils/api";
+import { toast } from "sonner";
 
 interface AddPppoeSecretModalProps {
   isOpen: boolean;
@@ -61,8 +62,8 @@ const AddPppoeSecretModal = ({
         if (!response.ok) throw new Error(data.message);
         setFormData((prev) => ({
           ...prev,
-          localAddress: data.localAddress,
-          remoteAddress: data.remoteAddress,
+          localAddress: data.localAddress || "",
+          remoteAddress: data.remoteAddress || "",
         }));
       } catch (error: any) {
         setError(error.message);
@@ -84,8 +85,13 @@ const AddPppoeSecretModal = ({
     setFormData((prev) => ({ ...prev, [name]: value }));
   };
 
+  const isSubmitting = useRef(false);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isSubmitting.current) return;
+
+    isSubmitting.current = true;
     setLoading(true);
     setError("");
     try {
@@ -98,10 +104,13 @@ const AddPppoeSecretModal = ({
         throw new Error(data.message || "Gagal menambah secret");
       }
       onSuccess();
+      toast.success("Berhasil Menambah Secret", { description: `Secret untuk ${formData.name} berhasil dibuat.` });
       onClose();
     } catch (err: any) {
       setError(err.message);
+      toast.error("Gagal Menambah Secret", { description: err.message });
     } finally {
+      isSubmitting.current = false;
       setLoading(false);
     }
   };
@@ -144,6 +153,7 @@ const AddPppoeSecretModal = ({
                     <input
                       type="text"
                       name="name"
+                      value={formData.name || ""}
                       onChange={handleChange}
                       className="w-full p-2 rounded-md bg-input"
                       required
@@ -156,6 +166,7 @@ const AddPppoeSecretModal = ({
                     <input
                       type="password"
                       name="password"
+                      value={formData.password || ""}
                       onChange={handleChange}
                       className="w-full p-2 rounded-md bg-input"
                       required
@@ -202,7 +213,7 @@ const AddPppoeSecretModal = ({
                     <input
                       type="text"
                       name="localAddress"
-                      value={formData.localAddress}
+                      value={formData.localAddress || ""}
                       onChange={handleChange}
                       placeholder="Otomatis"
                       disabled={isAutoIp}
@@ -216,7 +227,7 @@ const AddPppoeSecretModal = ({
                     <input
                       type="text"
                       name="remoteAddress"
-                      value={formData.remoteAddress}
+                      value={formData.remoteAddress || ""}
                       onChange={handleChange}
                       placeholder="Otomatis"
                       disabled={isAutoIp}

@@ -1,5 +1,27 @@
 const { runCommandForWorkspace } = require('../utils/apiConnection');
 const pool = require('../config/database');
+const mikrotikStore = require('../utils/mikrotikStore');
+
+// Helper functions for IP manipulation
+const ipToLong = (ip) => {
+    // Bersihkan CIDR jika ada (misal 192.168.1.0/24 -> 192.168.1.0)
+    const cleanIp = ip.split('/')[0];
+    return cleanIp.split('.').reduce((long, octet) => (long << 8) + parseInt(octet), 0) >>> 0;
+};
+
+const longToIp = (long) => {
+    return [
+        (long >>> 24) & 0xFF,
+        (long >>> 16) & 0xFF,
+        (long >>> 8) & 0xFF,
+        long & 0xFF
+    ].join('.');
+};
+
+const isIpAddress = (ip) => {
+    const regex = /^(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$/;
+    return regex.test(ip || '');
+};
 
 exports.getSummary = async (req, res) => {
     const startTime = Date.now();
@@ -11,8 +33,8 @@ exports.getSummary = async (req, res) => {
         // Jalankan secara sequential untuk menghindari deadlock dengan locking mechanism
         // Kedua command akan menggunakan koneksi yang sama (karena deviceId sama)
         // Locking mechanism akan memastikan hanya satu koneksi dibuat dan di-reuse
-        const secrets = await runCommandForWorkspace(workspaceId, '/ppp/secret/print', [], deviceId);
-        const active = await runCommandForWorkspace(workspaceId, '/ppp/active/print', ['?service=pppoe'], deviceId).catch(() => []);
+        const secrets = await runCommandForWorkspace(workspaceId, '/ppp/secret/print', ['.proplist=.id'], deviceId);
+        const active = await runCommandForWorkspace(workspaceId, '/ppp/active/print', ['.proplist=.id', '?service=pppoe'], deviceId).catch(() => []);
 
         const duration = Date.now() - startTime;
         console.log(`[PPPoE Summary] Berhasil dalam ${duration}ms - total: ${secrets.length}, active: ${active.length}`);
@@ -33,16 +55,25 @@ exports.getSecrets = async (req, res) => {
         const disabled = req.query.disabled;
 
 
-        // Timeout sudah di-handle di runCommandForWorkspace
-        // Ambil secrets dan active users secara sequential untuk menghindari race condition
-        // Kedua command akan menggunakan koneksi yang sama (karena deviceId sama)
-        // Locking mechanism akan memastikan hanya satu koneksi dibuat dan di-reuse
-        const secrets = await runCommandForWorkspace(workspaceId, '/ppp/secret/print', [], deviceId);
+        // Optimasi: Cek di local store dulu (instant)
+        let secrets = mikrotikStore.getSecrets(workspaceId);
+        let activeUsers = mikrotikStore.getActive(workspaceId);
 
-        const activeUsers = await runCommandForWorkspace(workspaceId, '/ppp/active/print', ['?service=pppoe'], deviceId).catch((err) => {
-            console.warn(`[PPPoE Secrets] Error fetching active users:`, err.message);
-            return [];
-        });
+        // Jika store kosong (monitoring belum jalan), fallback ke API (slow)
+        if (!secrets || secrets.length === 0) {
+            console.log(`[getSecrets] Store kosong, fallback ke MikroTik API...`);
+            secrets = await runCommandForWorkspace(workspaceId, '/ppp/secret/print', [
+                '.proplist=.id,name,profile,remote-address,last-logged-out,disabled'
+            ], deviceId);
+
+            activeUsers = await runCommandForWorkspace(workspaceId, '/ppp/active/print', [
+                '.proplist=name,address,.id',
+                '?service=pppoe'
+            ], deviceId).catch((err) => {
+                console.warn(`[PPPoE Secrets] Error fetching active users:`, err.message);
+                return [];
+            });
+        }
 
         // Filter berdasarkan disabled jika diperlukan
         let filteredSecrets = secrets;
@@ -104,10 +135,13 @@ exports.getSecrets = async (req, res) => {
 exports.getNextIp = async (req, res) => {
     const { profile } = req.query;
     const { workspace_id } = req.user;
+    var activeUsedIpsSet = new Set(); // Gunakan var dan nama unik untuk hindari scope issues
 
     if (!profile) {
         return res.status(400).json({ message: 'Profil tidak boleh kosong.' });
     }
+
+    console.log(`[Next IP] Request untuk profil: "${profile}" di workspace: ${workspace_id}`);
 
     try {
         const [pools] = await pool.query(
@@ -121,30 +155,66 @@ exports.getNextIp = async (req, res) => {
 
         const { ip_start, ip_end, gateway } = pools[0];
 
-        const secrets = await runCommandForWorkspace(workspace_id, '/ppp/secret/print', [`?profile=${profile}`]);
+        // OPTIMIZATION: Ambil data dari local store (instant)
+        const allSecrets = mikrotikStore.getSecrets(workspace_id) || [];
+        const allActive = mikrotikStore.getActive(workspace_id) || [];
 
-        const usedIps = new Set(secrets.map(s => s['remote-address']).filter(Boolean));
-        const startIp = ip_start.split('.').map(Number);
-        const endIp = ip_end.split('.').map(Number);
+        // 1. IP dari semua PPPoE Secrets
+        allSecrets.forEach(s => {
+            if (s['remote-address']) activeUsedIpsSet.add(s['remote-address']);
+        });
+
+        // 2. IP dari semua koneksi yang sedang ONLINE
+        allActive.forEach(a => {
+            if (a.address) activeUsedIpsSet.add(a.address);
+        });
+
+        // --- CIDR AND RANGE LOGIC ---
+        let startLong, endLong;
+
+        if (ip_start.includes('/')) {
+            const [baseIp, mask] = ip_start.split('/');
+            const maskInt = parseInt(mask);
+            const baseLong = ipToLong(baseIp);
+
+            const fullMask = (0xFFFFFFFF << (32 - maskInt)) >>> 0;
+            const networkLong = (baseLong & fullMask) >>> 0;
+            const broadcastLong = (networkLong | (~fullMask)) >>> 0;
+
+            startLong = networkLong + 1;
+            endLong = broadcastLong - 1;
+        } else {
+            startLong = ipToLong(ip_start);
+            endLong = ipToLong(ip_end);
+        }
+
+        const gatewayLong = ipToLong(gateway);
         let nextIp = null;
 
-        for (let i = startIp[3]; i <= endIp[3]; i++) {
-            const currentIp = `${startIp[0]}.${startIp[1]}.${startIp[2]}.${i}`;
-            if (!usedIps.has(currentIp) && currentIp !== gateway) {
-                nextIp = currentIp;
+        console.log(`[Next IP] Searching range: ${longToIp(startLong)} - ${longToIp(endLong)}. Used count: ${activeUsedIpsSet.size}`);
+
+        for (let currentLong = startLong; currentLong <= endLong; currentLong++) {
+            const currentIpStr = longToIp(currentLong);
+
+            if (!activeUsedIpsSet.has(currentIpStr) && currentLong !== gatewayLong) {
+                nextIp = currentIpStr;
                 break;
             }
         }
 
         if (!nextIp) {
+            console.warn(`[Next IP] POOL EXHAUSTED for "${profile}"`);
             return res.status(409).json({ message: 'Semua IP dalam pool ini sudah terpakai.' });
         }
 
-        res.json({ remoteAddress: nextIp, localAddress: gateway });
+        res.json({
+            remoteAddress: nextIp,
+            localAddress: isIpAddress(gateway) ? gateway : null
+        });
 
     } catch (error) {
-        console.error("GET NEXT IP ERROR:", error);
-        res.status(500).json({ message: error.message || 'Terjadi kesalahan di server saat mencari IP.' });
+        console.error("GET NEXT IP FATAL ERROR:", error);
+        res.status(500).json({ message: error.message || 'Error mencari IP.' });
     }
 };
 
@@ -154,26 +224,86 @@ exports.addSecret = async (req, res) => {
         return res.status(400).json({ message: 'Nama, password, dan profile wajib diisi.' });
     }
 
+    const requestId = Math.random().toString(36).substring(7);
+    console.log(`[Add Secret][${requestId}] Request baru untuk "${name}" (Profile: ${profile})`);
+
     try {
+        try {
+            console.log(`[Add Secret][${requestId}] Pengecekan proaktif via local store (instant)...`);
+            const localSecrets = mikrotikStore.getSecrets(req.user.workspace_id);
+            const isExisting = localSecrets.some(s => s.name === name);
+
+            if (isExisting) {
+                console.log(`[Add Secret][${requestId}] Proactive Detect (Cache): Secret sudah ada. Menanggapi sukses.`);
+                return res.status(201).json({
+                    message: `Secret untuk ${name} sudah siap di MikroTik.`,
+                    isIdempotent: true
+                });
+            }
+
+            // Jika tidak ada di cache, kita boleh lanjut tetap melakukan /add langsung
+            // Mencegah lambatnya /print di router yang sedang sibuk.
+        } catch (checkError) {
+            console.warn(`[Add Secret][${requestId}] Pengecekan cache gagal, lanjut ke upaya pembuatan...`);
+        }
+
         const params = [
             `=name=${name}`,
             `=password=${password}`,
             `=profile=${profile}`,
             `=service=${service}`
         ];
-        if (localAddress) params.push(`=local-address=${localAddress}`);
-        if (remoteAddress) params.push(`=remote-address=${remoteAddress}`);
 
+        // Hanya tambahkan jika itu IP yang valid (hindari nilai seperti "Lokal")
+        if (isIpAddress(localAddress)) params.push(`=local-address=${localAddress}`);
+        if (isIpAddress(remoteAddress)) params.push(`=remote-address=${remoteAddress}`);
+
+        console.log(`[Add Secret][${requestId}] Mengirim command /add ke MikroTik...`);
         await runCommandForWorkspace(req.user.workspace_id, '/ppp/secret/add', params);
+        console.log(`[Add Secret][${requestId}] Berhasil membuat secret.`);
         res.status(201).json({ message: `Secret untuk ${name} berhasil dibuat.` });
     } catch (error) {
+        const rawMessage = error.message || '';
+        const errorMessage = rawMessage.toLowerCase();
+        console.warn(`[Add Secret][${requestId}] Gagal: "${rawMessage}"`);
+
+        // POSITIVE 1: Deteksi variasi "already exists" jika race condition tetap terjadi
+        if (errorMessage.includes('exists') || errorMessage.includes('sudah ada') || errorMessage.includes('ada')) {
+            console.log(`[Add Secret][${requestId}] Idempotensi (Post-Add): Data sudah ada di router. Menanggapi sukses.`);
+            return res.status(201).json({
+                message: `Secret untuk ${name} sudah tersedia di MikroTik.`,
+                isIdempotent: true
+            });
+        }
+
+        console.warn(`[Add Secret] Initial add failed for "${name}", performing Fast Verification Flight...`, error.message);
+
+        try {
+            // Fast Verification Flight: No retry, 10s timeout
+            const checkSecret = await runCommandForWorkspace(req.user.workspace_id, '/ppp/secret/print', [
+                '.proplist=.id,name',
+                `?name=${name}`
+            ], null, { noRetry: true, timeout: 10000 });
+
+            if (checkSecret && checkSecret.length > 0) {
+                console.log(`[Add Secret] Fast Verification success for "${name}": Secret exists.`);
+                return res.status(201).json({
+                    message: `Secret untuk ${name} berhasil disinkronkan.`,
+                    isIdempotent: true
+                });
+            }
+        } catch (verifyError) {
+            console.error(`[Add Secret] Fast Verification failed for "${name}":`, verifyError.message);
+        }
+
+        // Jika verifikasi gagal atau tidak menemukan data, kembalikan error asli
         res.status(500).json({ message: error.message });
     }
 };
 
 exports.getProfiles = async (req, res) => {
     try {
-        const profiles = await runCommandForWorkspace(req.user.workspace_id, '/ppp/profile/print');
+        const profiles = await runCommandForWorkspace(req.user.workspace_id, '/ppp/profile/print', ['.proplist=name']);
         // Extract profile names dan urutkan secara ascending
         const profileNames = profiles.map(p => p.name).sort((a, b) => {
             // Case-insensitive sorting
@@ -279,9 +409,12 @@ exports.updateSecret = async (req, res) => {
 exports.deleteSecret = async (req, res) => {
     const { id } = req.params;
     try {
+        console.log(`[Delete Secret] Request hapus secret ID: ${id} untuk workspace: ${req.user.workspace_id}`);
         await runCommandForWorkspace(req.user.workspace_id, '/ppp/secret/remove', [`=.id=${id}`]);
+        console.log(`[Delete Secret] Berhasil hapus id: ${id}`);
         res.status(200).json({ message: 'Secret berhasil dihapus.' });
     } catch (error) {
+        console.error(`[Delete Secret] Gagal hapus id: ${id}: ${error.message}`);
         res.status(500).json({ message: error.message });
     }
 };

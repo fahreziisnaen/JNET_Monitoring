@@ -1,6 +1,6 @@
 'use client';
 
-import React, { createContext, useContext, useState, useEffect, useRef, useMemo } from 'react';
+import React, { createContext, useContext, useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { useAuth } from './auth-provider';
 import { apiFetch, getAuthToken } from '@/utils/api';
 
@@ -264,6 +264,14 @@ export const MikrotikProvider = ({ children }: { children: React.ReactNode }) =>
                             setPppoeSecrets(message.payload.pppoeSecrets || []);
                             setActiveInterfaces(message.payload.activeInterfaces || []);
                             setTraffic(message.payload.traffic);
+                        } else if (message.type === 'pppoe-update' && message.payload) {
+                            // Bandingkan jumlah data untuk optimasi sederhana
+                            // Jika data sangat sering dikirim, kita bisa pakai deep equality check,
+                            // tapi untuk sekarang update state langsung sudah cukup responsif.
+                            if (JSON.stringify(message.payload.pppoeSecrets) !== JSON.stringify(pppoeSecrets)) {
+                                console.log("[WebSocket] Update pppoeSecrets instan diterima.");
+                                setPppoeSecrets(message.payload.pppoeSecrets || []);
+                            }
                         } else if (message.type === 'downtime-notification' && message.payload) {
                             // Forward downtime notification ke notification provider via custom event
                             console.log("[WebSocket] Menerima downtime notification:", message.payload);
@@ -411,6 +419,13 @@ export const MikrotikProvider = ({ children }: { children: React.ReactNode }) =>
         return pppoeSecrets.filter((secret: any) => secret.isActive === true);
     }, [pppoeSecrets]);
 
+    const forceRefresh = useCallback(() => {
+        if (ws.current && ws.current.readyState === WebSocket.OPEN) {
+            console.log('[MikrotikProvider] Mengirim perintah force-refresh ke server');
+            ws.current.send(JSON.stringify({ type: 'force-refresh', target: 'secrets' }));
+        }
+    }, []);
+
     const value = {
         resource,
         pppoeActive, // Backward compatibility: derived dari pppoeSecrets
@@ -419,7 +434,8 @@ export const MikrotikProvider = ({ children }: { children: React.ReactNode }) =>
         traffic,
         isConnected,
         selectedDeviceId,
-        setSelectedDeviceId: handleDeviceChange
+        setSelectedDeviceId: handleDeviceChange,
+        forceRefresh
     };
 
     return <MikrotikContext.Provider value={value}>{children}</MikrotikContext.Provider>;

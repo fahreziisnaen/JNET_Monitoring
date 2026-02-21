@@ -45,6 +45,9 @@ const PppoeSecretsTable = ({ refreshTrigger, onActionComplete, initialFilter = '
   const [secretToEdit, setSecretToEdit] = useState<PppoeSecret | null>(null);
   const apiUrl = process.env.NEXT_PUBLIC_API_BASE_URL;
 
+  // State untuk local tick agarpendapatan uptime terlihat berjalan tiap detik
+  const [uptimeOffset, setUptimeOffset] = useState(0);
+
   // Update secrets dari WebSocket data (sama seperti summary aktif)
   useEffect(() => {
     if (!selectedDeviceId) {
@@ -72,14 +75,25 @@ const PppoeSecretsTable = ({ refreshTrigger, onActionComplete, initialFilter = '
     });
 
     setAllSecrets(transformedSecrets);
-    setLoading(false);
 
-    const activeCount = transformedSecrets.filter(s => s.isActive).length;
-    console.log('[PppoeSecretsTable] Update secrets dari WebSocket:', {
-      total: transformedSecrets.length,
-      active: activeCount
-    });
-  }, [pppoeSecrets, selectedDeviceId, refreshTrigger]);
+    // Setiap kali data dari server masuk, reset offset local tick ke 0
+    // Karena data dari server adalah source of truth terbaru
+    setUptimeOffset(0);
+
+    // HANYA set loading false jika kita punya data. 
+    // JANGAN set loading true di sini karena ini dipicu oleh WebSocket yang berjalan terus menerus.
+    if (transformedSecrets.length > 0) {
+      setLoading(false);
+    }
+  }, [pppoeSecrets, selectedDeviceId]); // Hapus refreshTrigger dari dependency untuk menghindari reset state yang tidak perlu
+
+  // Effect untuk menambahkan 1 detik ke uptime secara local setiap detiknya
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setUptimeOffset(prev => prev + 1);
+    }, 1000);
+    return () => clearInterval(interval);
+  }, []);
 
   // Map untuk lookup uptime dari secrets yang aktif
   const secretsUptimeMap = useMemo(() => {
@@ -96,6 +110,49 @@ const PppoeSecretsTable = ({ refreshTrigger, onActionComplete, initialFilter = '
   const isSecretActive = useCallback((secret: PppoeSecret): boolean => {
     return secret.isActive === true;
   }, []);
+
+  // Mem-parsing string uptime Mikrotik menjadi total detik
+  const parseUptimeToSeconds = (uptime: string | null): number => {
+    if (!uptime || uptime === 'N/A' || uptime === '...') return 0;
+
+    const weekMatch = uptime.match(/(\d+)w/);
+    const dayMatch = uptime.match(/(\d+)d/);
+    const hourMatch = uptime.match(/(\d+)h/);
+    const minuteMatch = uptime.match(/(\d+)m/);
+    const secondMatch = uptime.match(/(\d+)s/);
+
+    let totalSeconds = 0;
+    if (weekMatch) totalSeconds += parseInt(weekMatch[1]) * 7 * 24 * 60 * 60;
+    if (dayMatch) totalSeconds += parseInt(dayMatch[1]) * 24 * 60 * 60;
+    if (hourMatch) totalSeconds += parseInt(hourMatch[1]) * 60 * 60;
+    if (minuteMatch) totalSeconds += parseInt(minuteMatch[1]) * 60;
+    if (secondMatch) totalSeconds += parseInt(secondMatch[1]);
+
+    return totalSeconds;
+  };
+
+  // Mengubah total detik kembali ke string uptime Mikrotik (w/d/h/m/s)
+  const formatSecondsToUptime = (totalSeconds: number): string => {
+    if (totalSeconds <= 0) return '0s';
+
+    const weeks = Math.floor(totalSeconds / (7 * 24 * 60 * 60));
+    let remaining = totalSeconds % (7 * 24 * 60 * 60);
+    const days = Math.floor(remaining / (24 * 60 * 60));
+    remaining %= (24 * 60 * 60);
+    const hours = Math.floor(remaining / (60 * 60));
+    remaining %= (60 * 60);
+    const minutes = Math.floor(remaining / 60);
+    const seconds = remaining % 60;
+
+    const parts = [];
+    if (weeks > 0) parts.push(`${weeks}w`);
+    if (days > 0) parts.push(`${days}d`);
+    if (hours > 0) parts.push(`${hours}h`);
+    if (minutes > 0) parts.push(`${minutes}m`);
+    if (seconds > 0 || parts.length === 0) parts.push(`${seconds}s`);
+
+    return parts.join('');
+  };
 
   const formatCompactUptime = (uptime: string) => {
     if (!uptime || uptime === '00:00:00' || uptime === 'N/A') return '-';
@@ -121,10 +178,16 @@ const PppoeSecretsTable = ({ refreshTrigger, onActionComplete, initialFilter = '
     return parts.join(' ') || '<1m';
   };
 
-  // Fungsi untuk mendapatkan uptime dari secret
+  // Fungsi untuk mendapatkan uptime dari secret yang ditambah local tick
   const getUptime = useCallback((secretName: string): string => {
-    return secretsUptimeMap.get(secretName) || '00:00:00';
-  }, [secretsUptimeMap]);
+    const baseUptime = secretsUptimeMap.get(secretName) || '00:00:00';
+    if (baseUptime === '00:00:00' || baseUptime === 'N/A') return baseUptime;
+
+    const baseSeconds = parseUptimeToSeconds(baseUptime);
+    // Tambahkan delay offset. Kita limit max 5 agar tidak desync terlalu jauh dengan server
+    const currentSeconds = baseSeconds + (uptimeOffset > 5 ? 5 : uptimeOffset);
+    return formatSecondsToUptime(currentSeconds);
+  }, [secretsUptimeMap, uptimeOffset]);
 
   const handleSort = (column: string) => {
     if (sortColumn === column) {
@@ -355,9 +418,10 @@ const PppoeSecretsTable = ({ refreshTrigger, onActionComplete, initialFilter = '
     try {
       const encodedId = encodeURIComponent(secretToDelete['.id']);
       await apiFetch(`${apiUrl}/api/pppoe/secrets/${encodedId}`, { method: 'DELETE' });
+      toast.success("Berhasil Menghapus Secret", { description: `Secret untuk ${secretToDelete.name} telah dihapus.` });
       onActionComplete();
-    } catch (error) {
-      toast.error("Gagal Menghapus Secret", { description: "Terjadi kesalahan saat menghapus data." });
+    } catch (error: any) {
+      toast.error("Gagal Menghapus Secret", { description: error.message || "Terjadi kesalahan saat menghapus data." });
     } finally {
       setIsActionLoading(false);
       setIsDeleteModalOpen(false);

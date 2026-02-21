@@ -15,7 +15,7 @@ import { apiFetch } from '@/utils/api';
 
 const ManagementPage = () => {
   const { user } = useAuth();
-  const { selectedDeviceId, setSelectedDeviceId, pppoeSecrets } = useMikrotik() || {};
+  const { selectedDeviceId, setSelectedDeviceId, pppoeSecrets, forceRefresh } = useMikrotik() || {};
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [isIpPoolModalOpen, setIsIpPoolModalOpen] = useState(false);
   const [summary, setSummary] = useState({ total: 0, active: 0, inactive: 0 });
@@ -64,40 +64,46 @@ const ManagementPage = () => {
     // Gunakan data WebSocket untuk semua summary (sama seperti summary aktif)
     const secretsArray = Array.isArray(pppoeSecrets) ? pppoeSecrets : [];
 
-    const totalSecrets = secretsArray.length;
-    const activeCount = secretsArray.filter((secret: any) => secret.isActive === true).length;
-    const inactiveCount = Math.max(0, totalSecrets - activeCount);
+    // HANYA jika data benar-benar ada, baru kita update summary dan matikan loading
+    if (secretsArray.length > 0) {
+      const totalSecrets = secretsArray.length;
+      const activeCount = secretsArray.filter((secret: any) => secret.isActive === true).length;
+      const inactiveCount = Math.max(0, totalSecrets - activeCount);
 
-    // Update summary dari WebSocket data (real-time, sama seperti aktif)
-    setSummary(prev => {
-      // Hanya update jika ada perubahan
-      if (prev.total !== totalSecrets || prev.active !== activeCount || prev.inactive !== inactiveCount) {
-        console.log('[Management Page] Update summary dari WebSocket:', {
-          total: totalSecrets,
-          active: activeCount,
-          inactive: inactiveCount,
-          pppoeSecretsCount: secretsArray.length
-        });
+      // Update summary dari WebSocket data (real-time, sama seperti aktif)
+      setSummary(prev => {
+        // Hanya update jika ada perubahan
+        if (prev.total !== totalSecrets || prev.active !== activeCount || prev.inactive !== inactiveCount) {
+          console.log('[Management Page] Update summary dari WebSocket:', {
+            total: totalSecrets,
+            active: activeCount,
+            inactive: inactiveCount,
+            pppoeSecretsCount: secretsArray.length
+          });
 
-        return {
-          total: totalSecrets,
-          active: activeCount,
-          inactive: inactiveCount
-        };
+          return {
+            total: totalSecrets,
+            active: activeCount,
+            inactive: inactiveCount
+          };
+        }
+
+        return prev;
+      });
+
+      // Matikan loading selamanya jika kita sudah punya data awal
+      if (loading) {
+        console.log('[Management Page] First data received, disabling loading spinner forever.');
+        setLoading(false);
       }
-
-      return prev;
-    });
-
-    // Set loading ke false jika ada data WebSocket
-    if (loading && totalSecrets > 0) {
-      console.log('[Management Page] Set loading ke false karena ada data WebSocket');
-      setLoading(false);
     }
   }, [pppoeSecrets, selectedDeviceId, loading]);
 
   const handleSuccess = () => {
-    setRefreshTrigger(prev => prev + 1);
+    // Panggil forceRefresh untuk meminta data terbaru segera lewat WebSocket
+    if (forceRefresh) {
+      forceRefresh();
+    }
   };
 
   const renderSummaryCard = (title: string, count: number, icon: React.ReactNode, color: string, filter: 'all' | 'active' | 'inactive') => (
