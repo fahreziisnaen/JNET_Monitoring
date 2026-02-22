@@ -36,7 +36,7 @@ exports.getClients = async (req, res) => {
     try {
         // Ambil clients dengan status aktif dari pppoe_user_status dan owner ODP
         const [clients] = await pool.query(
-            `SELECT c.id, c.workspace_id, c.pppoe_secret_name, c.latitude, c.longitude, 
+            `SELECT c.id, c.workspace_id, c.pppoe_secret_name, c.client_name, c.whatsapp_number, c.latitude, c.longitude, 
                     c.odp_asset_id, c.connection_path, c.photo_url, c.created_at, c.updated_at,
                     na.name as odp_name,
                     na.owner_name as odp_owner_name,
@@ -79,7 +79,7 @@ exports.getClients = async (req, res) => {
         // Fallback jika pppoe_user_status tidak ada atau error
         try {
             const [clients] = await pool.query(
-                `SELECT c.id, c.workspace_id, c.pppoe_secret_name, c.latitude, c.longitude, 
+                `SELECT c.id, c.workspace_id, c.pppoe_secret_name, c.client_name, c.whatsapp_number, c.latitude, c.longitude, 
                         c.odp_asset_id, c.photo_url, c.created_at, c.updated_at,
                         na.name as odp_name,
                         FALSE as isActive
@@ -151,7 +151,7 @@ exports.getUnlinkedPppoeSecrets = async (req, res) => {
 // Create new client from PPPoE secret
 exports.createClient = async (req, res) => {
     const { workspace_id } = req.user;
-    const { pppoe_secret_name, latitude, longitude, odp_asset_id, connection_path } = req.body;
+    const { pppoe_secret_name, client_name, whatsapp_number, latitude, longitude, odp_asset_id, connection_path } = req.body;
     const photo_url = req.file ? `/public/uploads/clients/${req.file.filename}` : null;
 
     if (!pppoe_secret_name || latitude === undefined || longitude === undefined) {
@@ -212,8 +212,8 @@ exports.createClient = async (req, res) => {
 
         // Insert client
         const [result] = await pool.query(
-            'INSERT INTO clients (workspace_id, pppoe_secret_name, latitude, longitude, odp_asset_id, connection_path, photo_url) VALUES (?, ?, ?, ?, ?, ?, ?)',
-            [workspace_id, pppoe_secret_name, lat, lon, odp_asset_id || null, connection_path || null, photo_url]
+            'INSERT INTO clients (workspace_id, pppoe_secret_name, client_name, whatsapp_number, latitude, longitude, odp_asset_id, connection_path, photo_url) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+            [workspace_id, pppoe_secret_name, client_name || null, whatsapp_number || null, lat, lon, odp_asset_id || null, connection_path || null, photo_url]
         );
 
         // If linked to ODP, also add to odp_user_connections if not exists
@@ -242,7 +242,7 @@ exports.createClient = async (req, res) => {
 exports.updateClient = async (req, res) => {
     const { id } = req.params;
     const { workspace_id } = req.user;
-    const { latitude, longitude, connection_path, pppoe_secret_name } = req.body;
+    const { latitude, longitude, connection_path, pppoe_secret_name, client_name, whatsapp_number } = req.body;
     let { odp_asset_id } = req.body;
 
     // Convert empty string to null for odp_asset_id
@@ -346,6 +346,14 @@ exports.updateClient = async (req, res) => {
         if (connection_path !== undefined) {
             updates.push('connection_path = ?');
             values.push(connection_path);
+        }
+        if (client_name !== undefined) {
+            updates.push('client_name = ?');
+            values.push(client_name);
+        }
+        if (whatsapp_number !== undefined) {
+            updates.push('whatsapp_number = ?');
+            values.push(whatsapp_number);
         }
 
         if (req.file) {
@@ -451,7 +459,7 @@ exports.getClient = async (req, res) => {
 
     try {
         const [clients] = await pool.query(
-            `SELECT c.id, c.workspace_id, c.pppoe_secret_name, c.latitude, c.longitude, 
+            `SELECT c.id, c.workspace_id, c.pppoe_secret_name, c.client_name, c.whatsapp_number, c.latitude, c.longitude, 
                     c.odp_asset_id, c.connection_path, c.photo_url, c.created_at, c.updated_at,
                     na.name as odp_name,
                     na.owner_name as odp_owner_name

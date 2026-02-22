@@ -26,7 +26,7 @@ const AddPppoeSecretModal = ({
     remoteAddress: "",
   });
   const [profiles, setProfiles] = useState<string[]>([]);
-  const [isAutoIp, setIsAutoIp] = useState(true);
+  const [useStaticIp, setUseStaticIp] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const apiUrl = process.env.NEXT_PUBLIC_API_BASE_URL;
@@ -49,12 +49,20 @@ const AddPppoeSecretModal = ({
         }
       };
       fetchProfiles();
+      setUseStaticIp(false); // Reset to default dynamic behavior
+      setFormData({
+        name: "",
+        password: "",
+        profile: "",
+        localAddress: "",
+        remoteAddress: "",
+      });
     }
   }, [isOpen]);
 
   const getNextIpForProfile = useCallback(
     async (profileName: string) => {
-      if (!profileName || !isAutoIp) return;
+      if (!profileName || !useStaticIp) return;
       setError("");
       try {
         const response = await apiFetch(`${apiUrl}/api/pppoe/next-ip?profile=${encodeURIComponent(profileName)}`);
@@ -69,14 +77,21 @@ const AddPppoeSecretModal = ({
         setError(error.message);
       }
     },
-    [isAutoIp]
+    [useStaticIp]
   );
 
   useEffect(() => {
-    if (formData.profile) {
+    if (useStaticIp && formData.profile) {
       getNextIpForProfile(formData.profile);
+    } else if (!useStaticIp) {
+      // Clear addresses if user switches back to dynamic (DHCP-like)
+      setFormData((prev) => ({
+        ...prev,
+        localAddress: "",
+        remoteAddress: "",
+      }));
     }
-  }, [formData.profile, getNextIpForProfile]);
+  }, [useStaticIp, formData.profile, getNextIpForProfile]);
 
   const handleChange = (
     e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>
@@ -195,46 +210,55 @@ const AddPppoeSecretModal = ({
                   <label className="flex items-center gap-2 cursor-pointer">
                     <input
                       type="checkbox"
-                      checked={isAutoIp}
-                      onChange={() => setIsAutoIp(!isAutoIp)}
+                      checked={useStaticIp}
+                      onChange={() => setUseStaticIp(!useStaticIp)}
                       className="w-4 h-4 rounded text-primary bg-input"
                     />
                     <span className="text-sm font-medium">
-                      Alokasikan IP Otomatis
+                      Gunakan IP Statis (Optional)
                     </span>
                     <Zap size={14} className="text-yellow-500" />
                   </label>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Biarkan tidak dicentang agar MikroTik otomatis menetapkan IP secara dinamis dari pool saat perangkat terhubung.
+                  </p>
                 </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium mb-1 text-muted-foreground">
-                      Local Address
-                    </label>
-                    <input
-                      type="text"
-                      name="localAddress"
-                      value={formData.localAddress || ""}
-                      onChange={handleChange}
-                      placeholder="Otomatis"
-                      disabled={isAutoIp}
-                      className="w-full p-2 rounded-md bg-input disabled:opacity-50"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium mb-1 text-muted-foreground">
-                      Remote Address
-                    </label>
-                    <input
-                      type="text"
-                      name="remoteAddress"
-                      value={formData.remoteAddress || ""}
-                      onChange={handleChange}
-                      placeholder="Otomatis"
-                      disabled={isAutoIp}
-                      className="w-full p-2 rounded-md bg-input disabled:opacity-50"
-                    />
-                  </div>
-                </div>
+
+                {useStaticIp && (
+                  <motion.div
+                    initial={{ height: 0, opacity: 0 }}
+                    animate={{ height: "auto", opacity: 1 }}
+                    className="grid grid-cols-1 md:grid-cols-2 gap-4 overflow-hidden"
+                  >
+                    <div>
+                      <label className="block text-sm font-medium mb-1 text-muted-foreground">
+                        Local Address
+                      </label>
+                      <input
+                        type="text"
+                        name="localAddress"
+                        value={formData.localAddress || ""}
+                        onChange={handleChange}
+                        placeholder="Contoh: 192.168.1.1"
+                        className="w-full p-2 rounded-md bg-input"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium mb-1 text-muted-foreground">
+                        Remote Address
+                      </label>
+                      <input
+                        type="text"
+                        name="remoteAddress"
+                        value={formData.remoteAddress || ""}
+                        onChange={handleChange}
+                        placeholder="Contoh: 192.168.1.10"
+                        className="w-full p-2 rounded-md bg-input"
+                      />
+                    </div>
+                  </motion.div>
+                )}
+
                 {error && (
                   <p className="text-sm text-center text-destructive p-2 bg-destructive/10 rounded-md">
                     {error}

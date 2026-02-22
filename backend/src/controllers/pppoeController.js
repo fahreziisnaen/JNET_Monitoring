@@ -156,8 +156,25 @@ exports.getNextIp = async (req, res) => {
         const { ip_start, ip_end, gateway } = pools[0];
 
         // OPTIMIZATION: Ambil data dari local store (instant)
-        const allSecrets = mikrotikStore.getSecrets(workspace_id) || [];
-        const allActive = mikrotikStore.getActive(workspace_id) || [];
+        let allSecrets = mikrotikStore.getSecrets(workspace_id);
+        let allActive = mikrotikStore.getActive(workspace_id);
+
+        // Jika store kosong (monitoring belum jalan), fallback ke API (slow)
+        if ((!allSecrets || allSecrets.length === 0) && (!allActive || allActive.length === 0)) {
+            console.log(`[Next IP] Store kosong, fallback ke MikroTik API...`);
+            const deviceId = req.query.deviceId ? parseInt(req.query.deviceId) : null;
+            allSecrets = await runCommandForWorkspace(workspace_id, '/ppp/secret/print', [
+                '.proplist=.id,name,profile,remote-address,last-logged-out,disabled'
+            ], deviceId).catch(() => []);
+
+            allActive = await runCommandForWorkspace(workspace_id, '/ppp/active/print', [
+                '.proplist=name,address,.id',
+                '?service=pppoe'
+            ], deviceId).catch(() => []);
+        }
+
+        allSecrets = allSecrets || [];
+        allActive = allActive || [];
 
         // 1. IP dari semua PPPoE Secrets
         allSecrets.forEach(s => {

@@ -15,11 +15,14 @@ import {
   AlertCircle,
   History,
   Calendar,
-  Server,
   ArrowDown,
   Camera,
-  Image as ImageIcon
+  Image as ImageIcon,
+  Phone,
+  Server,
+  Copy
 } from 'lucide-react';
+import { toast } from 'sonner';
 import { Doughnut } from 'react-chartjs-2';
 import { Chart as ChartJS, ArcElement, Tooltip } from 'chart.js';
 
@@ -202,6 +205,44 @@ const ClientDetailModal = ({
   const pppoe = pppoeDetails;
   const odpName = client.odp_name;
 
+  let waLink = '';
+  if (client.whatsapp_number) {
+    let num = client.whatsapp_number.replace(/\D/g, ''); // hapus non-digit
+    if (num.startsWith('0')) {
+      num = '62' + num.substring(1);
+    }
+    waLink = `https://wa.me/${num}`;
+  }
+
+  const handleCopyInfo = async () => {
+    try {
+      let lastDowntime = '-';
+      if (pppoeDetails && pppoeDetails.lastLoggedOut) {
+        lastDowntime = pppoeDetails.lastLoggedOut;
+      }
+
+      const mapsLink = `https://www.google.com/maps?q=${client.latitude},${client.longitude}`;
+
+      let odpInfo = '-';
+      if (client.odp_name) {
+        odpInfo = client.odp_name;
+      }
+
+      const infoText = `*Nama :* ${client.client_name || '-'}
+*PPPoE :* ${client.pppoe_secret_name}
+*No WA :* ${client.whatsapp_number || '-'}
+*ODP :* ${odpInfo}
+*Lokasi :* ${mapsLink}
+*Downtime Terakhir :* ${lastDowntime}`;
+
+      await navigator.clipboard.writeText(infoText);
+      toast.success("Info Disalin", { description: "Informasi client berhasil disalin ke clipboard." });
+    } catch (err) {
+      console.error(err);
+      toast.error("Gagal Menyalin", { description: "Terjadi kesalahan saat mencoba menyalin info." });
+    }
+  };
+
   return (
     <AnimatePresence>
       {isOpen && (
@@ -230,12 +271,21 @@ const ClientDetailModal = ({
                   <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
                 )}
               </div>
-              <button
-                onClick={onClose}
-                className="p-1 rounded-full hover:bg-secondary"
-              >
-                <X size={20} />
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={handleCopyInfo}
+                  className="p-1 rounded-full hover:bg-secondary text-muted-foreground hover:text-primary transition-colors"
+                  title="Copy Info"
+                >
+                  <Copy size={18} />
+                </button>
+                <button
+                  onClick={onClose}
+                  className="p-1 rounded-full hover:bg-secondary"
+                >
+                  <X size={20} />
+                </button>
+              </div>
             </header>
 
             <div className="flex-1 overflow-y-auto p-6 space-y-4">
@@ -301,6 +351,33 @@ const ClientDetailModal = ({
                           <span className="text-sm">
                             ODP:{' '}
                             <span className="font-semibold">{odpName}</span>
+                          </span>
+                        </div>
+                      )}
+
+                      {client.client_name && (
+                        <div className="flex items-center gap-3">
+                          <User size={16} className="text-muted-foreground" />
+                          <span className="text-sm">
+                            Nama Client:{' '}
+                            <span className="font-semibold">{client.client_name}</span>
+                          </span>
+                        </div>
+                      )}
+
+                      {client.whatsapp_number && (
+                        <div className="flex items-center gap-3">
+                          <Phone size={16} className="text-muted-foreground" />
+                          <span className="text-sm">
+                            WhatsApp:{' '}
+                            <a
+                              href={waLink}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="font-semibold text-primary hover:underline hover:text-green-500 transition-colors"
+                            >
+                              {client.whatsapp_number}
+                            </a>
                           </span>
                         </div>
                       )}

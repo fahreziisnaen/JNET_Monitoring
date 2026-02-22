@@ -18,6 +18,8 @@ interface EditClientModalProps {
 }
 
 const EditClientModal = ({ isOpen, onClose, onSuccess, client, assets = [] }: EditClientModalProps) => {
+  const [clientName, setClientName] = useState('');
+  const [whatsappNumber, setWhatsappNumber] = useState('');
   const [latitude, setLatitude] = useState('');
   const [longitude, setLongitude] = useState('');
   const [odpAssetId, setOdpAssetId] = useState<string>('');
@@ -38,6 +40,8 @@ const EditClientModal = ({ isOpen, onClose, onSuccess, client, assets = [] }: Ed
 
   useEffect(() => {
     if (client && isOpen) {
+      setClientName(client.client_name || '');
+      setWhatsappNumber(client.whatsapp_number || '');
       setLatitude(client.latitude.toString());
       setLongitude(client.longitude.toString());
       setOdpAssetId(client.odp_asset_id?.toString() || '');
@@ -76,9 +80,13 @@ const EditClientModal = ({ isOpen, onClose, onSuccess, client, assets = [] }: Ed
       setError('Koordinat tidak valid. Silakan masukkan ulang.');
       // Reset koordinat ke nilai awal dari client agar user bisa memasukkan ulang
       if (client) {
+        setClientName(client.client_name || '');
+        setWhatsappNumber(client.whatsapp_number || '');
         setLatitude(client.latitude.toString());
         setLongitude(client.longitude.toString());
       } else {
+        setClientName('');
+        setWhatsappNumber('');
         setLatitude('');
         setLongitude('');
       }
@@ -90,6 +98,8 @@ const EditClientModal = ({ isOpen, onClose, onSuccess, client, assets = [] }: Ed
 
     const formDataToSubmit = new FormData();
     formDataToSubmit.append('pppoe_secret_name', client.pppoe_secret_name);
+    if (clientName) formDataToSubmit.append('client_name', clientName);
+    if (whatsappNumber) formDataToSubmit.append('whatsapp_number', whatsappNumber);
     formDataToSubmit.append('latitude', lat.toString());
     formDataToSubmit.append('longitude', lon.toString());
     formDataToSubmit.append('odp_asset_id', odpAssetId || '');
@@ -192,6 +202,35 @@ const EditClientModal = ({ isOpen, onClose, onSuccess, client, assets = [] }: Ed
                   disabled
                   className="bg-secondary"
                 />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label htmlFor="clientNameEdit" className="block text-sm font-medium mb-2 flex items-center gap-2">
+                    <User size={14} /> Nama Client
+                  </label>
+                  <Input
+                    id="clientNameEdit"
+                    type="text"
+                    value={clientName}
+                    onChange={(e) => setClientName(e.target.value)}
+                    placeholder="Contoh: Budi Santoso"
+                    className="bg-input"
+                  />
+                </div>
+                <div>
+                  <label htmlFor="whatsappNumberEdit" className="block text-sm font-medium mb-2 flex items-center gap-2">
+                    <User size={14} /> Nomor Whatsapp
+                  </label>
+                  <Input
+                    id="whatsappNumberEdit"
+                    type="text"
+                    value={whatsappNumber}
+                    onChange={(e) => setWhatsappNumber(e.target.value)}
+                    placeholder="081234567890"
+                    className="bg-input"
+                  />
+                </div>
               </div>
 
               <div className="grid grid-cols-2 gap-4">

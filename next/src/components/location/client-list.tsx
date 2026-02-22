@@ -10,6 +10,8 @@ export interface Client {
   pppoe_secret_name: string;
   latitude: number;
   longitude: number;
+  client_name?: string | null;
+  whatsapp_number?: string | null;
   odp_asset_id: number | null;
   odp_name?: string | null;
   odp_owner_name?: string | null; // Owner dari ODP yang terhubung
@@ -44,7 +46,8 @@ const ClientList = ({ clients, loading, selectedClientId, onClientSelect, onClie
       result = result.filter(client => {
         const nameMatch = client.pppoe_secret_name.toLowerCase().includes(query);
         const odpMatch = client.odp_name?.toLowerCase().includes(query);
-        return nameMatch || odpMatch;
+        const clientNameMatch = client.client_name?.toLowerCase().includes(query);
+        return nameMatch || odpMatch || clientNameMatch;
       });
     }
 
@@ -78,14 +81,21 @@ const ClientList = ({ clients, loading, selectedClientId, onClientSelect, onClie
     };
     handler(mq);
     mq.addEventListener('change', handler);
-    return () => mq.removeEventListener('change', handler);
+
+    const handleForceCollapse = () => setIsCollapsed(true);
+    window.addEventListener('collapse-client-list', handleForceCollapse);
+
+    return () => {
+      mq.removeEventListener('change', handler);
+      window.removeEventListener('collapse-client-list', handleForceCollapse);
+    };
   }, []);
 
   return (
-    <Card className={`flex flex-col ${isCollapsed ? '' : 'h-full'}`}>
-      <CardHeader className="pb-2 px-3 py-2 lg:px-6 lg:py-3 cursor-pointer lg:cursor-default" onClick={() => setIsCollapsed(prev => !prev)}>
+    <Card className={`flex flex-col transition-all duration-300 ${isCollapsed ? 'flex-shrink-0' : 'flex-1 min-h-0'}`}>
+      <CardHeader className="pb-2 px-3 py-2 lg:px-6 lg:py-3 lg:cursor-default">
         <div className="flex items-center justify-between gap-3">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 cursor-pointer" onClick={() => setIsCollapsed(prev => !prev)}>
             <CardTitle className="text-base lg:text-lg whitespace-nowrap">Daftar Client ({filteredClients.length})</CardTitle>
             <button className="lg:hidden text-muted-foreground" aria-label="Toggle">
               {isCollapsed ? <ChevronDown size={16} /> : <ChevronUp size={16} />}
@@ -98,7 +108,16 @@ const ClientList = ({ clients, loading, selectedClientId, onClientSelect, onClie
                 type="text"
                 placeholder="Cari client..."
                 value={searchQuery}
-                onChange={(e) => onSearchChange(e.target.value)}
+                onClick={() => setIsCollapsed(false)}
+                onFocus={() => {
+                  setIsCollapsed(false);
+                  window.dispatchEvent(new CustomEvent('collapse-asset-list'));
+                }}
+                onChange={(e) => {
+                  setIsCollapsed(false);
+                  window.dispatchEvent(new CustomEvent('collapse-asset-list'));
+                  onSearchChange(e.target.value);
+                }}
                 className="pl-8 bg-input text-sm h-8"
               />
             </div>

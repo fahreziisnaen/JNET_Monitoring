@@ -1035,30 +1035,26 @@ const LocationPage = () => {
         </div>
 
         <div className="flex-grow grid grid-cols-1 lg:grid-cols-5 gap-4 lg:gap-6 min-h-0">
-          <div className="lg:col-span-1 lg:min-h-[calc(100vh-200px)] flex flex-col gap-2 lg:gap-4">
-            <div className="lg:flex-1 min-h-0">
-              <AssetList
-                assets={filteredAssets}
-                loading={loading}
-                selectedAssetId={selectedAsset?.id}
-                onAssetSelect={handleAssetSelect}
-                onAssetView={handleAssetView}
-                searchQuery={searchQuery}
-                onSearchChange={setSearchQuery}
-              />
-            </div>
-            <div className="lg:flex-1 min-h-0">
-              <ClientList
-                clients={filteredClients}
-                loading={clientsLoading}
-                selectedClientId={selectedClient?.id}
-                onClientSelect={handleClientSelect}
-                onClientView={handleClientView}
-                searchQuery={clientSearchQuery}
-                onSearchChange={setClientSearchQuery}
-                pppoeSecrets={pppoeSecrets}
-              />
-            </div>
+          <div className="lg:col-span-1 lg:h-[calc(100vh-200px)] flex flex-col gap-2 lg:gap-4 lg:min-h-0">
+            <AssetList
+              assets={filteredAssets}
+              loading={loading}
+              selectedAssetId={selectedAsset?.id}
+              onAssetSelect={handleAssetSelect}
+              onAssetView={handleAssetView}
+              searchQuery={searchQuery}
+              onSearchChange={setSearchQuery}
+            />
+            <ClientList
+              clients={filteredClients}
+              loading={clientsLoading}
+              selectedClientId={selectedClient?.id}
+              onClientSelect={handleClientSelect}
+              onClientView={handleClientView}
+              searchQuery={clientSearchQuery}
+              onSearchChange={setClientSearchQuery}
+              pppoeSecrets={pppoeSecrets}
+            />
           </div>
           <div className="lg:col-span-4 min-h-[400px] lg:min-h-[calc(100vh-200px)] relative z-10">
             <MapDisplay

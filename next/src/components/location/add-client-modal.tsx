@@ -29,6 +29,8 @@ const AddClientModal = ({ isOpen, onClose, onSuccess, assets = [] }: AddClientMo
   const [existingClients, setExistingClients] = useState<string[]>([]);
   const [odpConnections, setOdpConnections] = useState<Map<string, number>>(new Map());
   const [selectedSecret, setSelectedSecret] = useState('');
+  const [clientName, setClientName] = useState('');
+  const [whatsappNumber, setWhatsappNumber] = useState('');
   const [latitude, setLatitude] = useState('');
   const [longitude, setLongitude] = useState('');
   const [odpAssetId, setOdpAssetId] = useState<string>('');
@@ -51,6 +53,8 @@ const AddClientModal = ({ isOpen, onClose, onSuccess, assets = [] }: AddClientMo
       setLoading(true);
       setError('');
       setSelectedSecret('');
+      setClientName('');
+      setWhatsappNumber('');
       setLatitude('');
       setLongitude('');
       setOdpAssetId('');
@@ -173,6 +177,8 @@ const AddClientModal = ({ isOpen, onClose, onSuccess, assets = [] }: AddClientMo
 
     const formDataToSubmit = new FormData();
     formDataToSubmit.append('pppoe_secret_name', selectedSecret);
+    if (clientName) formDataToSubmit.append('client_name', clientName);
+    if (whatsappNumber) formDataToSubmit.append('whatsapp_number', whatsappNumber);
     formDataToSubmit.append('latitude', lat.toString());
     formDataToSubmit.append('longitude', lon.toString());
     if (odpAssetId) {
@@ -299,6 +305,35 @@ const AddClientModal = ({ isOpen, onClose, onSuccess, assets = [] }: AddClientMo
                     Pilih device MikroTik terlebih dahulu untuk melihat PPPoE secrets.
                   </p>
                 )}
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label htmlFor="clientName" className="block text-sm font-medium mb-2 flex items-center gap-2">
+                    <User size={14} /> Nama Client
+                  </label>
+                  <Input
+                    id="clientName"
+                    type="text"
+                    value={clientName}
+                    onChange={(e) => setClientName(e.target.value)}
+                    placeholder="Contoh: Budi Santoso"
+                    className="bg-input"
+                  />
+                </div>
+                <div>
+                  <label htmlFor="whatsappNumber" className="block text-sm font-medium mb-2 flex items-center gap-2">
+                    <User size={14} /> Nomor Whatsapp
+                  </label>
+                  <Input
+                    id="whatsappNumber"
+                    type="text"
+                    value={whatsappNumber}
+                    onChange={(e) => setWhatsappNumber(e.target.value)}
+                    placeholder="081234567890"
+                    className="bg-input"
+                  />
+                </div>
               </div>
 
               <div className="grid grid-cols-2 gap-4">

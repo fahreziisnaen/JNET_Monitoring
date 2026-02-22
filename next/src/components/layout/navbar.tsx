@@ -17,8 +17,8 @@ const navItems = [
 const Navbar = () => {
     const pathname = usePathname();
     return (
-        <nav className="fixed bottom-4 sm:bottom-6 inset-x-0 flex justify-center z-50 px-2 sm:px-0">
-            <div className="flex items-center gap-x-3 sm:gap-x-6 md:gap-x-8 px-4 sm:px-6 md:px-8 py-2 sm:py-3 bg-card/80 backdrop-blur-md rounded-full shadow-lg border">
+        <nav className="fixed bottom-4 sm:bottom-6 inset-x-0 flex justify-center z-50 px-2 sm:px-0 pointer-events-none">
+            <div className="pointer-events-auto flex items-center gap-x-3 sm:gap-x-6 md:gap-x-8 px-4 sm:px-6 md:px-8 py-2 sm:py-3 bg-card/80 backdrop-blur-md rounded-full shadow-lg border">
                 {navItems.map((item) => {
                     const isActive = pathname === item.href;
                     const Icon = item.icon;

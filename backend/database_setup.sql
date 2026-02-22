@@ -179,6 +179,8 @@ CREATE TABLE `clients` (
   `id` int NOT NULL AUTO_INCREMENT,
   `workspace_id` int NOT NULL,
   `pppoe_secret_name` varchar(100) NOT NULL,
+  `client_name` varchar(100) DEFAULT NULL,
+  `whatsapp_number` varchar(20) DEFAULT NULL,
   `latitude` decimal(10,8) NOT NULL,
   `longitude` decimal(11,8) NOT NULL,
   `odp_asset_id` int DEFAULT NULL,

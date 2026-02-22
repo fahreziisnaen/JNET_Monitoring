@@ -70,14 +70,21 @@ const AssetList = ({ assets, loading, selectedAssetId, onAssetSelect, onAssetVie
     };
     handler(mq);
     mq.addEventListener('change', handler);
-    return () => mq.removeEventListener('change', handler);
+
+    const handleForceCollapse = () => setIsCollapsed(true);
+    window.addEventListener('collapse-asset-list', handleForceCollapse);
+
+    return () => {
+      mq.removeEventListener('change', handler);
+      window.removeEventListener('collapse-asset-list', handleForceCollapse);
+    };
   }, []);
 
   return (
-    <Card className={`flex flex-col ${isCollapsed ? '' : 'h-full'}`}>
-      <CardHeader className="pb-2 px-3 py-2 lg:px-6 lg:py-3 cursor-pointer lg:cursor-default" onClick={() => setIsCollapsed(prev => !prev)}>
+    <Card className={`flex flex-col transition-all duration-300 ${isCollapsed ? 'flex-shrink-0' : 'flex-1 min-h-0'}`}>
+      <CardHeader className="pb-2 px-3 py-2 lg:px-6 lg:py-3 lg:cursor-default">
         <div className="flex items-center justify-between gap-3">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 cursor-pointer" onClick={() => setIsCollapsed(prev => !prev)}>
             <CardTitle className="text-base lg:text-lg whitespace-nowrap">Daftar Aset ({filteredAssets.length})</CardTitle>
             <button className="lg:hidden text-muted-foreground" aria-label="Toggle">
               {isCollapsed ? <ChevronDown size={16} /> : <ChevronUp size={16} />}
@@ -90,7 +97,16 @@ const AssetList = ({ assets, loading, selectedAssetId, onAssetSelect, onAssetVie
                 type="text"
                 placeholder="Cari aset..."
                 value={searchQuery}
-                onChange={(e) => onSearchChange(e.target.value)}
+                onClick={() => setIsCollapsed(false)}
+                onFocus={() => {
+                  setIsCollapsed(false);
+                  window.dispatchEvent(new CustomEvent('collapse-client-list'));
+                }}
+                onChange={(e) => {
+                  setIsCollapsed(false);
+                  window.dispatchEvent(new CustomEvent('collapse-client-list'));
+                  onSearchChange(e.target.value);
+                }}
                 className="pl-8 bg-input text-sm h-8"
               />
             </div>
