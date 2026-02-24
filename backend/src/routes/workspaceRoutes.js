@@ -19,5 +19,6 @@ router.get('/all', authorizeSuperAdmin, workspaceController.getAllWorkspaces);
 router.get('/all-users', authorizeSuperAdmin, workspaceController.getAllUsers);
 router.put('/:workspaceId/whatsapp-group-id', authorizeSuperAdmin, workspaceController.adminUpdateWhatsAppGroupId);
 router.put('/:workspaceId/whatsapp-alert-toggle', authorizeSuperAdmin, workspaceController.adminToggleWhatsAppAlert);
+router.post('/switch/:workspaceId', authorizeSuperAdmin, workspaceController.switchWorkspace);
 
 module.exports = router;

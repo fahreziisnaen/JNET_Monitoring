@@ -43,12 +43,12 @@ const protect = async (req, res, next) => {
 
             // Verify if the session still exists in database (allows revoking tokens on logout)
             const [sessions] = await pool.query(
-                'SELECT id FROM user_sessions WHERE token_id = ? AND user_id = ?',
+                'SELECT id, token_id, user_agent, ip_address FROM user_sessions WHERE token_id = ? AND user_id = ?',
                 [decoded.jti, decoded.id]
             );
 
             if (sessions.length === 0) {
-                console.warn(`[Auth Middleware] Session ${decoded.jti} not found in database. Token revoked.`);
+                console.warn(`[Auth Middleware] Session ${decoded.jti} not found in database for user ${decoded.id}. Token revoked.`);
                 return res.status(401).json({ message: 'Sesi telah berakhir atau dikeluarkan. Silakan login kembali.' });
             }
 
@@ -101,6 +101,17 @@ const protect = async (req, res, next) => {
                 is_super_admin: isSuperAdmin,
                 jti: decoded.jti
             };
+
+            // --- SUPER ADMIN WORKSPACE OVERRIDE ---
+            // If the user is a superadmin, and explicitly passed a workspaceId in the body or query,
+            // temporarily override their active workspace context just for this request.
+            // This enables cross-workspace NOC actions seamlessly.
+            if (isSuperAdmin) {
+                const targetWorkspaceId = (req.body && req.body.workspaceId) || (req.query && req.query.workspaceId);
+                if (targetWorkspaceId) {
+                    req.user.workspace_id = parseInt(targetWorkspaceId, 10);
+                }
+            }
 
             await pool.query(
                 'UPDATE user_sessions SET last_seen = NOW() WHERE token_id = ?',

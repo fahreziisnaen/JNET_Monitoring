@@ -143,7 +143,11 @@ exports.verifyLoginOtp = async (req, res) => {
         const payload = { id: user.id, username: user.username, workspace_id: user.workspace_id, jti: tokenId };
         const token = jwt.sign(payload, process.env.JWT_SECRET || 'fallback_secret', { expiresIn: '7d' });
 
-        await pool.query('INSERT INTO user_sessions (user_id, token_id, user_agent, ip_address) VALUES (?, ?, ?, ?)', [user.id, tokenId, userAgent, normalizedIp]);
+        console.log(`[Auth Debug] Creating new session for user ${user.id}. Token ID (jti): ${tokenId}. IP: ${normalizedIp}, UA: ${userAgent}`);
+
+        const [insertResult] = await pool.query('INSERT INTO user_sessions (user_id, token_id, user_agent, ip_address) VALUES (?, ?, ?, ?)', [user.id, tokenId, userAgent, normalizedIp]);
+
+        console.log(`[Auth Debug] Session inserted successfully with DB ID: ${insertResult.insertId}`);
 
         const cookieOptions = {
             httpOnly: true,

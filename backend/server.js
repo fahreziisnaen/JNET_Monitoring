@@ -56,6 +56,7 @@ const dashboardRoutes = require('./src/routes/dashboardRoutes');
 const clientRoutes = require('./src/routes/clientRoutes');
 const reportRoutes = require('./src/routes/reportRoutes');
 const backupRoutes = require('./src/routes/backupRoutes');
+const nocRoutes = require('./src/routes/nocRoutes');
 
 const app = express();
 const server = http.createServer(app);
@@ -119,6 +120,7 @@ app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/clients', clientRoutes);
 app.use('/api/reports', reportRoutes);
 app.use('/api/backup', backupRoutes);
+app.use('/api/noc', nocRoutes);
 
 const wss = new WebSocket.Server({ server, path: "/ws" });
 
@@ -749,6 +751,20 @@ wss.on('connection', (ws, req) => {
 
                 connection = getConnection(connectionKey);
                 console.log(`[WebSocket] Hasil mendapatkan connection untuk key ${connectionKey} setelah monitoring:`, !!connection);
+
+                // Kirim status koneksi terkini ke client baru ini (bisa offline sejak awal)
+                const initialStatus = mikrotikStore.getDeviceStatus(ws.workspaceId, finalDeviceId);
+                try {
+                    ws.send(JSON.stringify({
+                        type: 'connection-status',
+                        payload: {
+                            status: initialStatus,
+                            deviceId: finalDeviceId,
+                            message: initialStatus === 'connected' ? 'Terhubung ke perangkat Mikrotik' : 'Koneksi ke perangkat Mikrotik terputus',
+                            timestamp: Date.now()
+                        }
+                    }));
+                } catch (e) { }
             } else {
                 // Connection sudah ada, broadcast status terkininya
                 const status = mikrotikStore.getDeviceStatus(ws.workspaceId, finalDeviceId);

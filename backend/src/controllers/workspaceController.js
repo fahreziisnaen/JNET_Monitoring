@@ -1,5 +1,7 @@
 const pool = require('../config/database');
 const { runCommandForWorkspace } = require('../utils/apiConnection');
+const crypto = require('crypto');
+const jwt = require('jsonwebtoken');
 
 exports.setActiveDevice = async (req, res) => {
     const workspaceId = req.user.workspace_id;
@@ -308,5 +310,79 @@ exports.getAllUsers = async (req, res) => {
     } catch (error) {
         console.error("GET ALL USERS ERROR:", error);
         res.status(500).json({ message: 'Gagal mengambil daftar user.' });
+    }
+};
+
+exports.switchWorkspace = async (req, res) => {
+    const { workspaceId } = req.params;
+    const adminUserId = req.user.id;
+
+    try {
+        // Cek apakah workspace ada
+        const [workspaces] = await pool.query('SELECT id, name FROM workspaces WHERE id = ?', [workspaceId]);
+        if (workspaces.length === 0) {
+            return res.status(404).json({ message: 'Workspace tidak ditemukan.' });
+        }
+
+        const workspace = workspaces[0];
+
+        // Update workspace_id pengguna di tabel users
+        await pool.query('UPDATE users SET workspace_id = ? WHERE id = ?', [workspaceId, adminUserId]);
+
+        // Hapus sesi saat ini untuk perangkat ini
+        const forwarded = req.headers['x-forwarded-for'];
+        let rawIp = forwarded ? forwarded.split(',')[0].trim() : req.ip;
+        let normalizedIp = rawIp ? (rawIp.includes('::ffff:') ? rawIp.split('::ffff:')[1] : rawIp) : 'Unknown';
+        if (normalizedIp === '::1') normalizedIp = '127.0.0.1';
+        const userAgent = req.headers['user-agent'] || 'Unknown';
+
+        await pool.query(
+            'DELETE FROM user_sessions WHERE user_id = ? AND user_agent = ? AND ip_address = ?',
+            [adminUserId, userAgent, normalizedIp]
+        );
+
+        // Generate token baru
+        const tokenId = crypto.randomBytes(16).toString('hex');
+
+        // Ambil data user yang update
+        const [updatedUsers] = await pool.query('SELECT * FROM users WHERE id = ?', [adminUserId]);
+        if (updatedUsers.length === 0) {
+            return res.status(404).json({ message: 'User tidak ditemukan.' });
+        }
+
+        const updatedUser = updatedUsers[0];
+
+        const payload = {
+            id: updatedUser.id,
+            username: updatedUser.username,
+            workspace_id: updatedUser.workspace_id,
+            jti: tokenId
+        };
+
+        const token = jwt.sign(payload, process.env.JWT_SECRET || 'fallback_secret', { expiresIn: '7d' });
+
+        await pool.query(
+            'INSERT INTO user_sessions (user_id, token_id, user_agent, ip_address) VALUES (?, ?, ?, ?)',
+            [adminUserId, tokenId, userAgent, normalizedIp]
+        );
+
+        const cookieOptions = {
+            httpOnly: true,
+            secure: process.env.NODE_ENV === 'production',
+            maxAge: 7 * 24 * 60 * 60 * 1000,
+            sameSite: 'lax',
+            path: '/',
+        };
+        res.cookie('token', token, cookieOptions);
+
+        res.status(200).json({
+            message: `Berhasil pindah ke workspace ${workspace.name}`,
+            token: token,
+            workspace: workspace
+        });
+
+    } catch (error) {
+        console.error("SWITCH WORKSPACE ERROR:", error);
+        res.status(500).json({ message: 'Gagal berpindah workspace.' });
     }
 };
