@@ -30,11 +30,7 @@ export default function ConnectionStatusToast() {
                 if (!toastIdRef.current) {
                     toastIdRef.current = toast.error('Koneksi Terputus', {
                         description: message || 'Koneksi ke perangkat Mikrotik terputus.',
-                        duration: Infinity, // Persistent until reconnected
-                        action: {
-                            label: 'Reconnect',
-                            onClick: () => window.location.reload()
-                        }
+                        duration: Infinity // Persistent until reconnected
                     });
                 }
             } else if (status === 'connected') {

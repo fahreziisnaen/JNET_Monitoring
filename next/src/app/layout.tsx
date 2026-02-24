@@ -6,6 +6,7 @@ import { ThemeProvider } from "@/components/providers/theme-provider";
 import { AuthProvider } from "@/components/providers/auth-provider";
 import { MikrotikProvider } from "@/components/providers/mikrotik-provider";
 import { NotificationProvider } from "@/components/providers/notification-provider";
+import { BackendOfflineOverlay } from "@/components/ui/backend-offline-overlay";
 import { Toaster } from "sonner";
 
 const inter = Inter({ subsets: ["latin"] });
@@ -35,6 +36,7 @@ export default function RootLayout({ children }: { children: React.ReactNode; })
             <MikrotikProvider>
               <NotificationProvider>
                 {children}
+                <BackendOfflineOverlay />
                 <Toaster richColors position="top-right" closeButton />
               </NotificationProvider>
             </MikrotikProvider>

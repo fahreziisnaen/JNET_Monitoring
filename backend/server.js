@@ -196,13 +196,16 @@ async function startWorkspaceMonitoring(workspaceId, connectionKey, deviceId = n
         const WS_TIMEOUT = 24 * 60 * 60 * 1000;
         client = await getOrCreateConnection(workspaceId, WS_TIMEOUT, connectionKey, deviceId);
 
-        // Broadcast status connected
+        // Tentukan status koneksi berdasarkan store yang di-\update oleh dataLogger
+        const currentDeviceStatus = mikrotikStore.getDeviceStatus(workspaceId, deviceId);
+
+        // Broadcast status
         broadcastToWorkspace(workspaceId, {
             type: 'connection-status',
             payload: {
-                status: 'connected',
+                status: currentDeviceStatus,
                 deviceId: deviceId,
-                message: 'Terhubung ke perangkat Mikrotik',
+                message: currentDeviceStatus === 'connected' ? 'Terhubung ke perangkat Mikrotik' : 'Koneksi ke perangkat Mikrotik terputus',
                 timestamp: Date.now()
             }
         });
@@ -513,8 +516,9 @@ async function startWorkspaceMonitoring(workspaceId, connectionKey, deviceId = n
                     // Log WS monitoring disabled
                 }
                 // Hanya stop jika error fatal
-                if (cycleError.message?.includes('not connected') || cycleError.message?.includes('connection closed')) {
+                if (cycleError.message?.includes('not connected') || cycleError.message?.includes('connection closed') || cycleError.message?.toLowerCase().includes('timeout')) {
                     stopWorkspaceMonitoring(connectionKey, `Connection error detected: ${cycleError.message}`);
+                    mikrotikStore.setDeviceStatus(workspaceId, deviceId, 'disconnected');
                 }
             } finally {
                 isRunning = false; // Reset flag setelah cycle selesai
@@ -745,6 +749,20 @@ wss.on('connection', (ws, req) => {
 
                 connection = getConnection(connectionKey);
                 console.log(`[WebSocket] Hasil mendapatkan connection untuk key ${connectionKey} setelah monitoring:`, !!connection);
+            } else {
+                // Connection sudah ada, broadcast status terkininya
+                const status = mikrotikStore.getDeviceStatus(ws.workspaceId, finalDeviceId);
+                try {
+                    ws.send(JSON.stringify({
+                        type: 'connection-status',
+                        payload: {
+                            status: status,
+                            deviceId: finalDeviceId,
+                            message: status === 'connected' ? 'Terhubung ke perangkat Mikrotik' : 'Koneksi ke perangkat Mikrotik terputus',
+                            timestamp: Date.now()
+                        }
+                    }));
+                } catch (e) { }
             }
 
             if (connection) {
@@ -762,7 +780,7 @@ wss.on('connection', (ws, req) => {
 
             console.log(`[WebSocket] Koneksi berhasil di-setup untuk workspace ${ws.workspaceId}, device ${finalDeviceId}`);
 
-            ws.on('message', (message) => {
+            ws.on('message', async (message) => { // Dibuat async
                 try {
                     const data = JSON.parse(message);
                     if (data.type === 'force-refresh' && data.target === 'secrets') {
@@ -770,6 +788,22 @@ wss.on('connection', (ws, req) => {
                         const currentConnection = getConnection(connectionKey);
                         if (currentConnection && currentConnection.forceSecretRefresh) {
                             currentConnection.forceSecretRefresh();
+                        } else {
+                            // Jika polling backend mati (misal karena offline sebelumnya), nyalakan kembali!
+                            console.log(`[WebSocket] Thread monitoring terhenti. Memulai ulang monitoring untuk workspace ${ws.workspaceId}`);
+                            await startWorkspaceMonitoring(ws.workspaceId, connectionKey, finalDeviceId);
+
+                            const newConnection = getConnection(connectionKey);
+                            if (newConnection) {
+                                // Hitung total user aktif di workspace ini untuk mengamankan lifecycle connection
+                                let activeUsers = 0;
+                                wss.clients.forEach(c => {
+                                    if (c.workspaceId === ws.workspaceId && c.readyState === WebSocket.OPEN) {
+                                        activeUsers++;
+                                    }
+                                });
+                                newConnection.userCount = activeUsers;
+                            }
                         }
                     }
                 } catch (e) {

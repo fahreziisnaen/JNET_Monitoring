@@ -48,14 +48,14 @@ export const DeviceSelector: React.FC<DeviceSelectorProps> = ({
         if (devicesRes.ok && workspaceRes.ok) {
           const devicesData = await devicesRes.json();
           const workspaceData = await workspaceRes.json();
-          
+
           setDevices(devicesData);
           setActiveDeviceId(workspaceData.active_device_id);
-          
-          // Jika belum ada selectedDeviceId, gunakan active_device_id
+
+          // Jika belum ada selectedDeviceId (dan tidak ada di localStorage), gunakan active_device_id
           // Hanya panggil onDeviceChange jika benar-benar perlu untuk menghindari infinite loop
-          // Tambahkan delay kecil untuk memastikan state sudah ter-update
-          if (!selectedDeviceId && workspaceData.active_device_id) {
+          const savedLocalDevice = localStorage.getItem(`selected-device-${user.workspace_id}`);
+          if (!selectedDeviceId && workspaceData.active_device_id && !savedLocalDevice) {
             // Delay untuk memastikan tidak ada race condition dengan WebSocket connection
             setTimeout(() => {
               if (!selectedDeviceId) { // Double check setelah delay

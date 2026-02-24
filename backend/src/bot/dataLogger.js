@@ -2,6 +2,7 @@ const pool = require('../config/database');
 const { runCommandForWorkspace, getOrCreateConnection, getDeviceConnectionKey } = require('../utils/apiConnection');
 const { sendWhatsAppMessage, getWorkspaceWhatsAppTarget } = require('../services/whatsappService');
 const crypto = require('crypto');
+const mikrotikStore = require('../utils/mikrotikStore');
 
 /**
  * Format durasi dalam detik menjadi format "x hari x jam x menit x detik"
@@ -30,9 +31,9 @@ function formatDuration(totalSeconds) {
 const alarmState = new Map();
 const lastTrafficData = new Map();
 
-async function checkAlarms(workspaceId, device) {
+async function checkAlarms(workspaceId, device, broadcastCallback = null) {
     if (!alarmState.has(workspaceId)) {
-        alarmState.set(workspaceId, { cpuCooldown: 0, offlineCooldown: 0 });
+        alarmState.set(workspaceId, { cpuCooldown: 0, offlineCooldown: 0, isOffline: false });
     }
     const state = alarmState.get(workspaceId);
     const now = Date.now();
@@ -43,10 +44,30 @@ async function checkAlarms(workspaceId, device) {
 
     try {
         const [resource] = await runCommandForWorkspace(workspaceId, '/system/resource/print');
-        if (state.offlineCooldown !== 0) {
-            const message = `✅ *PERANGKAT ONLINE* ✅\n\nKoneksi ke perangkat *${device.name}* telah pulih.`;
-            await sendWhatsAppMessage(whatsappTarget, message);
-            state.offlineCooldown = 0;
+        if (state.isOffline) {
+            // Transmit 'connected' broadcast to UI to dismiss failure Toast instantly
+            if (broadcastCallback) {
+                console.log(`[Alarms] Broadcasting DEVICE_ONLINE to workspace ${workspaceId} via WebSocket`);
+                broadcastCallback(workspaceId, {
+                    type: 'connection-status',
+                    payload: {
+                        status: 'connected',
+                        deviceId: device.id,
+                        message: `Koneksi ke perangkat Mikrotik berhasil dipulihkan.`,
+                        timestamp: Date.now()
+                    }
+                });
+            }
+            mikrotikStore.setDeviceStatus(workspaceId, device.id, 'connected');
+
+            if (state.offlineCooldown !== 0) {
+                const message = `✅ *PERANGKAT ONLINE* ✅\n\nKoneksi ke perangkat *${device.name}* telah pulih.`;
+                await sendWhatsAppMessage(whatsappTarget, message);
+                state.offlineCooldown = 0;
+            }
+
+            // Reset offline flag
+            state.isOffline = false;
         }
 
         const [alarms] = await pool.query('SELECT * FROM alarms WHERE workspace_id = ? AND type = "CPU_LOAD"', [workspaceId]);
@@ -59,6 +80,26 @@ async function checkAlarms(workspaceId, device) {
             }
         }
     } catch (error) {
+        // Track that we are currently offline so recovery knows to fire
+        if (!state.isOffline) {
+            state.isOffline = true;
+            mikrotikStore.setDeviceStatus(workspaceId, device.id, 'disconnected');
+
+            // Broadcast ke UI setiap kali transisi ke offline
+            if (broadcastCallback) {
+                console.log(`[Alarms] Broadcasting DEVICE_OFFLINE to workspace ${workspaceId} via WebSocket`);
+                broadcastCallback(workspaceId, {
+                    type: 'connection-status',
+                    payload: {
+                        status: 'disconnected',
+                        deviceId: device.id,
+                        message: `Koneksi ke Mikrotik (${device.name}) Terputus.`,
+                        timestamp: Date.now()
+                    }
+                });
+            }
+        }
+
         if (state.offlineCooldown < now) {
             const [alarms] = await pool.query('SELECT * FROM alarms WHERE workspace_id = ? AND type = "DEVICE_OFFLINE"', [workspaceId]);
             if (alarms.length > 0) {
@@ -68,6 +109,7 @@ async function checkAlarms(workspaceId, device) {
             }
         }
     }
+
     alarmState.set(workspaceId, state);
 }
 
@@ -345,7 +387,7 @@ async function sendDowntimeNotifications(broadcastCallback = null) {
  */
 async function groupDevicesByCredentials() {
     const [devices] = await pool.query(`
-        SELECT d.id as device_id, d.workspace_id, d.host, d.user, d.password, d.port
+        SELECT d.id as device_id, d.workspace_id, d.name, d.host, d.user, d.password, d.port
         FROM mikrotik_devices d
         JOIN workspaces w ON d.workspace_id = w.id
     `);
@@ -366,7 +408,9 @@ async function groupDevicesByCredentials() {
 
         deviceGroups.get(groupKey).devices.push({
             device_id: device.device_id,
-            workspace_id: device.workspace_id
+            workspace_id: device.workspace_id,
+            name: device.name,
+            host: device.host
         });
     }
 
@@ -401,7 +445,15 @@ async function monitorSlaAndNotifications(broadcastCallback = null) {
 
                 // Cek apakah client terhubung
                 if (!client || !client.connected) {
+                    for (const device of group.devices) {
+                        await checkAlarms(device.workspace_id, { id: device.device_id, name: device.name, host: device.host }, broadcastCallback);
+                    }
                     continue; // Skip jika tidak terhubung
+                }
+
+                // Jalankan checkAlarms saat terhubung untuk memeriksa status recovery (menghilangkan toast) dan beban CPU
+                for (const device of group.devices) {
+                    await checkAlarms(device.workspace_id, { id: device.device_id, name: device.name, host: device.host }, broadcastCallback);
                 }
 
                 // Ambil PPPoE active users (polling sekali)
@@ -439,9 +491,12 @@ async function monitorSlaAndNotifications(broadcastCallback = null) {
                         continue; // Skip, ini normal
                     }
                     console.warn(`[SLA Monitor] Error UNKNOWNREPLY untuk device group ${groupKey}, akan diabaikan:`, error.message);
-                } else if (error.message?.includes('not connected') || error.message?.includes('connection')) {
-                    // Error koneksi, skip group ini
-                    console.warn(`[SLA Monitor] Error koneksi untuk device group ${groupKey}, akan diabaikan:`, error.message);
+                } else if (error.message?.includes('not connected') || error.message?.includes('connection') || error.message?.toLowerCase().includes('time') || error.message?.includes('ECONNREFUSED')) {
+                    // Error koneksi, catat SLA alarm untuk setiap workspace yang menggunakan device ini
+                    console.warn(`[SLA Monitor] Error koneksi untuk device group ${groupKey}, memanggil checkAlarms untuk semua workspace:`, error.message);
+                    for (const device of group.devices) {
+                        await checkAlarms(device.workspace_id, { id: device.device_id, name: device.name, host: device.host }, broadcastCallback);
+                    }
                 } else {
                     console.error(`[SLA Monitor] Gagal memproses device group ${groupKey}:`, error.message || error);
                 }

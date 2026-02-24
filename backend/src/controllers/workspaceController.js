@@ -24,7 +24,7 @@ exports.getWorkspace = async (req, res) => {
         return res.status(404).json({ message: 'Workspace tidak ditemukan.' });
     }
     try {
-        const [workspaces] = await pool.query('SELECT * FROM workspaces WHERE id = ?', [workspaceId]);
+        const [workspaces] = await pool.query('SELECT *, whatsapp_bot_enabled FROM workspaces WHERE id = ?', [workspaceId]);
         if (workspaces.length === 0) {
             return res.status(404).json({ message: 'Detail workspace tidak ditemukan.' });
         }
@@ -191,7 +191,7 @@ exports.removeMember = async (req, res) => {
 exports.getAllWorkspaces = async (req, res) => {
     try {
         const [workspaces] = await pool.query(
-            'SELECT id, name, whatsapp_group_id, owner_id FROM workspaces ORDER BY name ASC'
+            'SELECT id, name, whatsapp_group_id, owner_id, whatsapp_bot_enabled FROM workspaces ORDER BY name ASC'
         );
         res.json(workspaces);
     } catch (error) {
@@ -214,6 +214,19 @@ exports.adminUpdateWhatsAppGroupId = async (req, res) => {
     } catch (error) {
         console.error("ADMIN UPDATE WHATSAPP GROUP ID ERROR:", error);
         res.status(500).json({ message: 'Gagal memperbarui WhatsApp Group ID.' });
+    }
+};
+
+exports.adminToggleWhatsAppAlert = async (req, res) => {
+    const { workspaceId } = req.params;
+    const { whatsapp_bot_enabled } = req.body;
+
+    try {
+        await pool.query('UPDATE workspaces SET whatsapp_bot_enabled = ? WHERE id = ?', [whatsapp_bot_enabled ? 1 : 0, workspaceId]);
+        res.status(200).json({ message: `Alert WhatsApp berhasil ${whatsapp_bot_enabled ? 'diaktifkan' : 'dinonaktifkan'} untuk workspace ini.` });
+    } catch (error) {
+        console.error("ADMIN TOGGLE WHATSAPP ALERT ERROR:", error);
+        res.status(500).json({ message: 'Gagal mengubah status Alert WhatsApp.' });
     }
 };
 

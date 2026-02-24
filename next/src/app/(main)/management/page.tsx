@@ -15,7 +15,7 @@ import { apiFetch } from '@/utils/api';
 
 const ManagementPage = () => {
   const { user } = useAuth();
-  const { selectedDeviceId, setSelectedDeviceId, pppoeSecrets, forceRefresh } = useMikrotik() || {};
+  const { selectedDeviceId, setSelectedDeviceId, pppoeSecrets, forceRefresh, isConnected } = useMikrotik() || {};
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [isIpPoolModalOpen, setIsIpPoolModalOpen] = useState(false);
   const [summary, setSummary] = useState({ total: 0, active: 0, inactive: 0 });
@@ -45,6 +45,13 @@ const ManagementPage = () => {
 
     checkDevices();
   }, [user?.workspace_id]);
+
+  // Ensure auto update triggers correctly on reconnection
+  useEffect(() => {
+    if (isConnected === true && forceRefresh) {
+      forceRefresh();
+    }
+  }, [isConnected, forceRefresh]);
 
   // Tidak perlu fetchSummary lagi, semua data dari WebSocket
   const fetchSummary = useCallback(async () => {
@@ -156,23 +163,38 @@ const ManagementPage = () => {
               className="w-full sm:w-auto"
             />
             <div className="flex items-center gap-2 w-full sm:w-auto">
-              <Button variant="secondary" onClick={() => setIsIpPoolModalOpen(true)} className="flex-1 sm:flex-none">
+              <Button variant="secondary" onClick={() => setIsIpPoolModalOpen(true)} className="flex-1 sm:flex-none" disabled={!isConnected}>
                 <Settings size={18} /> <span className="hidden sm:inline">Atur IP Pool</span>
               </Button>
-              <Button onClick={() => setIsAddModalOpen(true)} className="flex-1 sm:flex-none">
+              <Button onClick={() => setIsAddModalOpen(true)} className="flex-1 sm:flex-none" disabled={!isConnected}>
                 <Plus size={18} /> <span className="hidden sm:inline text-xs sm:text-sm">Tambah</span>
               </Button>
             </div>
           </div>
         </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 lg:gap-6">
-          {renderSummaryCard("Total Secrets", summary.total, <Users size={28} />, "bg-gradient-to-br from-blue-500 to-blue-700", 'all')}
-          {renderSummaryCard("Aktif", summary.active, <UserCheck size={28} />, "bg-gradient-to-br from-green-500 to-green-700", 'active')}
-          {renderSummaryCard("Tidak Aktif", summary.inactive, <UserX size={28} />, "bg-gradient-to-br from-red-500 to-red-700", 'inactive')}
-        </div>
-        <div className="mt-8">
-          <PppoeSecretsTable refreshTrigger={refreshTrigger} onActionComplete={handleSuccess} initialFilter={activeFilter} />
-        </div>
+
+        {!isConnected && !loading ? (
+          <div className="flex flex-col items-center justify-center p-12 bg-secondary/50 rounded-xl border border-destructive/20 mt-8">
+            <div className="h-16 w-16 bg-destructive/10 rounded-full flex items-center justify-center mb-4">
+              <UserX className="h-8 w-8 text-destructive" />
+            </div>
+            <h2 className="text-xl font-bold mb-2">Mikrotik Terputus</h2>
+            <p className="text-muted-foreground text-center max-w-md">
+              Koneksi ke perangkat Mikrotik saat ini terputus. Data pelanggan tidak dapat ditampilkan hingga koneksi pulih kembali.
+            </p>
+          </div>
+        ) : (
+          <>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 lg:gap-6">
+              {renderSummaryCard("Total Secrets", summary.total, <Users size={28} />, "bg-gradient-to-br from-blue-500 to-blue-700", 'all')}
+              {renderSummaryCard("Aktif", summary.active, <UserCheck size={28} />, "bg-gradient-to-br from-green-500 to-green-700", 'active')}
+              {renderSummaryCard("Tidak Aktif", summary.inactive, <UserX size={28} />, "bg-gradient-to-br from-red-500 to-red-700", 'inactive')}
+            </div>
+            <div className="mt-8">
+              <PppoeSecretsTable refreshTrigger={refreshTrigger} onActionComplete={handleSuccess} initialFilter={activeFilter} />
+            </div>
+          </>
+        )}
       </div>
       <AddPppoeSecretModal isOpen={isAddModalOpen} onClose={() => setIsAddModalOpen(false)} onSuccess={handleSuccess} />
       <IpPoolManagerModal isOpen={isIpPoolModalOpen} onClose={() => setIsIpPoolModalOpen(false)} />

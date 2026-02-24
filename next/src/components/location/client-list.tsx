@@ -16,6 +16,7 @@ export interface Client {
   odp_name?: string | null;
   odp_owner_name?: string | null; // Owner dari ODP yang terhubung
   isActive?: boolean; // Status aktif dari PPPoE
+  isOffline?: boolean;
   created_at?: string;
   updated_at?: string;
   connection_path?: string | [number, number][];

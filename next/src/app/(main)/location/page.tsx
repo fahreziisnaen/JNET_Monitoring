@@ -51,7 +51,11 @@ const isAssetUp = (asset: Asset): boolean => {
 };
 
 const LocationPage = () => {
-  const { pppoeSecrets } = useMikrotik() || { pppoeSecrets: [] };
+  const [activeFilter, setActiveFilter] = useState('all');
+
+  const { pppoeSecrets, isConnected } = useMikrotik() || { pppoeSecrets: [] };
+
+  const [isClientModalOpen, setIsClientModalOpen] = useState(false);
   const [assets, setAssets] = useState<Asset[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
   const [loading, setLoading] = useState(true);
@@ -140,13 +144,19 @@ const LocationPage = () => {
   }, []);
 
   useEffect(() => {
+    // Selalu fetch saat komponen mount atau saat user memicu refresh manual
     fetchAssets();
     fetchClients();
-  }, [fetchAssets, fetchClients, refreshTrigger]);
+  }, [fetchAssets, fetchClients, refreshTrigger, isConnected]);
 
   // Derive real-time client status from pppoeSecrets
   const realTimeClientsBySecrets = useMemo(() => {
-    if (!pppoeSecrets || pppoeSecrets.length === 0) return clients;
+    // Check global disconnected status first
+    if (!isConnected) {
+      return []; // If the selected Mikrotik is offline, we instantly hide ALL tracked clients on this map view
+    }
+
+    if (!pppoeSecrets || pppoeSecrets.length === 0) return clients.filter(c => !c.isOffline); // Filter here too if no secrets
 
     // Create a map for fast lookup by name
     const secretMap = new Map(pppoeSecrets.map((s: any) => [s.name, s]));
@@ -157,8 +167,8 @@ const LocationPage = () => {
         ...client,
         isActive: secret ? secret.isActive : false
       };
-    });
-  }, [clients, pppoeSecrets]);
+    }).filter(c => !c.isOffline); // Automatically drop clients that are marked offline by the backend
+  }, [clients, pppoeSecrets, isConnected]);
 
   // Derive real-time asset status (specifically for ODPs based on their connected clients)
   const realTimeAssetsBySecrets = useMemo(() => {

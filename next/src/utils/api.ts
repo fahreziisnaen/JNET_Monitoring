@@ -82,6 +82,12 @@ export async function apiFetch(
     // Log network errors
     if (error?.message?.includes('Failed to fetch') || error?.message?.includes('NetworkError')) {
       console.error(`[API Fetch] Network error untuk ${url}:`, error.message);
+
+      // Memicu trigger untuk BackendOfflineOverlay jika dieksekusi di ranah Browser
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('backend-connection-error'));
+      }
+
       throw new Error('Gagal terhubung ke server. Pastikan server sedang berjalan dan dapat diakses.');
     }
 

@@ -40,6 +40,7 @@ exports.getClients = async (req, res) => {
                     c.odp_asset_id, c.connection_path, c.photo_url, c.created_at, c.updated_at,
                     na.name as odp_name,
                     na.owner_name as odp_owner_name,
+                    pus.device_id,
                     COALESCE(pus.is_active, FALSE) as isActive
              FROM clients c
              LEFT JOIN network_assets na ON c.odp_asset_id = na.id
@@ -67,11 +68,16 @@ exports.getClients = async (req, res) => {
             }
         }
 
-        // Convert isActive dari TINYINT (0/1) ke boolean
-        const clientsWithBoolean = clients.map(client => ({
-            ...client,
-            isActive: client.isActive === 1 || client.isActive === true
-        }));
+        // Convert isActive dari TINYINT (0/1) ke boolean dan tambahkan isOffline flag
+        const clientsWithBoolean = clients.map(client => {
+            const deviceStatus = client.device_id ? mikrotikStore.getDeviceStatus(workspace_id, client.device_id) : 'connected';
+            const isOfflineDevice = deviceStatus === 'disconnected';
+            return {
+                ...client,
+                isActive: (client.isActive === 1 || client.isActive === true) && !isOfflineDevice,
+                isOffline: isOfflineDevice
+            };
+        });
 
         res.status(200).json(clientsWithBoolean);
     } catch (error) {
@@ -91,7 +97,8 @@ exports.getClients = async (req, res) => {
             );
             const clientsWithBoolean = clients.map(client => ({
                 ...client,
-                isActive: false
+                isActive: false,
+                isOffline: false
             }));
             res.status(200).json(clientsWithBoolean);
         } catch (fallbackError) {

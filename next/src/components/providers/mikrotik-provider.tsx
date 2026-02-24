@@ -88,6 +88,11 @@ export const MikrotikProvider = ({ children }: { children: React.ReactNode }) =>
                     if (data.traffic && typeof data.traffic === 'object') {
                         setTraffic(data.traffic);
                     }
+                    if (data.deviceStatus === 'disconnected') {
+                        setIsConnected(false);
+                    } else if (data.deviceStatus === 'connected') {
+                        setIsConnected(true);
+                    }
                 } else {
                     console.warn('[Snapshot] Response tidak OK:', res.status);
                 }
@@ -284,6 +289,17 @@ export const MikrotikProvider = ({ children }: { children: React.ReactNode }) =>
                             window.dispatchEvent(new CustomEvent('mikrotik-connection-status', {
                                 detail: message.payload
                             }));
+
+                            if (message.payload.status === 'connected') {
+                                setIsConnected(true);
+                                // If Mikrotik just reconnected, force a data refresh to unfreeze the UI immediately
+                                if (ws.current && ws.current.readyState === WebSocket.OPEN) {
+                                    console.log('[MikrotikProvider] Koneksi pulih, meminta data terbaru dari server...');
+                                    ws.current.send(JSON.stringify({ type: 'force-refresh', target: 'secrets' }));
+                                }
+                            } else if (message.payload.status === 'disconnected') {
+                                setIsConnected(false);
+                            }
                         } else if (message.type === 'reconnect-notification' && message.payload) {
                             // Forward reconnect notification ke notification provider via custom event
                             console.log("[WebSocket] Menerima reconnect notification:", message.payload);

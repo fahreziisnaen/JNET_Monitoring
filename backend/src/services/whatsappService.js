@@ -1,4 +1,4 @@
-const { default: makeWASocket, useMultiFileAuthState, DisconnectReason } = require('@whiskeysockets/baileys');
+const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion } = require('@whiskeysockets/baileys');
 const pino = require('pino');
 const qrcode = require('qrcode-terminal');
 const pool = require('../config/database');
@@ -10,10 +10,13 @@ let qrString = null;
 async function startWhatsApp() {
     console.log('[WhatsApp] Memulai koneksi...');
     const { state, saveCreds } = await useMultiFileAuthState('whatsapp_auth_info');
+    const { version, isLatest } = await fetchLatestBaileysVersion();
+    console.log(`[WhatsApp] Menggunakan versi WA v${version.join('.')} (isLatest: ${isLatest})`);
 
     sock = makeWASocket({
+        version,
         auth: state,
-        logger: pino({ level: 'silent' }),
+        logger: pino({ level: 'info' }),
         printQRInTerminal: false, // Kita manual pakai qrcode-terminal
         shouldSyncHistoryMessage: () => false,
         markOnlineOnConnect: false,
@@ -33,8 +36,13 @@ async function startWhatsApp() {
             isConnected = false;
             const shouldReconnect = (lastDisconnect.error)?.output?.statusCode !== DisconnectReason.loggedOut;
             console.log('[WhatsApp] Koneksi ditutup, mencoba menghubungkan kembali:', shouldReconnect);
+            console.log('[WhatsApp] Alasan Putus (Error):', lastDisconnect?.error?.message, lastDisconnect?.error?.stack);
+
             if (shouldReconnect) {
-                startWhatsApp();
+                // Add a delay to prevent tight infinite synchronous loops that crash the app
+                setTimeout(() => {
+                    startWhatsApp();
+                }, 3000);
             }
         } else if (connection === 'open') {
             isConnected = true;
@@ -49,7 +57,10 @@ function isWhatsAppConnected() {
 }
 
 async function sendWhatsAppMessage(number, message) {
-    if (!sock) throw new Error('Koneksi WhatsApp belum siap.');
+    if (!isWhatsAppConnected()) {
+        console.warn(`[WhatsApp] Peringatan: Koneksi WhatsApp belum siap atau terputus. Pesan ke ${number} diabaikan.`);
+        return false;
+    }
 
     // Cek apakah ini group JID (berakhiran @g.us) atau individual number
     let jid;
@@ -63,9 +74,11 @@ async function sendWhatsAppMessage(number, message) {
 
     try {
         await sock.sendMessage(jid, { text: message });
+        return true;
     } catch (error) {
-        console.error(`[WhatsApp] Gagal mengirim pesan ke ${number}: `, error);
-        throw error;
+        console.error(`[WhatsApp] Gagal mengirim pesan ke ${number}: `, error.message || error);
+        // Jangan throw error agar tidak mengganggu proses utama pemanggil (seperti cron jobs)
+        return false;
     }
 }
 
@@ -75,7 +88,7 @@ async function sendWhatsAppMessage(number, message) {
  */
 async function getWorkspaceWhatsAppTarget(workspaceId) {
     const [workspaces] = await pool.query(
-        `SELECT w.whatsapp_group_id, u.whatsapp_number 
+        `SELECT w.whatsapp_group_id, w.whatsapp_bot_enabled, u.whatsapp_number 
          FROM workspaces w 
          LEFT JOIN users u ON w.owner_id = u.id 
          WHERE w.id = ?`,
@@ -87,6 +100,11 @@ async function getWorkspaceWhatsAppTarget(workspaceId) {
     }
 
     const workspace = workspaces[0];
+
+    // Jika fitur alert bot dinonaktifkan untuk workspace ini, jangan kirim pesan
+    if (!workspace.whatsapp_bot_enabled) {
+        return null;
+    }
 
     // Prioritas: Group JID > Owner WhatsApp Number
     if (workspace.whatsapp_group_id) {

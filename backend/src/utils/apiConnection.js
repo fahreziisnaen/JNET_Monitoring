@@ -16,6 +16,9 @@ const {
 // Deduplication map untuk command pembacaan yang sedang berjalan
 const pendingReadCommands = new Map(); // Map<string, Promise>
 
+// Map untuk menunda (debounce) log "Menunggu koneksi" agar tidak spam
+const waitLogCache = new Map(); // Map<string, number>
+
 const DEFAULT_IDLE_TIMEOUT = 5 * 60 * 1000; // 5 menit default
 
 /**
@@ -85,7 +88,12 @@ async function getOrCreateConnection(workspaceId, timeout, customKey = null, dev
     // STEP 2: Cek apakah ada koneksi yang sedang dibuat (ada lock)
     // Jika ada, tunggu koneksi tersebut selesai dibuat dengan timeout
     if (isConnectionLocked(connectionKey)) {
-        console.log(`[Connection] Menunggu koneksi ${connectionKey} yang sedang dibuat oleh request lain...`);
+        const now = Date.now();
+        const lastLog = waitLogCache.get(connectionKey) || 0;
+        if (now - lastLog > 5000) { // Hanya log maksimal 1x setiap 5 detik per device
+            console.log(`[Connection] Menunggu koneksi ${connectionKey} yang sedang dibuat oleh request lain...`);
+            waitLogCache.set(connectionKey, now);
+        }
         return new Promise((resolve, reject) => {
             // Tunggu lock selesai dengan timeout 10 detik
             const lockTimeout = setTimeout(() => {

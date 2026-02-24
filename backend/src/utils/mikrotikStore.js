@@ -5,8 +5,17 @@
 
 const workspaceSecrets = new Map(); // Map<workspaceId, secrets[]>
 const workspaceActive = new Map();  // Map<workspaceId, active[]>
+const deviceStatus = new Map();     // Map<workspaceId_deviceId, status>
 
 module.exports = {
+    setDeviceStatus: (workspaceId, deviceId, status) => {
+        deviceStatus.set(`${workspaceId}_${deviceId}`, status);
+    },
+
+    getDeviceStatus: (workspaceId, deviceId) => {
+        return deviceStatus.get(`${workspaceId}_${deviceId}`) || 'connected';
+    },
+
     setSecrets: (workspaceId, secrets) => {
         workspaceSecrets.set(String(workspaceId), secrets);
     },
@@ -44,5 +53,6 @@ module.exports = {
     clear: (workspaceId) => {
         workspaceSecrets.delete(String(workspaceId));
         workspaceActive.delete(String(workspaceId));
+        // Note: We don't clear deviceStatus here as it tracks physical connection state independent of data dumps
     }
 };

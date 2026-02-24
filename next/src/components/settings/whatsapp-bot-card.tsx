@@ -77,6 +77,11 @@ const WhatsappBotCard = () => {
 
     // State untuk menampung pilihan grup tiap workspace (controlled)
     const [wsGroupSelections, setWsGroupSelections] = useState<Record<number, string>>({});
+    // State untuk menampung status alert (On/Off) tiap workspace untuk Super Admin
+    const [wsAlertSelections, setWsAlertSelections] = useState<Record<number, boolean>>({});
+    // State untuk menampung status alert (On/Off) workspace saat ini
+    const [whatsappBotEnabled, setWhatsappBotEnabled] = useState<boolean>(false);
+    const [togglingAlert, setTogglingAlert] = useState(false);
 
     const fetchAllWorkspaces = useCallback(async () => {
         if (!isSuperAdmin) return;
@@ -89,10 +94,13 @@ const WhatsappBotCard = () => {
 
                 // Sinkronisasi state lokal dengan data dari database
                 const selections: Record<number, string> = {};
+                const alertSelections: Record<number, boolean> = {};
                 data.forEach((ws: any) => {
                     selections[ws.id] = ws.whatsapp_group_id || '';
+                    alertSelections[ws.id] = !!ws.whatsapp_bot_enabled;
                 });
                 setWsGroupSelections(selections);
+                setWsAlertSelections(alertSelections);
             }
         } catch (error) {
             console.error("Gagal ambil daftar semua workspace:", error);
@@ -107,9 +115,10 @@ const WhatsappBotCard = () => {
             const workspaceRes = await apiFetch(`${apiUrl}/api/workspaces/me`);
             const workspaceData = await workspaceRes.json();
 
-            // Set WhatsApp Group ID
+            // Set WhatsApp Group ID & Bot Status
             setWhatsappGroupId(workspaceData.whatsapp_group_id || '');
             setInitialGroupId(workspaceData.whatsapp_group_id || '');
+            setWhatsappBotEnabled(!!workspaceData.whatsapp_bot_enabled);
 
             // Coba ambil daftar grup
             fetchGroups();
@@ -202,6 +211,54 @@ const WhatsappBotCard = () => {
         }
     };
 
+    const handleAdminToggleAlert = async (workspaceId: number, isEnabled: boolean) => {
+        setUpdatingWsId(workspaceId);
+        try {
+            const res = await apiFetch(`${apiUrl}/api/workspaces/${workspaceId}/whatsapp-alert-toggle`, {
+                method: 'PUT',
+                body: JSON.stringify({ whatsapp_bot_enabled: isEnabled })
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.message || 'Gagal mengubah status alert workspace');
+
+            toast.success("Berhasil Update", { description: data.message });
+            setWsAlertSelections(prev => ({ ...prev, [workspaceId]: isEnabled }));
+
+            // Refund the parent if we update the current workspace
+            if (workspaceId === user?.workspace_id) {
+                setWhatsappBotEnabled(isEnabled);
+            }
+        } catch (error: any) {
+            toast.error("Gagal Memperbarui", { description: error.message });
+        } finally {
+            setUpdatingWsId(null);
+        }
+    };
+
+    const handleToggleAlert = async (isEnabled: boolean) => {
+        setTogglingAlert(true);
+        try {
+            const res = await apiFetch(`${apiUrl}/api/bot/toggle`, {
+                method: 'POST',
+                body: JSON.stringify({ isEnabled })
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.message || 'Gagal mengubah status alert');
+
+            toast.success("Berhasil Update", { description: data.message });
+            setWhatsappBotEnabled(isEnabled);
+
+            // Sinkronisasi status ke tabel Manajemen WhatsApp Per Workspace
+            if (isSuperAdmin && user?.workspace_id) {
+                setWsAlertSelections(prev => ({ ...prev, [user.workspace_id]: isEnabled }));
+            }
+        } catch (error: any) {
+            toast.error("Gagal Memperbarui", { description: error.message });
+        } finally {
+            setTogglingAlert(false);
+        }
+    };
+
     const [resetting, setResetting] = useState(false);
     const [otpRequired, setOtpRequired] = useState(false);
     const [otp, setOtp] = useState('');
@@ -286,14 +343,14 @@ const WhatsappBotCard = () => {
                                 <div className="relative group">
                                     <QRCodeSVG
                                         value={qrString}
-                                        size={220}
+                                        size={300}
                                         level="H"
                                         includeMargin={false}
                                     />
                                     <div className="absolute inset-0 bg-white/5 backdrop-blur-[1px] opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none" />
                                 </div>
                             ) : (
-                                <div className="w-[220px] h-[220px] flex flex-col items-center justify-center gap-3 text-muted-foreground">
+                                <div className="w-[300px] h-[300px] flex flex-col items-center justify-center gap-3 text-muted-foreground">
                                     <Loader2 className="animate-spin text-primary" size={40} />
                                     <p className="text-xs font-medium animate-pulse text-primary/70 uppercase tracking-widest">Menyiapkan QR Code...</p>
                                 </div>
@@ -339,14 +396,30 @@ const WhatsappBotCard = () => {
                         <div className="grid gap-3">
                             {allWorkspaces.map(ws => (
                                 <div key={ws.id} className="group flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 rounded-xl border bg-secondary/10 hover:bg-secondary/20 transition-colors">
-                                    <div className="space-y-0.5">
+                                    <div className="space-y-0.5 min-w-[150px]">
                                         <div className="flex items-center gap-2">
                                             <p className="font-bold text-sm">{ws.name}</p>
                                             {ws.id === user?.workspace_id && <span className="text-[9px] bg-primary/20 text-primary px-1.5 py-0.5 rounded-full font-bold uppercase">Milik Anda</span>}
                                         </div>
-                                        <p className="text-[10px] text-muted-foreground font-medium opacity-70">
-                                            Workspace ID: {ws.id}
-                                        </p>
+                                        <div className="flex items-center gap-2 mt-1">
+                                            <p className="text-[10px] text-muted-foreground font-medium opacity-70">
+                                                Workspace ID: {ws.id}
+                                            </p>
+                                            <div className="h-3 border-l border-border/50 mx-1"></div>
+                                            <label className="flex flex-col items-center gap-1.5 cursor-pointer">
+                                                <div className="relative inline-flex items-center">
+                                                    <input
+                                                        type="checkbox"
+                                                        className="sr-only peer"
+                                                        checked={!!wsAlertSelections[ws.id]}
+                                                        disabled={updatingWsId === ws.id}
+                                                        onChange={(e) => handleAdminToggleAlert(ws.id, e.target.checked)}
+                                                    />
+                                                    <div className="w-9 h-5 bg-muted peer-focus:outline-none rounded-full peer peer-disabled:opacity-50 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-green-500"></div>
+                                                </div>
+                                                <span className="text-[9px] font-semibold uppercase">{wsAlertSelections[ws.id] ? 'Alert ON' : 'Alert OFF'}</span>
+                                            </label>
+                                        </div>
                                     </div>
                                     <div className="flex items-center gap-2">
                                         <select
@@ -395,9 +468,12 @@ const WhatsappBotCard = () => {
                     </div>
                 )}
 
-                <div className="pt-6 border-t">
-                    <div className="space-y-2">
-                        <label className="block text-sm font-medium">WhatsApp Group ID</label>
+                <div className="pt-6 border-t flex flex-col md:flex-row gap-6 md:gap-12 justify-between">
+                    <div className="space-y-3 flex-1">
+                        <div>
+                            <label className="block text-sm font-semibold mb-1">WhatsApp Group ID</label>
+                            <p className="text-xs text-muted-foreground mb-3">Pilih ke grup mana notifikasi dan laporan akan dikirim.</p>
+                        </div>
                         <div className="flex items-center gap-4">
                             <select
                                 className="w-full p-2 rounded-md bg-input border-border font-mono text-sm"
@@ -443,12 +519,37 @@ const WhatsappBotCard = () => {
                             <p className="text-[10px] text-muted-foreground italic">Bot terhubung tapi tidak menemukan grup pendengar, atau Anda belum masuk ke grup apapun.</p>
                         )}
                         {initialGroupId && (
-                            <p className="text-xs text-muted-foreground">
-                                Grup saat ini: <code className="bg-secondary px-1 py-0.5 rounded">
+                            <p className="text-xs text-muted-foreground mt-2">
+                                Grup saat ini: <code className="bg-secondary px-1.5 py-0.5 rounded font-bold">
                                     {availableGroups.find(g => g.id === initialGroupId)?.subject || initialGroupId}
                                 </code>
                             </p>
                         )}
+                    </div>
+
+                    <div className="space-y-3 md:w-[250px] shrink-0 border-t md:border-t-0 md:border-l pt-4 md:pt-0 md:pl-6">
+                        <div>
+                            <label className="block text-sm font-semibold mb-1">Status Alert Bot</label>
+                            <p className="text-xs text-muted-foreground mb-3 leading-relaxed">Aktifkan atau matikan laporan/notifikasi WhatsApp otomatis untuk workspace ini.</p>
+                        </div>
+
+                        <div className="flex items-center gap-3 bg-secondary/20 p-3 rounded-xl border">
+                            <label className="flex items-center gap-2 cursor-pointer w-full justify-between">
+                                <span className={`text-sm font-semibold ${whatsappBotEnabled ? 'text-green-500' : 'text-muted-foreground'}`}>
+                                    {whatsappBotEnabled ? 'Pesan Aktif' : 'Pesan Dimatikan'}
+                                </span>
+                                <div className="relative inline-flex items-center">
+                                    <input
+                                        type="checkbox"
+                                        className="sr-only peer"
+                                        checked={whatsappBotEnabled}
+                                        disabled={togglingAlert}
+                                        onChange={(e) => handleToggleAlert(e.target.checked)}
+                                    />
+                                    <div className="w-11 h-6 bg-muted peer-focus:outline-none rounded-full peer peer-disabled:opacity-50 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-green-500"></div>
+                                </div>
+                            </label>
+                        </div>
                     </div>
                 </div>
 

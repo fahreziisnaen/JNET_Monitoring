@@ -1,6 +1,8 @@
 const { runCommandForWorkspace } = require('../utils/apiConnection');
 const pool = require('../config/database');
 const mikrotikStore = require('../utils/mikrotikStore');
+const fs = require('fs');
+const path = require('path');
 
 // Helper functions for IP manipulation
 const ipToLong = (ip) => {
@@ -425,11 +427,50 @@ exports.updateSecret = async (req, res) => {
 
 exports.deleteSecret = async (req, res) => {
     const { id } = req.params;
+    const workspace_id = req.user.workspace_id;
     try {
-        console.log(`[Delete Secret] Request hapus secret ID: ${id} untuk workspace: ${req.user.workspace_id}`);
-        await runCommandForWorkspace(req.user.workspace_id, '/ppp/secret/remove', [`=.id=${id}`]);
-        console.log(`[Delete Secret] Berhasil hapus id: ${id}`);
-        res.status(200).json({ message: 'Secret berhasil dihapus.' });
+        console.log(`[Delete Secret] Request hapus secret ID: ${id} untuk workspace: ${workspace_id}`);
+
+        // 1. Dapatkan nama secret dari Mikrotik terlebih dahulu sebelum dihapus
+        const secretData = await runCommandForWorkspace(workspace_id, '/ppp/secret/print', [`?=.id=${id}`]);
+        let secretName = null;
+        if (secretData && secretData.length > 0) {
+            secretName = secretData[0].name;
+        }
+
+        // 2. Hapus secret dari router Mikrotik
+        await runCommandForWorkspace(workspace_id, '/ppp/secret/remove', [`=.id=${id}`]);
+        console.log(`[Delete Secret] Berhasil hapus id: ${id} dari Mikrotik`);
+
+        // 3. Jika nama secret ditemukan, hapus referensi data lokasinya dari MySQL
+        if (secretName) {
+            // Hapus foto rumah jika ada
+            const [clientPhoto] = await pool.query('SELECT photo_url FROM clients WHERE pppoe_secret_name = ? AND workspace_id = ?', [secretName, workspace_id]);
+            if (clientPhoto.length > 0 && clientPhoto[0].photo_url) {
+                const photoPath = path.join(__dirname, '../../', clientPhoto[0].photo_url);
+                if (fs.existsSync(photoPath)) {
+                    fs.unlinkSync(photoPath);
+                }
+            }
+
+            // Hapus hubungan line dengan ODP (jika ada)
+            await pool.query(
+                'DELETE FROM odp_user_connections WHERE workspace_id = ? AND pppoe_secret_name = ?',
+                [workspace_id, secretName]
+            );
+
+            // Hapus koordinat client dari peta
+            const [result] = await pool.query(
+                'DELETE FROM clients WHERE pppoe_secret_name = ? AND workspace_id = ?',
+                [secretName, workspace_id]
+            );
+
+            if (result.affectedRows > 0) {
+                console.log(`[Delete Secret] Client map data untuk ${secretName} berhasil dihapus dari database.`);
+            }
+        }
+
+        res.status(200).json({ message: 'Secret dan data client map berhasil dihapus.' });
     } catch (error) {
         console.error(`[Delete Secret] Gagal hapus id: ${id}: ${error.message}`);
         res.status(500).json({ message: error.message });

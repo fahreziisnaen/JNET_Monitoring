@@ -7,10 +7,12 @@ import { Button } from '@/components/ui/button';
 import DeviceModal, { Device } from './device-modal';
 import ConfirmModal from '../ui/confirm-modal';
 import { useAuth } from '../providers/auth-provider';
+import { useMikrotik } from '../providers/mikrotik-provider';
 import { apiFetch } from '@/utils/api';
 
 const DeviceManagementCard = () => {
     const { user } = useAuth();
+    const { isConnected } = useMikrotik() || {};
     const isAdmin = user?.role === 'admin';
     const [devices, setDevices] = useState<Device[]>([]);
     const [activeDeviceId, setActiveDeviceId] = useState<number | null>(null);
@@ -127,8 +129,8 @@ const DeviceManagementCard = () => {
                                     <p className="text-xs text-muted-foreground">{device.user}@{device.host}:{device.port}</p>
                                 </div>
                                 {device.id === activeDeviceId ? (
-                                    <span className="flex items-center gap-1 text-xs font-bold text-green-500 bg-green-500/10 px-2 py-1 rounded-full">
-                                        <CheckCircle size={14} /> Aktif
+                                    <span className={`flex items-center gap-1 text-xs font-bold px-2 py-1 rounded-full ${isConnected ? 'text-green-500 bg-green-500/10' : 'text-destructive bg-destructive/10'}`}>
+                                        <CheckCircle size={14} /> {isConnected ? 'Online' : 'Terputus'}
                                     </span>
                                 ) : (
                                     <Button onClick={() => { if (device.id) { handleSetActive(device.id) } }} disabled={isActionLoading || !device.id || !isAdmin} variant="outline" className="text-xs h-auto py-1 px-2">Jadikan Aktif</Button>
