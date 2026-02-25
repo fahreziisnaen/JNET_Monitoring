@@ -24,7 +24,7 @@ const cron = require('node-cron');
 
 const { startWhatsApp } = require('./src/services/whatsappService');
 const { generateAndSendDailyReports } = require('./src/bot/reportGenerator');
-const { monitorSlaAndNotifications, sendDowntimeNotifications } = require('./src/bot/dataLogger');
+const { monitorSlaAndNotifications, sendDowntimeNotifications, syncMikrotikSecrets } = require('./src/bot/dataLogger');
 const { setupPppoeListeners } = require('./src/utils/mikrotikListener');
 const mikrotikStore = require('./src/utils/mikrotikStore');
 
@@ -915,6 +915,11 @@ server.listen(PORT, '0.0.0.0', () => {
     // Berjalan terus menerus, tidak bergantung pada user login
     cron.schedule('*/3 * * * * *', () => {
         monitorSlaAndNotifications(broadcastToWorkspace);
+    });
+
+    // Sinkronisasi Secrets untuk NOC (setiap 1 menit) agar data real-time tersedia tanpa login
+    cron.schedule('0 * * * * *', () => {
+        syncMikrotikSecrets();
     });
 
     // Dashboard snapshot - DISABLED as per user request to save storage

@@ -63,7 +63,7 @@ exports.getAggregatedSecrets = async (req, res) => {
 
         // Ambil informasi workspace dan nama mikrotik aktifnya
         const [workspaces] = await pool.query(`
-            SELECT w.id, w.name, md.name as router_name 
+            SELECT w.id, w.name, md.id as device_id, md.name as router_name 
             FROM workspaces w
             LEFT JOIN mikrotik_devices md ON md.id = w.active_device_id
             WHERE w.id IN (?)
@@ -78,7 +78,7 @@ exports.getAggregatedSecrets = async (req, res) => {
             // Ambil data secrets dan active users dari store realtime (memory) untuk workspace ini
             const secrets = mikrotikStore.getSecrets(workspaceId);
             const activeUsers = mikrotikStore.getActive(workspaceId);
-            const status = mikrotikStore.getDeviceStatus(workspaceId);
+            const status = mikrotikStore.getDeviceStatus(workspaceId, workspace.device_id);
 
             // Jika offline atau tidak ada data di store, kita kembalikan array kosong untuk workspace tersebut,
             // atau tambahkan properti penanda

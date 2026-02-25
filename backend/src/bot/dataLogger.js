@@ -477,6 +477,10 @@ async function monitorSlaAndNotifications(broadcastCallback = null) {
                 // Share hasil ke semua workspace yang menggunakan device ini
                 for (const device of group.devices) {
                     try {
+                        // Sync data active ke store agar NOC mode punya data real-time
+                        mikrotikStore.setActive(device.workspace_id, pppoeActive);
+                        mikrotikStore.setDeviceStatus(device.workspace_id, device.device_id, 'connected');
+
                         await processSlaEvents(device.workspace_id, pppoeActive, device.device_id, broadcastCallback);
                     } catch (error) {
                         console.error(`[SLA Monitor] Gagal memproses SLA events untuk workspace ${device.workspace_id}, device ${device.device_id}:`, error.message);
@@ -1321,4 +1325,42 @@ async function updateAllDashboardSnapshots() {
     }
 }
 
-module.exports = { monitorSlaAndNotifications, sendDowntimeNotifications };
+/**
+ * Sinkronisasi PPPoE Secrets ke memory store untuk semua workspace
+ * Ini memastikan data NOC tetap terisi meskipun tidak ada user login di workspace tersebut
+ */
+async function syncMikrotikSecrets() {
+    try {
+        console.log(`[Secret Sync] 🔄 Memulai sinkronisasi background PPPoE secrets...`);
+        const deviceGroups = await groupDevicesByCredentials();
+
+        for (const [groupKey, group] of deviceGroups) {
+            if (group.devices.length === 0) continue;
+            const firstDevice = group.devices[0];
+
+            try {
+                const client = await getOrCreateConnection(firstDevice.workspace_id, 30000, null, firstDevice.device_id);
+                if (!client || !client.connected) continue;
+
+                const pppoeSecrets = await client.write('/ppp/secret/print', [
+                    '.proplist=.id,name,profile,remote-address,last-logged-out,disabled'
+                ]);
+
+                if (Array.isArray(pppoeSecrets)) {
+                    console.log(`[Secret Sync] ✅ Mendapat ${pppoeSecrets.length} secrets dari group ${groupKey}`);
+                    for (const device of group.devices) {
+                        mikrotikStore.setSecrets(device.workspace_id, pppoeSecrets);
+                        mikrotikStore.setDeviceStatus(device.workspace_id, device.device_id, 'connected');
+                    }
+                }
+            } catch (error) {
+                console.error(`[Secret Sync] ❌ Gagal sync secrets untuk group ${groupKey}:`, error.message);
+            }
+        }
+        console.log(`[Secret Sync] ✅ Sinkronisasi selesai`);
+    } catch (error) {
+        console.error("[Secret Sync] ❌ Error fatal:", error);
+    }
+}
+
+module.exports = { monitorSlaAndNotifications, sendDowntimeNotifications, syncMikrotikSecrets };
