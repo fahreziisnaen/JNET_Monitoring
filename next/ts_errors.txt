@@ -1,0 +1,14 @@
+src/components/location/LocationManager.tsx(1168,9): error TS2322: Type '{ isOpen: boolean; onClose: () => void; onSuccess: () => void; nocWorkspaceId: number | undefined; }' is not assignable to type 'IntrinsicAttributes & AddAssetModalProps'.
+  Property 'nocWorkspaceId' does not exist on type 'IntrinsicAttributes & AddAssetModalProps'.
+src/components/location/LocationManager.tsx(1181,13): error TS2322: Type '{ isOpen: boolean; onClose: () => void; asset: Asset; onEdit: (asset: Asset) => void; onDelete: (asset: Asset) => void; onAddConnection: (asset: Asset) => void; onEditPath: (asset: Asset) => void; nocWorkspaceId: number | undefined; }' is not assignable to type 'IntrinsicAttributes & AssetDetailModalProps'.
+  Property 'nocWorkspaceId' does not exist on type 'IntrinsicAttributes & AssetDetailModalProps'.
+src/components/location/LocationManager.tsx(1188,13): error TS2322: Type '{ isOpen: boolean; onClose: () => void; assetToEdit: Asset; onSuccess: () => void; nocWorkspaceId: number | undefined; }' is not assignable to type 'IntrinsicAttributes & EditAssetModalProps'.
+  Property 'nocWorkspaceId' does not exist on type 'IntrinsicAttributes & EditAssetModalProps'.
+src/components/location/LocationManager.tsx(1195,13): error TS2322: Type '{ isOpen: boolean; onClose: () => void; asset: Asset; onSuccess: () => void; nocWorkspaceId: number | undefined; }' is not assignable to type 'IntrinsicAttributes & AddConnectionModalProps'.
+  Property 'nocWorkspaceId' does not exist on type 'IntrinsicAttributes & AddConnectionModalProps'.
+src/components/location/LocationManager.tsx(1212,9): error TS2322: Type '{ isOpen: boolean; onClose: () => void; onSuccess: () => void; assets: Asset[]; nocWorkspaceId: number | undefined; }' is not assignable to type 'IntrinsicAttributes & AddClientModalProps'.
+  Property 'nocWorkspaceId' does not exist on type 'IntrinsicAttributes & AddClientModalProps'.
+src/components/location/LocationManager.tsx(1224,13): error TS2322: Type '{ isOpen: boolean; onClose: () => void; client: Client; onEdit: (client: Client) => void; onDelete: (client: Client) => void; onEditPath: (client: Client) => void; nocWorkspaceId: number | undefined; }' is not assignable to type 'IntrinsicAttributes & ClientDetailModalProps'.
+  Property 'nocWorkspaceId' does not exist on type 'IntrinsicAttributes & ClientDetailModalProps'.
+src/components/location/LocationManager.tsx(1232,13): error TS2322: Type '{ isOpen: boolean; onClose: () => void; onSuccess: () => void; client: Client; assets: Asset[]; nocWorkspaceId: number | undefined; }' is not assignable to type 'IntrinsicAttributes & EditClientModalProps'.
+  Property 'nocWorkspaceId' does not exist on type 'IntrinsicAttributes & EditClientModalProps'.

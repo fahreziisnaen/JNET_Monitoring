@@ -5,73 +5,73 @@ const pool = require('../config/database');
 // Fungsi untuk ekstrak asset type dari placemark name
 function extractAssetType(placemarkName) {
     if (!placemarkName) return null;
-    
+
     const nameUpper = placemarkName.toUpperCase();
-    
+
     // Cek kombinasi ODC+ODP
     if (nameUpper.includes('ODC+ODP') || nameUpper.includes('ODC & ODP') || nameUpper.includes('ODC DAN ODP')) {
         return 'ODC'; // Return ODC sebagai primary type untuk kombinasi
     }
-    
+
     // Cek ODC
     if (nameUpper.startsWith('ODC') || nameUpper.includes(' ODC')) {
         return 'ODC';
     }
-    
+
     // Cek ODP
     if (nameUpper.startsWith('ODP') || nameUpper.includes(' ODP')) {
         return 'ODP';
     }
-    
+
     // Cek OLT
     if (nameUpper.startsWith('OLT') || nameUpper.includes(' OLT')) {
         return 'OLT';
     }
-    
+
     // Cek Mikrotik (jika ada di KML)
     if (nameUpper.includes('MIKROTIK')) {
         return 'Mikrotik';
     }
-    
+
     return null;
 }
 
 // Fungsi untuk parse splitter count dari description
 function parseSplitterCount(description) {
     if (!description) return null;
-    
+
     // Remove HTML tags jika ada
     const cleanDesc = description.replace(/<[^>]*>/g, ' ').trim();
-    
+
     // Pattern 1: "4:8" atau "1:16" -> ambil angka setelah ":"
     const ratioMatch = cleanDesc.match(/(\d+):(\d+)/);
     if (ratioMatch) {
         return parseInt(ratioMatch[2], 10);
     }
-    
+
     // Pattern 2: "8 port" atau "16 port" -> ambil angka sebelum "port"
     const portMatch = cleanDesc.match(/(\d+)\s*port/i);
     if (portMatch) {
         return parseInt(portMatch[1], 10);
     }
-    
+
     // Pattern 3: "ODC 1:8<br>ODP 3:8" -> ambil yang terbesar atau ODP
     const multiMatch = cleanDesc.match(/ODP\s*(\d+):(\d+)/i);
     if (multiMatch) {
         return parseInt(multiMatch[2], 10);
     }
-    
+
     const odcMatch = cleanDesc.match(/ODC\s*(\d+):(\d+)/i);
     if (odcMatch) {
         return parseInt(odcMatch[2], 10);
     }
-    
+
     // Pattern 4: Hanya angka (misalnya "8")
     const numberMatch = cleanDesc.match(/^(\d+)$/);
     if (numberMatch) {
         return parseInt(numberMatch[1], 10);
     }
-    
+
     return null;
 }
 
@@ -81,12 +81,12 @@ function createAssetsFromCombined(placemark, workspaceId, longitude, latitude, o
     const name = placemark.name || 'Aset Tanpa Nama';
     const description = placemark.description || null;
     const splitterCount = parseSplitterCount(description);
-    
+
     // Parse description untuk mendapatkan info ODC dan ODP terpisah
     const cleanDesc = description ? description.replace(/<[^>]*>/g, ' ') : '';
     const odcMatch = cleanDesc.match(/ODC\s*(\d+):(\d+)/i);
     const odpMatch = cleanDesc.match(/ODP\s*(\d+):(\d+)/i);
-    
+
     // Buat ODC record
     if (odcMatch || name.toUpperCase().includes('ODC')) {
         const odcName = name.replace(/\+ODP|& ODP|DAN ODP/gi, '').trim() + ' (ODC)';
@@ -103,7 +103,7 @@ function createAssetsFromCombined(placemark, workspaceId, longitude, latitude, o
             'terpasang' // connection_status default
         ]);
     }
-    
+
     // Buat ODP record
     if (odpMatch || name.toUpperCase().includes('ODP')) {
         const odpName = name.replace(/ODC\+|ODC & |ODC DAN /gi, '').trim() + ' (ODP)';
@@ -120,7 +120,7 @@ function createAssetsFromCombined(placemark, workspaceId, longitude, latitude, o
             'terpasang' // connection_status default
         ]);
     }
-    
+
     // Jika tidak ada match spesifik, buat ODC sebagai default
     if (assets.length === 0) {
         assets.push([
@@ -135,7 +135,7 @@ function createAssetsFromCombined(placemark, workspaceId, longitude, latitude, o
             'terpasang' // connection_status default
         ]);
     }
-    
+
     return assets;
 }
 
@@ -151,50 +151,66 @@ exports.importKml = async (req, res) => {
         const result = await parser.parseStringPromise(kmlContent);
         // Tipe aset yang diizinkan pada map: Mikrotik -> OLT -> ODC -> ODP
         const ALLOWED_TYPES = ['Mikrotik', 'OLT', 'ODC', 'ODP'];
-        
-        const folders = result.kml.Document.Folder;
-        if (!folders) {
-            throw new Error('Format KML tidak valid atau tidak memiliki struktur Folder.');
-        }
 
         const assetsToInsert = [];
-        const folderArray = Array.isArray(folders) ? folders : [folders];
 
-        for (const folder of folderArray) {
+        const folders = result.kml.Document.Folder;
+        const directPlacemarks = result.kml.Document.Placemark;
+
+        // Build a unified list of folders to process
+        // If no Folder exists but there are direct Placemarks (Google My Maps style), treat Document as one folder
+        let foldersToProcess = [];
+
+        if (folders) {
+            const folderArray = Array.isArray(folders) ? folders : [folders];
+            foldersToProcess = folderArray.map(f => ({ name: f.name || null, Placemark: f.Placemark }));
+        }
+
+        if (directPlacemarks) {
+            // Add direct placemarks as a synthetic folder with document name as owner
+            const docName = result.kml.Document.name || null;
+            foldersToProcess.push({ name: docName, Placemark: directPlacemarks });
+        }
+
+        if (foldersToProcess.length === 0) {
+            throw new Error('Format KML tidak valid: tidak ditemukan Folder maupun Placemark langsung.');
+        }
+
+        for (const folder of foldersToProcess) {
             // Ambil folder name sebagai owner_name
             const folderName = folder.name || null;
             if (!folder.Placemark) continue;
-            
+
             const placemarkArray = Array.isArray(folder.Placemark) ? folder.Placemark : [folder.Placemark];
 
             for (const placemark of placemarkArray) {
                 if (!placemark.Point || !placemark.Point.coordinates) continue;
-                
+
                 const coords = placemark.Point.coordinates.trim().split(',');
                 if (coords.length < 2) continue;
-                
+
                 const longitude = parseFloat(coords[0]);
                 const latitude = parseFloat(coords[1]);
-                
+
                 if (isNaN(latitude) || isNaN(longitude)) continue;
-                
+
                 const placemarkName = placemark.name || 'Aset Tanpa Nama';
                 const assetType = extractAssetType(placemarkName);
-                
+
                 // Skip jika tidak bisa menentukan type
                 if (!assetType || !ALLOWED_TYPES.includes(assetType)) {
                     console.log(`[KML Import] Mengabaikan placemark dengan type tidak dikenal: ${placemarkName}`);
                     continue;
                 }
-                
+
                 const description = placemark.description || null;
                 const splitterCount = parseSplitterCount(description);
-                
+
                 // Ambil owner_name dari ExtendedData jika ada, jika tidak gunakan folder name
                 let ownerName = folderName;
                 if (placemark.ExtendedData && placemark.ExtendedData.Data) {
-                    const dataArray = Array.isArray(placemark.ExtendedData.Data) 
-                        ? placemark.ExtendedData.Data 
+                    const dataArray = Array.isArray(placemark.ExtendedData.Data)
+                        ? placemark.ExtendedData.Data
                         : [placemark.ExtendedData.Data];
                     const ownerData = dataArray.find(d => {
                         const name = d.name || (d.$ && d.$.name);
@@ -208,7 +224,7 @@ exports.importKml = async (req, res) => {
                         }
                     }
                 }
-                
+
                 // Handle kombinasi ODC+ODP
                 const nameUpper = placemarkName.toUpperCase();
                 if (nameUpper.includes('ODC+ODP') || nameUpper.includes('ODC & ODP') || nameUpper.includes('ODC DAN ODP')) {
@@ -230,7 +246,7 @@ exports.importKml = async (req, res) => {
                 }
             }
         }
-        
+
         if (assetsToInsert.length === 0) {
             return res.status(400).json({ message: 'Tidak ada aset valid yang bisa diimpor dari file KML ini.' });
         }
@@ -239,7 +255,7 @@ exports.importKml = async (req, res) => {
         const query = 'INSERT INTO network_assets (workspace_id, owner_name, name, type, latitude, longitude, description, splitter_count, connection_status) VALUES ?';
         const [insertResult] = await pool.query(query, [assetsToInsert]);
         const firstInsertId = insertResult.insertId;
-        
+
         // Ambil semua asset yang baru saja di-insert menggunakan insertId range
         const [insertedAssets] = await pool.query(
             `SELECT id, name, type, latitude, longitude, description, splitter_count, connection_status 
@@ -248,21 +264,21 @@ exports.importKml = async (req, res) => {
              ORDER BY id ASC`,
             [workspaceId, firstInsertId, firstInsertId, assetsToInsert.length]
         );
-        
+
         // Tentukan parent_asset_id berdasarkan hierarchy dan proximity
         // Hierarchy baru: Mikrotik -> OLT -> ODC -> ODP
-        
+
         // Pisahkan inserted assets berdasarkan type untuk efisiensi
         const insertedMikrotiks = insertedAssets.filter(a => a.type === 'Mikrotik');
         const insertedOLTs = insertedAssets.filter(a => a.type === 'OLT');
         const insertedODCs = insertedAssets.filter(a => a.type === 'ODC');
         const insertedODPs = insertedAssets.filter(a => a.type === 'ODP');
-        
+
         // Loop untuk ODP: cari parent ODC atau ODP terdekat
         // Prioritas: ODC > ODP (karena ODC lebih tinggi dalam hierarchy)
         for (const odp of insertedODPs) {
             let parentId = null;
-            
+
             // Prioritas 1: Cari ODC terdekat dari ODC yang baru di-insert
             if (insertedODCs.length > 0) {
                 const nearestODC = insertedODCs
@@ -273,12 +289,12 @@ exports.importKml = async (req, res) => {
                         return { ...odc, distance };
                     })
                     .sort((a, b) => a.distance - b.distance)[0];
-                
+
                 if (nearestODC) {
                     parentId = nearestODC.id;
                 }
             }
-            
+
             // Prioritas 2: Jika tidak ada ODC yang baru di-insert, cari dari semua ODC di workspace
             if (!parentId) {
                 const [odcAssets] = await pool.query(
@@ -287,7 +303,7 @@ exports.importKml = async (req, res) => {
                      WHERE workspace_id = ? AND type = 'ODC' AND id != ?`,
                     [workspaceId, odp.id]
                 );
-                
+
                 if (odcAssets.length > 0) {
                     const nearestODC = odcAssets
                         .map(odc => {
@@ -297,13 +313,13 @@ exports.importKml = async (req, res) => {
                             return { ...odc, distance };
                         })
                         .sort((a, b) => a.distance - b.distance)[0];
-                    
+
                     if (nearestODC) {
                         parentId = nearestODC.id;
                     }
                 }
             }
-            
+
             // Prioritas 3: Jika tidak ada ODC, cari ODP terdekat dari ODP yang baru di-insert
             if (!parentId && insertedODPs.length > 1) {
                 const otherODPs = insertedODPs.filter(o => o.id !== odp.id);
@@ -316,13 +332,13 @@ exports.importKml = async (req, res) => {
                             return { ...otherOdp, distance };
                         })
                         .sort((a, b) => a.distance - b.distance)[0];
-                    
+
                     if (nearestODP) {
                         parentId = nearestODP.id;
                     }
                 }
             }
-            
+
             // Prioritas 4: Jika tidak ada, cari dari semua ODP di workspace
             if (!parentId) {
                 const [odpAssets] = await pool.query(
@@ -331,7 +347,7 @@ exports.importKml = async (req, res) => {
                      WHERE workspace_id = ? AND type = 'ODP' AND id != ?`,
                     [workspaceId, odp.id]
                 );
-                
+
                 if (odpAssets.length > 0) {
                     const nearestODP = odpAssets
                         .map(odpAsset => {
@@ -341,13 +357,13 @@ exports.importKml = async (req, res) => {
                             return { ...odpAsset, distance };
                         })
                         .sort((a, b) => a.distance - b.distance)[0];
-                    
+
                     if (nearestODP) {
                         parentId = nearestODP.id;
                     }
                 }
             }
-            
+
             // Update parent_asset_id jika ditemukan
             if (parentId) {
                 await pool.query(
@@ -356,7 +372,7 @@ exports.importKml = async (req, res) => {
                 );
             }
         }
-        
+
         // Loop untuk ODC: cari parent OLT terdekat
         for (const asset of insertedODCs) {
             let parentId = null;
@@ -370,12 +386,12 @@ exports.importKml = async (req, res) => {
                         return { ...parent, distance };
                     })
                     .sort((a, b) => a.distance - b.distance)[0];
-                
+
                 if (nearestParent) {
                     parentId = nearestParent.id;
                 }
             }
-            
+
             // Prioritas 2: Jika tidak ada, cari dari semua OLT di workspace
             if (!parentId) {
                 const [parentAssets] = await pool.query(
@@ -384,7 +400,7 @@ exports.importKml = async (req, res) => {
                      WHERE workspace_id = ? AND type = 'OLT' AND id != ?`,
                     [workspaceId, asset.id]
                 );
-                
+
                 if (parentAssets.length > 0) {
                     const nearestParent = parentAssets
                         .map(parent => {
@@ -394,13 +410,13 @@ exports.importKml = async (req, res) => {
                             return { ...parent, distance };
                         })
                         .sort((a, b) => a.distance - b.distance)[0];
-                    
+
                     if (nearestParent) {
                         parentId = nearestParent.id;
                     }
                 }
             }
-            
+
             // Update parent_asset_id jika ditemukan
             if (parentId) {
                 await pool.query(
@@ -473,7 +489,7 @@ exports.importKml = async (req, res) => {
 
 exports.exportKml = async (req, res) => {
     const workspaceId = req.user.workspace_id;
-    
+
     try {
         // Ambil semua assets dan clients dari workspace
         const [assets] = await pool.query(
@@ -483,7 +499,7 @@ exports.exportKml = async (req, res) => {
              ORDER BY owner_name, type, name`,
             [workspaceId]
         );
-        
+
         const [clients] = await pool.query(
             `SELECT id, pppoe_secret_name, latitude, longitude, odp_asset_id
              FROM clients
@@ -491,7 +507,7 @@ exports.exportKml = async (req, res) => {
              ORDER BY pppoe_secret_name`,
             [workspaceId]
         );
-        
+
         // Group assets by owner_name
         const assetsByOwner = new Map();
         assets.forEach(asset => {
@@ -501,7 +517,7 @@ exports.exportKml = async (req, res) => {
             }
             assetsByOwner.get(owner).push(asset);
         });
-        
+
         // Build KML structure
         const kmlStructure = {
             kml: {
@@ -513,7 +529,7 @@ exports.exportKml = async (req, res) => {
                 }
             }
         };
-        
+
         // Add assets grouped by owner
         assetsByOwner.forEach((ownerAssets, ownerName) => {
             const placemarks = ownerAssets.map(asset => {
@@ -540,23 +556,23 @@ exports.exportKml = async (req, res) => {
                         ]
                     }
                 };
-                
+
                 if (asset.description) {
                     placemark.ExtendedData.Data.push({
                         name: 'description',
                         value: asset.description
                     });
                 }
-                
+
                 return placemark;
             });
-            
+
             kmlStructure.kml.Document.Folder.push({
                 name: ownerName,
                 Placemark: placemarks.length === 1 ? placemarks[0] : placemarks
             });
         });
-        
+
         // Add clients as separate folder if any
         if (clients.length > 0) {
             const clientPlacemarks = clients.map(client => ({
@@ -578,29 +594,29 @@ exports.exportKml = async (req, res) => {
                     ]
                 }
             }));
-            
+
             kmlStructure.kml.Document.Folder.push({
                 name: 'Clients',
                 Placemark: clientPlacemarks.length === 1 ? clientPlacemarks[0] : clientPlacemarks
             });
         }
-        
+
         // Convert to XML
         const builder = new Builder({
             xmldec: { version: '1.0', encoding: 'UTF-8' },
             renderOpts: { pretty: true, indent: '  ', newline: '\n' }
         });
-        
+
         const kmlXml = builder.buildObject(kmlStructure);
-        
+
         // Set headers for download
         const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
         const filename = `jnet-coverage-export-${timestamp}.kml`;
-        
+
         res.setHeader('Content-Type', 'application/vnd.google-earth.kml+xml');
         res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
         res.send(kmlXml);
-        
+
     } catch (error) {
         console.error("KML EXPORT ERROR:", error);
         res.status(500).json({ message: 'Gagal mengekspor file KML.', error: error.message });

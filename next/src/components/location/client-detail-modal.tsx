@@ -68,6 +68,7 @@ interface ClientDetailModalProps {
   onEdit: (_client: Client) => void;
   onDelete: (_client: Client) => void;
   onEditPath?: (_client: Client) => void;
+  nocWorkspaceId?: number;
 }
 
 const formatDate = (dateString: string) => {

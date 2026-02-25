@@ -12,6 +12,7 @@ interface EditAssetModalProps {
   onClose: () => void;
   onSuccess: () => void;
   assetToEdit: Asset | null;
+  nocWorkspaceId?: number;
 }
 
 const EditAssetModal = ({

@@ -11,6 +11,7 @@ interface AddAssetModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSuccess: () => void;
+  nocWorkspaceId?: number;
 }
 
 const AddAssetModal = ({ isOpen, onClose, onSuccess }: AddAssetModalProps) => {

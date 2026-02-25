@@ -12,7 +12,7 @@ import { Input } from '@/components/ui/input';
 import ConfirmModal from '@/components/ui/confirm-modal';
 import EditPppoeSecretModal from './edit-pppoe-secret-modal';
 import { apiFetch } from '@/utils/api';
-import { formatUptime } from '@/utils/format';
+import { formatUptime, formatCompactUptime } from '@/utils/format';
 
 interface PppoeSecret {
   '.id': string;
@@ -154,29 +154,6 @@ const PppoeSecretsTable = ({ refreshTrigger, onActionComplete, initialFilter = '
     return parts.join('');
   };
 
-  const formatCompactUptime = (uptime: string) => {
-    if (!uptime || uptime === '00:00:00' || uptime === 'N/A') return '-';
-
-    // Format: "1w2d05:04:03" or "2d05:04:03" or "05:04:03"
-    const match = uptime.match(/(?:(\d+)w)?(?:(\d+)d)?(?:(\d{2}):(\d{2}):(\d{2}))/);
-    if (!match) return uptime;
-
-    const [_, w, d, h, m] = match;
-    const parts = [];
-    if (w) parts.push(`${w}w`);
-    if (d) parts.push(`${d}d`);
-
-    // Jika tidak ada week/day, tampilkan hour:minute
-    if (!w && !d) {
-      parts.push(`${h}h`);
-      parts.push(`${m}m`);
-    } else if (h && h !== '00') {
-      // Jika ada week/day, tambahkan hour saja jika bukan 00
-      parts.push(`${parseInt(h)}h`);
-    }
-
-    return parts.join(' ') || '<1m';
-  };
 
   // Fungsi untuk mendapatkan uptime dari secret yang ditambah local tick
   const getUptime = useCallback((secretName: string): string => {
@@ -462,8 +439,7 @@ const PppoeSecretsTable = ({ refreshTrigger, onActionComplete, initialFilter = '
                     onClick={() => handleSort('status')}
                   >
                     <div className="flex items-center gap-1 sm:gap-2">
-                      <span className="hidden sm:inline">Status</span>
-                      <span className="sm:hidden">Stt</span>
+                      <span>Status</span>
                       {sortColumn === 'status' ? (
                         sortDirection === 'asc' ? <ChevronUp size={14} className="sm:w-4 sm:h-4" /> : <ChevronDown size={14} className="sm:w-4 sm:h-4" />
                       ) : (

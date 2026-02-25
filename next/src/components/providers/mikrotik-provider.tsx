@@ -195,7 +195,9 @@ export const MikrotikProvider = ({ children }: { children: React.ReactNode }) =>
                 socket.onopen = () => {
                     clearTimeout(connectionTimeout);
                     console.log("[WebSocket] Koneksi berhasil dibuat.");
-                    setIsConnected(true);
+                    // JANGAN set isConnected=true di sini!
+                    // isConnected hanya boleh di-set oleh pesan 'connection-status' dari backend,
+                    // karena backend yang tahu apakah Mikrotik router benar-benar terhubung.
                     reconnectAttempts = 0; // Reset counter setelah berhasil connect
                 };
 

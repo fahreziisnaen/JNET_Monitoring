@@ -1,9 +1,10 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { User, Loader2, Search, ChevronDown, ChevronUp } from 'lucide-react';
+import { User, Loader2, Search, ChevronDown, ChevronUp, Trash2, CheckSquare, Square } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
+import { Button } from '@/components/ui/button';
 
 export interface Client {
   id: number;
@@ -14,13 +15,15 @@ export interface Client {
   whatsapp_number?: string | null;
   odp_asset_id: number | null;
   odp_name?: string | null;
-  odp_owner_name?: string | null; // Owner dari ODP yang terhubung
-  isActive?: boolean; // Status aktif dari PPPoE
+  odp_owner_name?: string | null;
+  isActive?: boolean;
   isOffline?: boolean;
   created_at?: string;
   updated_at?: string;
   connection_path?: string | [number, number][];
   photo_url?: string | null;
+  workspace_id?: number;
+  workspace_name?: string;
 }
 
 interface ClientListProps {
@@ -32,9 +35,13 @@ interface ClientListProps {
   searchQuery?: string;
   onSearchChange?: (query: string) => void;
   pppoeSecrets?: any[];
+  onBulkDelete?: (ids: number[]) => void;
 }
 
-const ClientList = ({ clients, loading, selectedClientId, onClientSelect, onClientView, searchQuery = '', onSearchChange, pppoeSecrets }: ClientListProps) => {
+const ClientList = ({ clients, loading, selectedClientId, onClientSelect, onClientView, searchQuery = '', onSearchChange, pppoeSecrets, onBulkDelete }: ClientListProps) => {
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  const [isSelectMode, setIsSelectMode] = useState(false);
+
   const existingSecretsSet = React.useMemo(() => {
     return new Set(pppoeSecrets?.map((s: any) => s.name) || []);
   }, [pppoeSecrets]);
@@ -52,26 +59,21 @@ const ClientList = ({ clients, loading, selectedClientId, onClientSelect, onClie
       });
     }
 
-    // Sort: Orphan first, then alphabetical
     if (pppoeSecrets && pppoeSecrets.length > 0) {
       result.sort((a, b) => {
         const aIsOrphan = !existingSecretsSet.has(a.pppoe_secret_name);
         const bIsOrphan = !existingSecretsSet.has(b.pppoe_secret_name);
-
         if (aIsOrphan && !bIsOrphan) return -1;
         if (!aIsOrphan && bIsOrphan) return 1;
-
         return a.pppoe_secret_name.localeCompare(b.pppoe_secret_name);
       });
     } else {
-      // Default alphabetical sort if no pppoeSecrets for comparison
       result.sort((a, b) => a.pppoe_secret_name.localeCompare(b.pppoe_secret_name));
     }
 
     return result;
   }, [clients, searchQuery, pppoeSecrets, existingSecretsSet]);
 
-  // Collapsed by default on mobile, always expanded on lg+
   const [isCollapsed, setIsCollapsed] = useState(true);
 
   useEffect(() => {
@@ -92,39 +94,133 @@ const ClientList = ({ clients, loading, selectedClientId, onClientSelect, onClie
     };
   }, []);
 
+  useEffect(() => {
+    if (!isSelectMode) setSelectedIds(new Set());
+  }, [isSelectMode]);
+
+  const allFilteredSelected = filteredClients.length > 0 && filteredClients.every(c => selectedIds.has(c.id));
+
+  const toggleSelectAll = () => {
+    if (allFilteredSelected) {
+      setSelectedIds(prev => {
+        const next = new Set(prev);
+        filteredClients.forEach(c => next.delete(c.id));
+        return next;
+      });
+    } else {
+      setSelectedIds(prev => {
+        const next = new Set(prev);
+        filteredClients.forEach(c => next.add(c.id));
+        return next;
+      });
+    }
+  };
+
+  const toggleItem = (id: number) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const handleDeleteSelected = () => {
+    if (selectedIds.size === 0) return;
+    onBulkDelete?.(Array.from(selectedIds));
+    setSelectedIds(new Set());
+    setIsSelectMode(false);
+  };
+
   return (
     <Card className={`flex flex-col transition-all duration-300 ${isCollapsed ? 'flex-shrink-0' : 'flex-1 min-h-0'}`}>
       <CardHeader className="pb-2 px-3 py-2 lg:px-6 lg:py-3 lg:cursor-default">
-        <div className="flex items-center justify-between gap-3">
-          <div className="flex items-center gap-2 cursor-pointer" onClick={() => setIsCollapsed(prev => !prev)}>
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2 cursor-pointer" onClick={() => !isSelectMode && setIsCollapsed(prev => !prev)}>
             <CardTitle className="text-base lg:text-lg whitespace-nowrap">Daftar Client ({filteredClients.length})</CardTitle>
             <button className="lg:hidden text-muted-foreground" aria-label="Toggle">
               {isCollapsed ? <ChevronDown size={16} /> : <ChevronUp size={16} />}
             </button>
           </div>
-          {onSearchChange && (
-            <div className="relative flex-1">
-              <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
-              <Input
-                type="text"
-                placeholder="Cari client..."
-                value={searchQuery}
-                onClick={() => setIsCollapsed(false)}
-                onFocus={() => {
-                  setIsCollapsed(false);
-                  window.dispatchEvent(new CustomEvent('collapse-asset-list'));
-                }}
-                onChange={(e) => {
-                  setIsCollapsed(false);
-                  window.dispatchEvent(new CustomEvent('collapse-asset-list'));
-                  onSearchChange(e.target.value);
-                }}
-                className="pl-8 bg-input text-sm h-8"
-              />
-            </div>
-          )}
+
+          <div className="flex items-center gap-1.5 flex-1 justify-end">
+            {!isSelectMode && onSearchChange && (
+              <div className="relative flex-1 max-w-[160px]">
+                <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+                <Input
+                  type="text"
+                  placeholder="Cari client..."
+                  value={searchQuery}
+                  onClick={() => setIsCollapsed(false)}
+                  onFocus={() => {
+                    setIsCollapsed(false);
+                    window.dispatchEvent(new CustomEvent('collapse-asset-list'));
+                  }}
+                  onChange={(e) => {
+                    setIsCollapsed(false);
+                    window.dispatchEvent(new CustomEvent('collapse-asset-list'));
+                    onSearchChange(e.target.value);
+                  }}
+                  className="pl-8 bg-input text-sm h-8"
+                />
+              </div>
+            )}
+
+            {onBulkDelete && (
+              <>
+                {isSelectMode ? (
+                  <div className="flex items-center gap-1.5">
+                    {selectedIds.size > 0 && (
+                      <Button
+                        size="sm"
+                        variant="destructive"
+                        className="h-8 px-2 text-xs gap-1"
+                        onClick={handleDeleteSelected}
+                      >
+                        <Trash2 size={13} />
+                        Hapus ({selectedIds.size})
+                      </Button>
+                    )}
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-8 px-2 text-xs"
+                      onClick={() => setIsSelectMode(false)}
+                    >
+                      Batal
+                    </Button>
+                  </div>
+                ) : (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-8 px-2 text-xs gap-1 text-destructive border-destructive/40 hover:bg-destructive/10"
+                    onClick={() => { setIsSelectMode(true); setIsCollapsed(false); }}
+                  >
+                    <Trash2 size={13} />
+                    <span className="hidden sm:inline">Pilih & Hapus</span>
+                  </Button>
+                )}
+              </>
+            )}
+          </div>
         </div>
+
+        {/* Select All bar */}
+        {isSelectMode && !isCollapsed && filteredClients.length > 0 && (
+          <button
+            onClick={toggleSelectAll}
+            className="mt-1.5 flex items-center gap-2 text-xs text-muted-foreground hover:text-foreground transition-colors w-full px-1"
+          >
+            {allFilteredSelected
+              ? <CheckSquare size={15} className="text-primary" />
+              : <Square size={15} />
+            }
+            {allFilteredSelected ? 'Batal Pilih Semua' : `Pilih Semua (${filteredClients.length})`}
+          </button>
+        )}
       </CardHeader>
+
       {!isCollapsed && (
         <CardContent className="flex-grow overflow-y-auto p-1.5 max-h-[120px] lg:max-h-none">
           {loading ? (
@@ -139,14 +235,33 @@ const ClientList = ({ clients, loading, selectedClientId, onClientSelect, onClie
             <ul className="space-y-1.5">
               {filteredClients.map(client => {
                 const isSelected = selectedClientId === client.id;
+                const isChecked = selectedIds.has(client.id);
                 return (
                   <li key={client.id}>
-                    <button
-                      onClick={() => onClientSelect(client)}
-                      onDoubleClick={() => onClientView?.(client)}
-                      className={`w-full flex items-center gap-2 lg:gap-3 p-2 lg:p-3 rounded-lg text-left transition-all duration-200 ${isSelected ? 'bg-primary/10 ring-2 ring-primary' : 'hover:bg-secondary'}`}
+                    <div
+                      className={`w-full flex items-center gap-2 lg:gap-3 p-2 lg:p-3 rounded-lg text-left transition-all duration-200 cursor-pointer ${isSelectMode
+                          ? isChecked
+                            ? 'bg-destructive/10 ring-2 ring-destructive/50'
+                            : 'hover:bg-secondary'
+                          : isSelected
+                            ? 'bg-primary/10 ring-2 ring-primary'
+                            : 'hover:bg-secondary'
+                        }`}
+                      onClick={() => {
+                        if (isSelectMode) toggleItem(client.id);
+                        else onClientSelect(client);
+                      }}
+                      onDoubleClick={() => !isSelectMode && onClientView?.(client)}
                     >
-                      <div className="flex-shrink-0 w-8 h-8 lg:w-10 lg:h-10 rounded-lg flex items-center justify-center text-white bg-purple-500">
+                      {isSelectMode && (
+                        <div className="flex-shrink-0 w-5 h-5 flex items-center justify-center">
+                          {isChecked
+                            ? <CheckSquare size={18} className="text-destructive" />
+                            : <Square size={18} className="text-muted-foreground" />
+                          }
+                        </div>
+                      )}
+                      <div className={`flex-shrink-0 w-8 h-8 lg:w-10 lg:h-10 rounded-lg flex items-center justify-center text-white bg-purple-500 ${isSelectMode ? 'opacity-70' : ''}`}>
                         <User size={16} />
                       </div>
                       <div className="flex-grow overflow-hidden">
@@ -164,7 +279,7 @@ const ClientList = ({ clients, loading, selectedClientId, onClientSelect, onClie
                           <p className="text-sm text-muted-foreground">Belum terhubung ke ODP</p>
                         )}
                       </div>
-                    </button>
+                    </div>
                   </li>
                 );
               })}
@@ -177,4 +292,3 @@ const ClientList = ({ clients, loading, selectedClientId, onClientSelect, onClie
 };
 
 export default ClientList;
-

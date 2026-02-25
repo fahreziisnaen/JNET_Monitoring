@@ -796,3 +796,27 @@ exports.getClient = async (req, res) => {
     }
 };
 
+exports.bulkDeleteClients = async (req, res) => {
+    const workspaceId = req.user.workspace_id;
+    const { ids } = req.body;
+
+    if (!Array.isArray(ids) || ids.length === 0) {
+        return res.status(400).json({ message: 'Daftar ID client tidak valid.' });
+    }
+
+    try {
+        const placeholders = ids.map(() => '?').join(', ');
+        const [result] = await pool.query(
+            `DELETE FROM clients WHERE id IN (${placeholders}) AND workspace_id = ?`,
+            [...ids, workspaceId]
+        );
+        res.status(200).json({
+            message: `Berhasil menghapus ${result.affectedRows} client.`,
+            deleted: result.affectedRows
+        });
+    } catch (error) {
+        console.error('[BULK DELETE CLIENTS ERROR]:', error);
+        res.status(500).json({ message: 'Gagal menghapus client.', error: error.message });
+    }
+};
+

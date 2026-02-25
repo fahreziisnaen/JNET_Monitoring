@@ -12,6 +12,7 @@ interface AddConnectionModalProps {
   onClose: () => void;
   onSuccess: () => void;
   asset: Asset | null;
+  nocWorkspaceId?: number;
 }
 
 interface PppoeSecret {
@@ -36,7 +37,7 @@ const AddConnectionModal = ({ isOpen, onClose, onSuccess, asset }: AddConnection
         })
         .then(data => {
           // Sort berdasarkan nama A-Z
-          const sortedData = [...data].sort((a, b) => 
+          const sortedData = [...data].sort((a, b) =>
             a.name.toLowerCase().localeCompare(b.name.toLowerCase())
           );
           setSecrets(sortedData);
@@ -89,9 +90,9 @@ const AddConnectionModal = ({ isOpen, onClose, onSuccess, asset }: AddConnection
               <p className="text-sm">Hubungkan pengguna PPPoE ke ODP <strong className="text-primary">{asset?.name}</strong>.</p>
               <div>
                 <label className="block text-sm font-medium mb-1">Pengguna PPPoE</label>
-                <select 
-                  value={selectedSecret} 
-                  onChange={(e) => setSelectedSecret(e.target.value)} 
+                <select
+                  value={selectedSecret}
+                  onChange={(e) => setSelectedSecret(e.target.value)}
                   className="w-full p-2 rounded-md bg-input"
                   disabled={loading || secrets.length === 0}
                 >
@@ -99,12 +100,12 @@ const AddConnectionModal = ({ isOpen, onClose, onSuccess, asset }: AddConnection
                   {secrets.length > 0 && secrets.map(secret => <option key={secret.name} value={secret.name}>{secret.name}</option>)}
                 </select>
               </div>
-               {error && <p className="text-sm text-center text-destructive p-3 bg-destructive/10 rounded-md">{error}</p>}
+              {error && <p className="text-sm text-center text-destructive p-3 bg-destructive/10 rounded-md">{error}</p>}
             </div>
             <footer className="flex justify-end gap-4 p-4 bg-secondary/50">
               <Button type="button" variant="ghost" onClick={onClose}>Batal</Button>
               <Button type="submit" disabled={loading || secrets.length === 0 || !!error}>
-                {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin"/>}
+                {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                 Simpan Koneksi
               </Button>
             </footer>

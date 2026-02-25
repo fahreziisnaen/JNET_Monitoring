@@ -576,3 +576,27 @@ exports.addWorkspaceUser = async (req, res) => {
         res.status(500).json({ message: 'Gagal menambahkan pengguna ke workspace.', error: error.message });
     }
 };
+
+exports.bulkDeleteAssets = async (req, res) => {
+    const workspaceId = req.user.workspace_id;
+    const { ids } = req.body;
+
+    if (!Array.isArray(ids) || ids.length === 0) {
+        return res.status(400).json({ message: 'Daftar ID aset tidak valid.' });
+    }
+
+    try {
+        const placeholders = ids.map(() => '?').join(', ');
+        const [result] = await pool.query(
+            `DELETE FROM network_assets WHERE id IN (${placeholders}) AND workspace_id = ?`,
+            [...ids, workspaceId]
+        );
+        res.status(200).json({
+            message: `Berhasil menghapus ${result.affectedRows} aset.`,
+            deleted: result.affectedRows
+        });
+    } catch (error) {
+        console.error('[BULK DELETE ASSETS ERROR]:', error);
+        res.status(500).json({ message: 'Gagal menghapus aset.', error: error.message });
+    }
+};

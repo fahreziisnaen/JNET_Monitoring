@@ -32,6 +32,7 @@ interface AssetDetailModalProps {
   onDelete: (_asset: Asset) => void;
   onAddConnection: (_asset: Asset) => void;
   onEditPath?: (_asset: Asset) => void;
+  nocWorkspaceId?: number;
 }
 
 const AssetDetailModal = ({

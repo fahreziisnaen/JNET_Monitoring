@@ -19,7 +19,8 @@ const ManagementPage = () => {
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [isIpPoolModalOpen, setIsIpPoolModalOpen] = useState(false);
   const [summary, setSummary] = useState({ total: 0, active: 0, inactive: 0 });
-  const [loading, setLoading] = useState(false);
+  // loading hanya true saat kita belum tahu status koneksi awal
+  const [loading, setLoading] = useState(true);
   const [refreshTrigger, setRefreshTrigger] = useState(0);
   const [activeFilter, setActiveFilter] = useState<'all' | 'active' | 'inactive'>('all');
   const [hasDevices, setHasDevices] = useState<boolean | null>(null);
@@ -51,6 +52,10 @@ const ManagementPage = () => {
     if (isConnected === true && forceRefresh) {
       forceRefresh();
     }
+    // Ketika status isConnected diketahui (true atau false), hilangkan loading
+    // isConnected awalnya false di provider, tapi kita tunggu sampai snapshot / WS merespons
+    // agar kita tidak langsung menampilkan "offline" sebelum snapshot selesai
+    setLoading(false);
   }, [isConnected, forceRefresh]);
 
   // Tidak perlu fetchSummary lagi, semua data dari WebSocket
@@ -185,10 +190,10 @@ const ManagementPage = () => {
           </div>
         ) : (
           <>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 lg:gap-6">
-              {renderSummaryCard("Total Secrets", summary.total, <Users size={28} />, "bg-gradient-to-br from-blue-500 to-blue-700", 'all')}
-              {renderSummaryCard("Aktif", summary.active, <UserCheck size={28} />, "bg-gradient-to-br from-green-500 to-green-700", 'active')}
-              {renderSummaryCard("Tidak Aktif", summary.inactive, <UserX size={28} />, "bg-gradient-to-br from-red-500 to-red-700", 'inactive')}
+            <div className="grid grid-cols-3 gap-2 sm:gap-4 lg:gap-6">
+              {renderSummaryCard("Total", summary.total, <Users />, "bg-gradient-to-br from-blue-500 to-blue-700", 'all')}
+              {renderSummaryCard("Aktif", summary.active, <UserCheck />, "bg-gradient-to-br from-green-500 to-green-700", 'active')}
+              {renderSummaryCard("Tidak Aktif", summary.inactive, <UserX />, "bg-gradient-to-br from-red-500 to-red-700", 'inactive')}
             </div>
             <div className="mt-8">
               <PppoeSecretsTable refreshTrigger={refreshTrigger} onActionComplete={handleSuccess} initialFilter={activeFilter} />

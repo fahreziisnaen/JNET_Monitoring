@@ -16,6 +16,8 @@ router.route('/')
     .post(authorizeAdmin, uploadAsset.single('photo'), assetController.addAsset)
     .delete(authorizeAdmin, assetController.deleteAllAssets);
 
+router.delete('/bulk', authorizeAdmin, assetController.bulkDeleteAssets);
+
 router.route('/:id/connections')
     .get(assetController.getAssetConnections)
     .post(authorizeAdmin, assetController.addAssetConnection);

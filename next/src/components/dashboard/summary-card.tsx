@@ -15,15 +15,15 @@ const SummaryCard = ({ title, count, icon, colorClass }: SummaryCardProps) => {
   return (
     <motion.div whileHover={{ y: -5 }} className="h-full">
       <Card className={`text-white ${colorClass}`}>
-        <CardContent className="p-4 sm:p-6 flex justify-between items-start">
+        <CardContent className="p-3 sm:p-6 flex justify-between items-start">
           <div className="flex flex-col">
-            <p className="text-base sm:text-lg font-medium text-white/80">{title}</p>
-            <div className="text-3xl sm:text-4xl font-bold">
+            <p className="text-xs sm:text-lg font-medium text-white/80">{title}</p>
+            <div className="text-xl sm:text-4xl font-bold mt-1 sm:mt-0">
               {typeof count === 'object' ? count : <span>{count}</span>}
             </div>
           </div>
-          <div className="p-2 sm:p-3 bg-black/20 rounded-xl">
-            {React.cloneElement(icon as React.ReactElement, { size: 24, className: 'sm:w-7 sm:h-7' } as any)}
+          <div className="p-1.5 sm:p-3 bg-black/20 rounded-lg sm:rounded-xl">
+            {React.cloneElement(icon as React.ReactElement, { className: 'w-4 h-4 sm:w-7 sm:h-7' } as any)}
           </div>
         </CardContent>
       </Card>

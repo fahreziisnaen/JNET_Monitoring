@@ -21,6 +21,7 @@ interface AddClientModalProps {
   onClose: () => void;
   onSuccess: () => void;
   assets?: Asset[];
+  nocWorkspaceId?: number;
 }
 
 const AddClientModal = ({ isOpen, onClose, onSuccess, assets = [] }: AddClientModalProps) => {

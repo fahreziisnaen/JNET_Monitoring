@@ -9,6 +9,7 @@ router.use(protect);
 router.get('/unlinked-pppoe-secrets', clientController.getUnlinkedPppoeSecrets);
 router.get('/', clientController.getClients);
 router.post('/', uploadClient.single('photo'), clientController.createClient);
+router.delete('/bulk', clientController.bulkDeleteClients);
 router.get('/:id', clientController.getClient);
 router.put('/:id', uploadClient.single('photo'), clientController.updateClient);
 router.patch('/:id', uploadClient.single('photo'), clientController.updateClient);

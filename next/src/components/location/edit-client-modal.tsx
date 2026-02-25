@@ -15,6 +15,7 @@ interface EditClientModalProps {
   onSuccess: () => void;
   client: Client | null;
   assets?: Asset[];
+  nocWorkspaceId?: number;
 }
 
 const EditClientModal = ({ isOpen, onClose, onSuccess, client, assets = [] }: EditClientModalProps) => {

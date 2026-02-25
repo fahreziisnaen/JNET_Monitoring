@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import React, { useState, useEffect, useRef } from 'react';
-import { Settings, LogOut, Share2, Bell, AlertCircle, X, CheckCircle2 } from 'lucide-react';
+import { Settings, LogOut, Share2, Bell, AlertCircle, X, CheckCircle2, ArrowRightLeft, Loader2 } from 'lucide-react';
 import GenerateCloneCodeModal from '@/components/settings/generate-clone-code-modal';
 import { ThemeSwitch } from '@/components/theme-switch';
 import { useAuth } from '../providers/auth-provider';
@@ -11,7 +11,7 @@ import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from '@/components/motion';
 
 const Header = () => {
-  const { user, logout } = useAuth();
+  const { user, logout, token, checkLoggedIn } = useAuth();
   const isAdmin = user?.role === 'admin';
   const { disconnectCount, notifications, clearNotifications, markAsRead } = useNotification();
   const router = useRouter();
@@ -20,6 +20,62 @@ const Header = () => {
   const [isCloneModalOpen, setIsCloneModalOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const notificationRef = useRef<HTMLDivElement>(null);
+  const [workspaces, setWorkspaces] = useState<any[]>([]);
+  const [isSwitching, setIsSwitching] = useState(false);
+  const [isWorkspaceDropdownOpen, setIsWorkspaceDropdownOpen] = useState(false);
+
+  useEffect(() => {
+    if (user?.is_super_admin && token) {
+      fetchWorkspaces();
+    }
+  }, [user, token]);
+
+  const fetchWorkspaces = async () => {
+    try {
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/api/workspaces/all`, {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+      if (response.ok) {
+        const data = await response.json();
+        setWorkspaces(data);
+      }
+    } catch (error) {
+      console.error("Failed to fetch workspaces", error);
+    }
+  };
+
+  const handleSwitchWorkspace = async (workspaceId: number) => {
+    setIsSwitching(true);
+    try {
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/api/workspaces/switch/${workspaceId}`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        if (typeof window !== 'undefined' && localStorage.getItem('auth_token')) {
+          localStorage.setItem('auth_token', data.token);
+        }
+        await checkLoggedIn();
+        setIsDropdownOpen(false);
+        window.location.href = '/dashboard';
+      } else {
+        const errorData = await response.json().catch(() => ({}));
+        alert(errorData.message || 'Gagal ganti workspace');
+      }
+    } catch (error) {
+      console.error("Error switching workspace", error);
+      alert('Gagal ganti workspace karena kesalahan jaringan');
+    } finally {
+      setIsSwitching(false);
+    }
+  };
 
   const handleLogout = async () => {
     setIsDropdownOpen(false);
@@ -31,6 +87,7 @@ const Header = () => {
     const handleClickOutside = (event: MouseEvent) => {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
         setIsDropdownOpen(false);
+        setIsWorkspaceDropdownOpen(false);
       }
       if (notificationRef.current && !notificationRef.current.contains(event.target as Node)) {
         setIsNotificationOpen(false);
@@ -186,23 +243,23 @@ const Header = () => {
             </AnimatePresence>
           </div>
           <div className="relative" ref={dropdownRef}>
-            <button onClick={() => setIsDropdownOpen(prev => !prev)} className="p-1.5 rounded-full hover:bg-secondary">
+            <button onClick={() => setIsDropdownOpen(prev => !prev)} className="p-1.5 rounded-full hover:bg-secondary focus:outline-none focus:ring-2 focus:ring-primary/50">
               <img
                 src={user?.profile_picture_url ? `${process.env.NEXT_PUBLIC_API_BASE_URL}${user.profile_picture_url}` : `${process.env.NEXT_PUBLIC_API_BASE_URL}/public/uploads/avatars/default.jpg`}
                 alt="User Avatar"
-                className="w-9 h-9 rounded-full object-cover"
+                className="w-9 h-9 rounded-full object-cover border border-border"
                 onError={(e) => {
-                  // Fallback jika gambar tidak ditemukan
                   const target = e.target as HTMLImageElement;
                   target.src = `${process.env.NEXT_PUBLIC_API_BASE_URL}/public/uploads/avatars/default.jpg`;
                 }}
               />
             </button>
             {isDropdownOpen && (
-              <div className="absolute top-full right-0 mt-2 w-60 bg-card rounded-lg shadow-lg border z-50">
-                <div className="p-3 border-b">
-                  <p className="font-semibold text-sm">{user?.displayName}</p>
-                  <p className="text-xs text-muted-foreground">@{user?.username || 'user'}</p>
+              <div className="absolute top-full right-0 mt-2 w-64 bg-card rounded-lg shadow-lg border z-50">
+                <div className="p-3 border-b flex flex-col">
+                  <p className="font-semibold text-sm truncate">{user?.displayName}</p>
+                  <p className="text-xs text-muted-foreground truncate">@{user?.username || 'user'}</p>
+                  {user?.is_super_admin && <span className="mt-1 inline-flex self-start px-1.5 py-0.5 rounded text-[10px] font-medium bg-primary/20 text-primary">Super Admin</span>}
                 </div>
                 <div className="p-2 space-y-1">
                   <Link href="/settings" onClick={() => setIsDropdownOpen(false)} className="flex items-center gap-3 w-full px-3 py-2 text-sm rounded-md hover:bg-secondary">
@@ -213,9 +270,54 @@ const Header = () => {
                       <Share2 size={16} /><span>Bagikan Konfigurasi</span>
                     </button>
                   )}
+                  {user?.is_super_admin && workspaces.length > 0 && (
+                    <div className="pt-2 pb-1 border-t px-1 mt-1">
+                      <div className="relative">
+                        <button
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            setIsWorkspaceDropdownOpen(!isWorkspaceDropdownOpen);
+                          }}
+                          className="w-full flex items-center justify-between px-3 py-2 text-sm rounded-md hover:bg-secondary text-foreground transition-colors"
+                        >
+                          <span className="flex items-center gap-3"><ArrowRightLeft size={16} className="text-muted-foreground" /> Ganti Workspace</span>
+                          <span className={`text-muted-foreground transition-transform duration-200 text-[10px] ${isWorkspaceDropdownOpen ? 'rotate-90' : ''}`}>▶</span>
+                        </button>
+
+                        {/* Nested Dropdown for Workspaces */}
+                        <div className={`absolute right-full top-0 mr-1 w-60 bg-card rounded-lg shadow-lg border z-50 transition-all duration-200 ${isWorkspaceDropdownOpen ? 'opacity-100 visible' : 'opacity-0 invisible pointer-events-none'}`}>
+                          <div className="p-2 border-b bg-muted/50 rounded-t-lg">
+                            <p className="text-xs font-semibold flex items-center gap-1.5">
+                              Pilih Workspace
+                            </p>
+                          </div>
+                          <div className="max-h-60 overflow-y-auto space-y-0.5 custom-scrollbar p-1">
+                            {workspaces.map(ws => (
+                              <button
+                                key={ws.id}
+                                onClick={() => handleSwitchWorkspace(ws.id)}
+                                disabled={isSwitching || user.workspace_id === ws.id}
+                                className={`w-full text-left px-2 py-2 text-xs rounded-sm flex items-center justify-between transition-colors ${user.workspace_id === ws.id ? 'bg-primary/10 text-primary font-medium cursor-default' : 'hover:bg-secondary text-foreground'}`}
+                              >
+                                <span className="truncate mr-2 flex-1">{ws.name}</span>
+                                {user.workspace_id === ws.id ? <CheckCircle2 size={14} className="flex-shrink-0 text-primary" /> : null}
+                              </button>
+                            ))}
+                            {isSwitching && (
+                              <div className="flex items-center justify-center py-3 text-primary bg-secondary/30 rounded-sm">
+                                <Loader2 size={16} className="animate-spin" />
+                                <span className="ml-2 text-xs">Mengganti...</span>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
                   <div className="pt-2 border-t"><ThemeSwitch /></div>
                   <div className="pt-1 border-t">
-                    <button onClick={handleLogout} className="flex items-center gap-3 w-full px-3 py-2 text-sm text-destructive rounded-md hover:bg-destructive/10">
+                    <button onClick={handleLogout} className="flex items-center gap-3 w-full px-3 py-2 text-sm text-destructive rounded-md hover:bg-destructive/10 transition-colors">
                       <LogOut size={16} /><span>Logout</span>
                     </button>
                   </div>

@@ -13,9 +13,10 @@ interface EditPppoeSecretModalProps {
   onClose: () => void;
   onSuccess: () => void;
   secretToEdit: any | null;
+  nocWorkspaceId?: number; // Added to handle cross-workspace editing from NOC
 }
 
-const EditPppoeSecretModal = ({ isOpen, onClose, onSuccess, secretToEdit }: EditPppoeSecretModalProps) => {
+const EditPppoeSecretModal = ({ isOpen, onClose, onSuccess, secretToEdit, nocWorkspaceId }: EditPppoeSecretModalProps) => {
   const { pppoeSecrets } = useMikrotik() || { pppoeSecrets: [] };
   const [formData, setFormData] = useState({ password: '', profile: '' });
   const [profiles, setProfiles] = useState<string[]>([]);
@@ -53,7 +54,9 @@ const EditPppoeSecretModal = ({ isOpen, onClose, onSuccess, secretToEdit }: Edit
     // Jika cache tidak ada atau expired, fetch dari API
     setProfilesLoading(true);
     try {
-      const res = await apiFetch(`${apiUrl}/api/pppoe/profiles`);
+      // Append workspaceId query param if nocWorkspaceId is defined
+      const queryParams = nocWorkspaceId ? `?workspaceId=${nocWorkspaceId}` : '';
+      const res = await apiFetch(`${apiUrl}/api/pppoe/profiles${queryParams}`);
       if (!res.ok) throw new Error('Gagal memuat profil');
       const data = await res.json();
       const sortedData = Array.from(new Set<string>((data as string[]).filter((p) => Boolean(p && p.trim())))).sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()));
@@ -96,8 +99,10 @@ const EditPppoeSecretModal = ({ isOpen, onClose, onSuccess, secretToEdit }: Edit
       // Cek apakah profile berubah
       const profileChanged = formData.profile !== secretToEdit.profile;
 
+      const queryParams = nocWorkspaceId ? `?workspaceId=${nocWorkspaceId}` : '';
+
       // Update secret terlebih dahulu
-      const res = await apiFetch(`${apiUrl}/api/pppoe/secrets/${secretToEdit['.id']}`, {
+      const res = await apiFetch(`${apiUrl}/api/pppoe/secrets/${secretToEdit['.id']}${queryParams}`, {
         method: 'PUT',
         body: JSON.stringify(formData)
       });
@@ -119,7 +124,7 @@ const EditPppoeSecretModal = ({ isOpen, onClose, onSuccess, secretToEdit }: Edit
         if (activeConnectionId) {
           try {
             const encodedId = encodeURIComponent(activeConnectionId);
-            const kickRes = await apiFetch(`${apiUrl}/api/pppoe/active/${encodedId}/kick`, {
+            const kickRes = await apiFetch(`${apiUrl}/api/pppoe/active/${encodedId}/kick${queryParams}`, {
               method: 'POST'
             });
             if (!kickRes.ok) {
