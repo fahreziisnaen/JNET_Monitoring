@@ -1039,7 +1039,7 @@ const LocationManager: React.FC<LocationManagerProps> = ({ isNocMode = false, no
         <div className="flex-shrink-0 mb-6">
           <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4">
             <h1 className="text-2xl sm:text-3xl font-bold text-foreground">
-              {isNocMode ? `Peta Agregasi NOC (${nocWorkspaceIds.length} Workspace)` : 'Peta Lokasi Aset'}
+              {isNocMode ? `Peta NOC (${nocWorkspaceIds.length} Workspace)` : 'Peta Lokasi Aset'}
             </h1>
             <div className="flex gap-2 flex-wrap items-center">
               {!isNocMode && (

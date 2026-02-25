@@ -59,6 +59,8 @@ const AddClientModal = ({ isOpen, onClose, onSuccess, assets = [] }: AddClientMo
       setLatitude('');
       setLongitude('');
       setOdpAssetId('');
+      setSelectedPhoto(null);
+      setPhotoPreview(null);
 
       // Fetch existing clients sekali, lalu build kedua data dari hasilnya
       apiFetch(`${apiUrl}/api/clients`)
