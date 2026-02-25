@@ -49,11 +49,48 @@ const NocManagementTab: React.FC<NocManagementTabProps> = ({ workspaceIds }) => 
     const [secretToDelete, setSecretToDelete] = useState<PppoeSecret | null>(null);
 
     const [lastFetchTime, setLastFetchTime] = useState<number>(0);
+    const [isInitialLoad, setIsInitialLoad] = useState(true);
+    const [uptimeOffset, setUptimeOffset] = useState(0);
 
-    const fetchSecrets = useCallback(async () => {
+    useEffect(() => {
+        const interval = setInterval(() => setUptimeOffset(prev => prev + 1), 1000);
+        return () => clearInterval(interval);
+    }, []);
+
+    const secretsUptimeMap = useMemo(() => {
+        const map = new Map<string, string>();
+        secrets.forEach(s => { if (s.name && s.isActive && s.uptime) map.set(s.name, s.uptime); });
+        return map;
+    }, [secrets]);
+
+    const parseUptimeToSeconds = (uptime: string): number => {
+        const w = uptime.match(/(\d+)w/); const d = uptime.match(/(\d+)d/);
+        const h = uptime.match(/(\d+)h/); const m = uptime.match(/(\d+)m/);
+        const s = uptime.match(/(\d+)s/);
+        return (w ? +w[1] * 604800 : 0) + (d ? +d[1] * 86400 : 0) +
+            (h ? +h[1] * 3600 : 0) + (m ? +m[1] * 60 : 0) + (s ? +s[1] : 0);
+    };
+
+    const formatSecondsToUptime = (total: number): string => {
+        if (total <= 0) return '0s';
+        const w = Math.floor(total / 604800); total %= 604800;
+        const d = Math.floor(total / 86400); total %= 86400;
+        const h = Math.floor(total / 3600); total %= 3600;
+        const m = Math.floor(total / 60); const sec = total % 60;
+        return (w ? w + 'w' : '') + (d ? d + 'd' : '') + (h ? h + 'h' : '') + (m ? m + 'm' : '') + sec + 's';
+    };
+
+    const getUptime = useCallback((name: string): string => {
+        const base = secretsUptimeMap.get(name);
+        if (!base || base === 'N/A') return base || '-';
+        return formatSecondsToUptime(parseUptimeToSeconds(base) + Math.min(uptimeOffset, 5));
+    }, [secretsUptimeMap, uptimeOffset]);
+
+    const fetchSecrets = useCallback(async (isBackground = false) => {
         if (workspaceIds.length === 0) {
             setSecrets([]);
             setLoading(false);
+            setIsInitialLoad(false);
             return;
         }
 
@@ -62,7 +99,8 @@ const NocManagementTab: React.FC<NocManagementTabProps> = ({ workspaceIds }) => 
         if (now - lastFetchTime < 3000) return;
         setLastFetchTime(now);
 
-        setLoading(true);
+        // Hanya tampilkan spinner loading pada fetch pertama, bukan saat refresh background
+        if (!isBackground) setLoading(true);
         try {
             const response = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/api/noc/secrets`, {
                 method: 'POST',
@@ -76,22 +114,24 @@ const NocManagementTab: React.FC<NocManagementTabProps> = ({ workspaceIds }) => 
             if (response.ok) {
                 const data = await response.json();
                 setSecrets(data.secrets || []);
+                setUptimeOffset(0); // Re-sync saat data baru dari server
             }
         } catch (error) {
             console.error("Failed to fetch NOC secrets", error);
         } finally {
             setLoading(false);
+            setIsInitialLoad(false);
         }
     }, [workspaceIds, token, lastFetchTime]);
 
     // Polling data every 5 seconds for NOC view (slower than regular websocket but good enough for multi-workspace)
     useEffect(() => {
-        fetchSecrets();
+        fetchSecrets(false); // first load shows spinner
 
         const interval = setInterval(() => {
             // Reset last fetch time to allow interval to run
             setLastFetchTime(0);
-            fetchSecrets();
+            fetchSecrets(true); // background refresh — no spinner
         }, 5000);
 
         return () => clearInterval(interval);
@@ -281,7 +321,7 @@ const NocManagementTab: React.FC<NocManagementTabProps> = ({ workspaceIds }) => 
             <Card>
                 <CardHeader>
                     <div className="flex flex-col lg:flex-row lg:justify-between lg:items-center gap-4">
-                        <CardTitle className="text-lg sm:text-xl">Secret PPPoE ({loading ? '...' : filteredSecrets.length})</CardTitle>
+                        <CardTitle className="text-lg sm:text-xl">Secret PPPoE ({isInitialLoad ? '...' : filteredSecrets.length})</CardTitle>
                         <div className="relative w-full lg:max-w-sm">
                             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                             <Input
@@ -312,7 +352,7 @@ const NocManagementTab: React.FC<NocManagementTabProps> = ({ workspaceIds }) => 
                                     <tr><td colSpan={6} className="text-center p-10"><Loader2 className="h-6 w-6 animate-spin mx-auto text-muted-foreground" /></td></tr>
                                 ) : filteredSecrets.length > 0 ? (
                                     filteredSecrets.map((user, i) => (
-                                        <motion.tr key={`${user.workspace_id}-${user['.id'] || user.name}-${i}`} className="border-b" initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: (i % 20) * 0.05 }}>
+                                        <tr key={`${user.workspace_id}-${user['.id'] || user.name}-${i}`} className="border-b hover:bg-muted/30 transition-colors">
                                             <td className="p-2 sm:p-4">
                                                 {user.disabled === 'true' ?
                                                     (<span className="flex items-center gap-1 text-muted-foreground"><PowerOff size={14} /> <span className="hidden sm:inline">Disabled</span></span>) :
@@ -337,8 +377,12 @@ const NocManagementTab: React.FC<NocManagementTabProps> = ({ workspaceIds }) => 
                                             </td>
                                             <td className="p-2 sm:p-4 hidden sm:table-cell">{user.profile}</td>
                                             <td className="p-2 sm:p-4 font-mono text-[10px] sm:text-xs whitespace-nowrap">
-                                                <span className="sm:hidden">{user.isActive && user.uptime ? formatCompactUptime(user.uptime) : '-'}</span>
-                                                <span className="hidden sm:inline">{user.isActive && user.uptime ? formatUptime(user.uptime) : '-'}</span>
+                                                {user.isActive ? (
+                                                    <>
+                                                        <span className="sm:hidden">{formatCompactUptime(getUptime(user.name))}</span>
+                                                        <span className="hidden sm:inline">{formatUptime(getUptime(user.name))}</span>
+                                                    </>
+                                                ) : '-'}
                                             </td>
                                             <td className="p-2 sm:p-4 text-center">
                                                 <DropdownMenu>
@@ -364,7 +408,7 @@ const NocManagementTab: React.FC<NocManagementTabProps> = ({ workspaceIds }) => 
                                                     </DropdownMenuContent>
                                                 </DropdownMenu>
                                             </td>
-                                        </motion.tr>
+                                        </tr>
                                     ))
                                 ) : (
                                     <tr><td colSpan={6} className="text-center p-10 text-muted-foreground">Tidak ada secret yang cocok.</td></tr>

@@ -41,6 +41,18 @@ interface ClientListProps {
 const ClientList = ({ clients, loading, selectedClientId, onClientSelect, onClientView, searchQuery = '', onSearchChange, pppoeSecrets, onBulkDelete }: ClientListProps) => {
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [isSelectMode, setIsSelectMode] = useState(false);
+  const [showSearch, setShowSearch] = useState(false);
+  // Delay orphan detection until pppoeSecrets has been stable for a while
+  // This prevents valid clients from briefly appearing as orphan during WS loading
+  const [secretsReady, setSecretsReady] = useState(false);
+  React.useEffect(() => {
+    if (!pppoeSecrets || pppoeSecrets.length === 0) {
+      setSecretsReady(false);
+      return;
+    }
+    const timer = setTimeout(() => setSecretsReady(true), 4000);
+    return () => clearTimeout(timer);
+  }, [pppoeSecrets?.length]);
 
   const existingSecretsSet = React.useMemo(() => {
     return new Set(pppoeSecrets?.map((s: any) => s.name) || []);
@@ -59,7 +71,7 @@ const ClientList = ({ clients, loading, selectedClientId, onClientSelect, onClie
       });
     }
 
-    if (pppoeSecrets && pppoeSecrets.length > 0) {
+    if (secretsReady) {
       result.sort((a, b) => {
         const aIsOrphan = !existingSecretsSet.has(a.pppoe_secret_name);
         const bIsOrphan = !existingSecretsSet.has(b.pppoe_secret_name);
@@ -72,7 +84,7 @@ const ClientList = ({ clients, loading, selectedClientId, onClientSelect, onClie
     }
 
     return result;
-  }, [clients, searchQuery, pppoeSecrets, existingSecretsSet]);
+  }, [clients, searchQuery, secretsReady, existingSecretsSet]);
 
   const [isCollapsed, setIsCollapsed] = useState(true);
 
@@ -143,62 +155,76 @@ const ClientList = ({ clients, loading, selectedClientId, onClientSelect, onClie
             </button>
           </div>
 
-          <div className="flex items-center gap-1.5 flex-1 justify-end">
+          <div className="flex items-center gap-1 flex-1 justify-end">
             {!isSelectMode && onSearchChange && (
-              <div className="relative flex-1 max-w-[160px]">
-                <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
-                <Input
-                  type="text"
-                  placeholder="Cari client..."
-                  value={searchQuery}
-                  onClick={() => setIsCollapsed(false)}
-                  onFocus={() => {
-                    setIsCollapsed(false);
-                    window.dispatchEvent(new CustomEvent('collapse-asset-list'));
-                  }}
-                  onChange={(e) => {
-                    setIsCollapsed(false);
-                    window.dispatchEvent(new CustomEvent('collapse-asset-list'));
-                    onSearchChange(e.target.value);
-                  }}
-                  className="pl-8 bg-input text-sm h-8"
-                />
-              </div>
+              showSearch ? (
+                <div className="relative flex-1 max-w-[140px]">
+                  <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+                  <Input
+                    type="text"
+                    placeholder="Cari client..."
+                    value={searchQuery}
+                    autoFocus
+                    onClick={() => setIsCollapsed(false)}
+                    onBlur={() => { if (!searchQuery) setShowSearch(false); }}
+                    onChange={(e) => {
+                      setIsCollapsed(false);
+                      window.dispatchEvent(new CustomEvent('collapse-asset-list'));
+                      onSearchChange(e.target.value);
+                    }}
+                    className="pl-8 bg-input text-sm h-8"
+                  />
+                </div>
+              ) : (
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                  title="Cari Client"
+                  onClick={() => { setShowSearch(true); setIsCollapsed(false); }}
+                >
+                  <Search size={15} />
+                </Button>
+              )
             )}
 
             {onBulkDelete && (
               <>
                 {isSelectMode ? (
-                  <div className="flex items-center gap-1.5">
+                  <div className="flex items-center gap-1">
                     {selectedIds.size > 0 && (
                       <Button
-                        size="sm"
+                        size="icon"
                         variant="destructive"
-                        className="h-8 px-2 text-xs gap-1"
+                        className="h-8 w-8 relative"
+                        title={`Hapus ${selectedIds.size} item`}
                         onClick={handleDeleteSelected}
                       >
-                        <Trash2 size={13} />
-                        Hapus ({selectedIds.size})
+                        <Trash2 size={14} />
+                        <span className="absolute -top-1.5 -right-1.5 bg-background text-destructive text-[9px] font-bold rounded-full w-4 h-4 flex items-center justify-center border border-destructive">
+                          {selectedIds.size}
+                        </span>
                       </Button>
                     )}
                     <Button
-                      size="sm"
+                      size="icon"
                       variant="outline"
-                      className="h-8 px-2 text-xs"
+                      className="h-8 w-8"
+                      title="Batal"
                       onClick={() => setIsSelectMode(false)}
                     >
-                      Batal
+                      ✕
                     </Button>
                   </div>
                 ) : (
                   <Button
-                    size="sm"
-                    variant="outline"
-                    className="h-8 px-2 text-xs gap-1 text-destructive border-destructive/40 hover:bg-destructive/10"
+                    size="icon"
+                    variant="ghost"
+                    className="h-8 w-8 text-destructive hover:bg-destructive/10"
+                    title="Pilih & Hapus Client"
                     onClick={() => { setIsSelectMode(true); setIsCollapsed(false); }}
                   >
-                    <Trash2 size={13} />
-                    <span className="hidden sm:inline">Pilih & Hapus</span>
+                    <Trash2 size={15} />
                   </Button>
                 )}
               </>
@@ -240,12 +266,12 @@ const ClientList = ({ clients, loading, selectedClientId, onClientSelect, onClie
                   <li key={client.id}>
                     <div
                       className={`w-full flex items-center gap-2 lg:gap-3 p-2 lg:p-3 rounded-lg text-left transition-all duration-200 cursor-pointer ${isSelectMode
-                          ? isChecked
-                            ? 'bg-destructive/10 ring-2 ring-destructive/50'
-                            : 'hover:bg-secondary'
-                          : isSelected
-                            ? 'bg-primary/10 ring-2 ring-primary'
-                            : 'hover:bg-secondary'
+                        ? isChecked
+                          ? 'bg-destructive/10 ring-2 ring-destructive/50'
+                          : 'hover:bg-secondary'
+                        : isSelected
+                          ? 'bg-primary/10 ring-2 ring-primary'
+                          : 'hover:bg-secondary'
                         }`}
                       onClick={() => {
                         if (isSelectMode) toggleItem(client.id);
@@ -267,7 +293,7 @@ const ClientList = ({ clients, loading, selectedClientId, onClientSelect, onClie
                       <div className="flex-grow overflow-hidden">
                         <div className="flex items-center gap-2">
                           <p className="font-semibold truncate text-sm lg:text-base">{client.pppoe_secret_name}</p>
-                          {pppoeSecrets && pppoeSecrets.length > 0 && !existingSecretsSet.has(client.pppoe_secret_name) && (
+                          {secretsReady && !existingSecretsSet.has(client.pppoe_secret_name) && (
                             <span className="flex-shrink-0 px-1.5 py-0.5 rounded text-[10px] font-bold bg-destructive text-destructive-foreground">
                               ORPHAN
                             </span>

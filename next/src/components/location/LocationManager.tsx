@@ -20,6 +20,7 @@ import MapFilterPanel from '@/components/location/map-filter-panel';
 import { apiFetch, getAuthToken } from '@/utils/api';
 import { useMikrotik } from '@/components/providers/mikrotik-provider';
 import { toast } from 'sonner';
+import { usePageTitle } from '@/hooks/usePageTitle';
 
 const MapDisplay = dynamic(() => import('@/components/location/map-display'), {
   ssr: false,
@@ -56,6 +57,7 @@ interface LocationManagerProps {
 }
 
 const LocationManager: React.FC<LocationManagerProps> = ({ isNocMode = false, nocWorkspaceIds = [] }) => {
+  usePageTitle(isNocMode ? '' : 'Peta Lokasi');
   const [activeFilter, setActiveFilter] = useState('all');
   const [selectedWorkspaceForNocAdd, setSelectedWorkspaceForNocAdd] = useState<number | null>(null);
 

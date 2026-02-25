@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { apiFetch, getAuthToken } from '@/utils/api';
 import { toast } from 'sonner';
+import { usePageTitle } from '@/hooks/usePageTitle';
 
 interface Device {
   id: number;
@@ -23,6 +24,7 @@ interface DeviceSelection {
 }
 
 const ReportPage = () => {
+  usePageTitle('Laporan Bulanan');
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
   const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth() + 1);
   const [isGenerating, setIsGenerating] = useState(false);

@@ -12,6 +12,7 @@ import SlaDetailModal from '@/components/sla/sla-detail-modal';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { apiFetch } from '@/utils/api';
+import { usePageTitle } from '@/hooks/usePageTitle';
 
 interface SlaUser {
   name: string;
@@ -19,6 +20,7 @@ interface SlaUser {
 }
 
 const SlaPage = () => {
+  usePageTitle('SLA Pelanggan');
   const { user } = useAuth();
   const { selectedDeviceId, setSelectedDeviceId, pppoeSecrets } = useMikrotik() || {};
   const [allUsers, setAllUsers] = useState<SlaUser[]>([]);

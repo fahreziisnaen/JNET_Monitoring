@@ -1,7 +1,7 @@
 import LocationManager from '@/components/location/LocationManager';
 
 export const metadata = {
-  title: 'Peta Lokasi - JNET',
+  title: 'Peta Lokasi',
   description: 'Manajemen lokasi aset dan client',
 };
 

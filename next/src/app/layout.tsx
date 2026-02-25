@@ -12,7 +12,10 @@ import { Toaster } from "sonner";
 const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "JNET - Dashboard",
+  title: {
+    template: '%s | JNET Monitoring',
+    default: 'JNET Monitoring',
+  },
   description: "Mikrotik Monitoring Tools",
   icons: {
     icon: '/favicon.ico?v=2',

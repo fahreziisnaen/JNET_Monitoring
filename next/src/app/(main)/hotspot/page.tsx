@@ -12,8 +12,10 @@ import HotspotUserList from '@/components/hotspot/hotspot-user-list';
 import AddHotspotUserModal from '@/components/hotspot/add-hotspot-user-modal';
 import { Button } from '@/components/ui/button';
 import { apiFetch } from '@/utils/api';
+import { usePageTitle } from '@/hooks/usePageTitle';
 
 const HotspotPage = () => {
+  usePageTitle('Hotspot');
   const { user } = useAuth();
   const { selectedDeviceId, setSelectedDeviceId } = useMikrotik() || {};
   const [isModalOpen, setIsModalOpen] = useState(false);

@@ -12,8 +12,10 @@ import IpPoolManagerModal from '@/components/management/ip-pool-manager-modal';
 import PppoeSecretsTable from '@/components/management/pppoe-secrets-table';
 import { Button } from '@/components/ui/button';
 import { apiFetch } from '@/utils/api';
+import { usePageTitle } from '@/hooks/usePageTitle';
 
 const ManagementPage = () => {
+  usePageTitle('Manajemen PPPoE');
   const { user } = useAuth();
   const { selectedDeviceId, setSelectedDeviceId, pppoeSecrets, forceRefresh, isConnected } = useMikrotik() || {};
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);

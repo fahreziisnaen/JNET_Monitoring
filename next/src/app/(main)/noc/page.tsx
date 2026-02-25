@@ -7,8 +7,10 @@ import { Activity, Map } from 'lucide-react';
 import NocWorkspaceSelector from '@/components/noc/NocWorkspaceSelector';
 import NocManagementTab from '@/components/noc/NocManagementTab';
 import NocMapTab from '@/components/noc/NocMapTab';
+import { usePageTitle } from '@/hooks/usePageTitle';
 
 const NocPage = () => {
+    usePageTitle('NOC');
     const { user } = useAuth();
     const router = useRouter();
 

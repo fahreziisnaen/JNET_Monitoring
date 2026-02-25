@@ -8,8 +8,10 @@ import { NoDeviceMessage } from '@/components/ui/no-device-message';
 import MainContent from '@/components/dashboard/main-content';
 import Sidebar from '@/components/dashboard/sidebar';
 import { apiFetch } from '@/utils/api';
+import { usePageTitle } from '@/hooks/usePageTitle';
 
 const DashboardPage = () => {
+  usePageTitle('Dashboard');
   const { user } = useAuth();
   const { selectedDeviceId, setSelectedDeviceId } = useMikrotik() || {};
   const [hasDevices, setHasDevices] = useState<boolean | null>(null);

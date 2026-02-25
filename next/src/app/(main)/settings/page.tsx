@@ -10,8 +10,10 @@ import WhatsappBotCard from '@/components/settings/whatsapp-bot-card';
 import JoinWorkspaceCard from '@/components/settings/join-workspace-card';
 import WorkspaceMembersCard from '@/components/settings/workspace-members-card';
 import BackupRestoreCard from '@/components/settings/backup-restore-card';
+import { usePageTitle } from '@/hooks/usePageTitle';
 
 const SettingsPage = () => {
+  usePageTitle('Pengaturan');
   return (
     <div className="p-4 md:p-8 max-w-4xl mx-auto space-y-12">
       <header>
