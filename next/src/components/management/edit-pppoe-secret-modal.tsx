@@ -18,7 +18,7 @@ interface EditPppoeSecretModalProps {
 
 const EditPppoeSecretModal = ({ isOpen, onClose, onSuccess, secretToEdit, nocWorkspaceId }: EditPppoeSecretModalProps) => {
   const { pppoeSecrets } = useMikrotik() || { pppoeSecrets: [] };
-  const [formData, setFormData] = useState({ password: '', profile: '' });
+  const [formData, setFormData] = useState({ name: '', password: '', profile: '' });
   const [profiles, setProfiles] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -80,7 +80,7 @@ const EditPppoeSecretModal = ({ isOpen, onClose, onSuccess, secretToEdit, nocWor
 
   useEffect(() => {
     if (isOpen && secretToEdit) {
-      setFormData({ password: '', profile: secretToEdit.profile });
+      setFormData({ name: secretToEdit.name || '', password: '', profile: secretToEdit.profile });
       loadProfiles();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -160,6 +160,7 @@ const EditPppoeSecretModal = ({ isOpen, onClose, onSuccess, secretToEdit, nocWor
             <form onSubmit={handleSubmit}>
               <header className="flex justify-between items-center p-4 border-b"><h2 className="text-xl font-bold flex items-center gap-2"><Edit /> Edit Secret: {secretToEdit.name}</h2><button type="button" onClick={onClose} className="p-1 rounded-full hover:bg-secondary"><X size={20} /></button></header>
               <div className="p-6 space-y-4">
+                <div><label className="block text-sm font-medium mb-1 text-muted-foreground">Username / Nama Secret</label><input type="text" name="name" value={formData.name} onChange={handleChange} className="w-full p-2 rounded-md bg-input" required /></div>
                 <div><label className="block text-sm font-medium mb-1 text-muted-foreground">Password Baru (kosongkan jika tidak diubah)</label><input type="password" name="password" onChange={handleChange} className="w-full p-2 rounded-md bg-input" /></div>
                 <div>
                   <label className="block text-sm font-medium mb-1 text-muted-foreground">Profil Kecepatan</label>

@@ -254,8 +254,8 @@ const getAssetIcon = (asset: Asset, isSelected: boolean = false) => {
     <div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 52px; height: 52px; border: 3px solid ${color}; border-radius: 50%; opacity: 0.8; box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.4), 0 0 0 6px rgba(59, 130, 246, 0.2), 0 0 20px rgba(59, 130, 246, 0.5); z-index: 1000;"></div>
   ` : '';
 
-  // Badge untuk ODP dengan jumlah user aktif
-  const hasBadge = asset.type === 'ODP' && asset.totalUsers !== undefined && asset.totalUsers !== null && asset.totalUsers > 0;
+  // Badge untuk ODP dan ODC dengan jumlah user/aset aktif
+  const hasBadge = (asset.type === 'ODP' || asset.type === 'ODC') && asset.totalUsers !== undefined && asset.totalUsers !== null && asset.totalUsers > 0;
   let badgeHtml = '';
 
   if (hasBadge) {
@@ -709,9 +709,9 @@ const MapDisplay = ({
                   <div className="font-sans">
                     <p className="font-bold">{asset.name}</p>
                     <p>{asset.type}</p>
-                    {asset.type === 'ODP' && asset.totalUsers !== undefined && asset.totalUsers > 0 && (
+                    {(asset.type === 'ODP' || asset.type === 'ODC') && asset.totalUsers !== undefined && asset.totalUsers > 0 && (
                       <p className="text-xs mt-1">
-                        User: <span className={asset.activeUsers === 0 ? 'text-red-500 font-semibold' : asset.activeUsers === asset.totalUsers ? 'text-green-500' : 'text-amber-500'}>
+                        {asset.type === 'ODC' ? 'Aset Terpasang:' : 'User:'} <span className={asset.activeUsers === 0 ? 'text-red-500 font-semibold' : asset.activeUsers === asset.totalUsers ? 'text-green-500' : 'text-amber-500'}>
                           {asset.activeUsers || 0}/{asset.totalUsers}
                         </span>
                       </p>

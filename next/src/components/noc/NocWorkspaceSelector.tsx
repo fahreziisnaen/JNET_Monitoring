@@ -63,22 +63,22 @@ const NocWorkspaceSelector: React.FC<NocWorkspaceSelectorProps> = ({ selectedWor
     };
 
     return (
-        <div className="relative mb-6">
-            <label className="text-sm font-semibold mb-2 block">Pilih Workspace untuk Dipantau:</label>
+        <div className="relative w-full">
+            <label className="text-xs sm:text-sm font-semibold mb-1.5 sm:mb-2 block">Pilih Workspace</label>
 
             <div
                 onClick={() => setIsOpen(!isOpen)}
-                className="w-full bg-card border border-border rounded-lg p-3 flex justify-between items-center cursor-pointer hover:border-primary/50 transition-colors"
+                className="w-full bg-card border border-border rounded-lg p-2 sm:p-3 flex justify-between items-center cursor-pointer hover:border-primary/50 transition-colors h-[40px] sm:h-[44px]"
             >
-                <div className="flex items-center gap-2">
-                    <ArrowRightLeft className="text-muted-foreground w-5 h-5" />
-                    <span className="font-medium">
+                <div className="flex items-center gap-1.5 sm:gap-2 overflow-hidden">
+                    <ArrowRightLeft className="text-muted-foreground w-4 h-4 sm:w-5 sm:h-5 shrink-0" />
+                    <span className="font-medium text-xs sm:text-sm truncate">
                         {selectedWorkspaceIds.length === workspaces.length
-                            ? 'Semua Workspace Terpilih'
-                            : `${selectedWorkspaceIds.length} Workspace Terpilih`}
+                            ? 'Semua'
+                            : `${selectedWorkspaceIds.length} Terpilih`}
                     </span>
                 </div>
-                {isOpen ? <ChevronUp className="w-5 h-5 text-muted-foreground" /> : <ChevronDown className="w-5 h-5 text-muted-foreground" />}
+                {isOpen ? <ChevronUp className="w-4 h-4 sm:w-5 sm:h-5 shrink-0 text-muted-foreground" /> : <ChevronDown className="w-4 h-4 sm:w-5 sm:h-5 shrink-0 text-muted-foreground" />}
             </div>
 
             {isOpen && (

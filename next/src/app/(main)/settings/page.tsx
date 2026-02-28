@@ -10,6 +10,7 @@ import WhatsappBotCard from '@/components/settings/whatsapp-bot-card';
 import JoinWorkspaceCard from '@/components/settings/join-workspace-card';
 import WorkspaceMembersCard from '@/components/settings/workspace-members-card';
 import BackupRestoreCard from '@/components/settings/backup-restore-card';
+import ApiKeyManagementCard from '@/components/settings/api-key-management-card';
 import { usePageTitle } from '@/hooks/usePageTitle';
 
 const SettingsPage = () => {
@@ -35,6 +36,7 @@ const SettingsPage = () => {
         <JoinWorkspaceCard />
         <WorkspaceMembersCard />
         <WhatsappBotCard />
+        <ApiKeyManagementCard />
         <BackupRestoreCard />
       </section>
 

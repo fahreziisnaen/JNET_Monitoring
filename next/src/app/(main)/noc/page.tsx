@@ -45,32 +45,36 @@ const NocPage = () => {
                 </p>
             </div>
 
-            <NocWorkspaceSelector
-                selectedWorkspaceIds={selectedWorkspaceIds}
-                onChange={setSelectedWorkspaceIds}
-            />
+            <div className="flex flex-row items-end justify-between gap-3 sm:gap-4 mb-6">
+                <div className="flex-1 min-w-0 max-w-[400px]">
+                    <NocWorkspaceSelector
+                        selectedWorkspaceIds={selectedWorkspaceIds}
+                        onChange={setSelectedWorkspaceIds}
+                    />
+                </div>
 
-            <div className="bg-card border rounded-lg p-1 flex mb-6 max-w-sm">
-                <button
-                    onClick={() => setActiveTab('management')}
-                    className={`flex-1 flex items-center justify-center gap-2 py-2 px-4 rounded-md text-sm font-medium transition-all ${activeTab === 'management'
-                        ? 'bg-primary text-primary-foreground shadow-sm'
-                        : 'text-muted-foreground hover:bg-secondary'
-                        }`}
-                >
-                    <Activity className="w-4 h-4" />
-                    Manajemen
-                </button>
-                <button
-                    onClick={() => setActiveTab('map')}
-                    className={`flex-1 flex items-center justify-center gap-2 py-2 px-4 rounded-md text-sm font-medium transition-all ${activeTab === 'map'
-                        ? 'bg-primary text-primary-foreground shadow-sm'
-                        : 'text-muted-foreground hover:bg-secondary'
-                        }`}
-                >
-                    <Map className="w-4 h-4" />
-                    Peta
-                </button>
+                <div className="bg-card border rounded-lg p-1 flex shrink-0">
+                    <button
+                        onClick={() => setActiveTab('management')}
+                        className={`flex-1 flex items-center justify-center gap-2 py-2 px-4 rounded-md text-sm font-medium transition-all ${activeTab === 'management'
+                            ? 'bg-primary text-primary-foreground shadow-sm'
+                            : 'text-muted-foreground hover:bg-secondary'
+                            }`}
+                    >
+                        <Activity className="w-5 h-5 sm:w-4 sm:h-4" />
+                        <span className="hidden sm:inline">Manajemen</span>
+                    </button>
+                    <button
+                        onClick={() => setActiveTab('map')}
+                        className={`flex-1 flex items-center justify-center gap-2 py-2 px-4 rounded-md text-sm font-medium transition-all ${activeTab === 'map'
+                            ? 'bg-primary text-primary-foreground shadow-sm'
+                            : 'text-muted-foreground hover:bg-secondary'
+                            }`}
+                    >
+                        <Map className="w-5 h-5 sm:w-4 sm:h-4" />
+                        <span className="hidden sm:inline">Peta</span>
+                    </button>
+                </div>
             </div>
 
             {activeTab === 'management' ? (

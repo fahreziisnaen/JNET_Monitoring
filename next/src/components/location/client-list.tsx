@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { User, Loader2, Search, ChevronDown, ChevronUp, Trash2, CheckSquare, Square } from 'lucide-react';
+import { User, Loader2, Search, ChevronDown, ChevronUp, Trash2, CheckSquare, Square, X } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -42,6 +42,7 @@ const ClientList = ({ clients, loading, selectedClientId, onClientSelect, onClie
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [isSelectMode, setIsSelectMode] = useState(false);
   const [showSearch, setShowSearch] = useState(false);
+  const searchInputRef = React.useRef<HTMLInputElement>(null);
   // Delay orphan detection until pppoeSecrets has been stable for a while
   // This prevents valid clients from briefly appearing as orphan during WS loading
   const [secretsReady, setSecretsReady] = useState(false);
@@ -148,8 +149,16 @@ const ClientList = ({ clients, loading, selectedClientId, onClientSelect, onClie
     <Card className={`flex flex-col transition-all duration-300 ${isCollapsed ? 'flex-shrink-0' : 'flex-1 min-h-0'}`}>
       <CardHeader className="pb-2 px-3 py-2 lg:px-6 lg:py-3 lg:cursor-default">
         <div className="flex items-center justify-between gap-2">
-          <div className="flex items-center gap-2 cursor-pointer" onClick={() => !isSelectMode && setIsCollapsed(prev => !prev)}>
-            <CardTitle className="text-base lg:text-lg whitespace-nowrap">Daftar Client ({filteredClients.length})</CardTitle>
+          <div className="flex items-center gap-2 cursor-pointer" onClick={() => {
+            if (!isSelectMode) {
+              const willExpand = isCollapsed;
+              setIsCollapsed(!willExpand);
+              if (willExpand) {
+                window.dispatchEvent(new CustomEvent('collapse-asset-list'));
+              }
+            }
+          }}>
+            <CardTitle className="text-base lg:text-lg whitespace-nowrap">Client ({filteredClients.length})</CardTitle>
             <button className="lg:hidden text-muted-foreground" aria-label="Toggle">
               {isCollapsed ? <ChevronDown size={16} /> : <ChevronUp size={16} />}
             </button>
@@ -158,22 +167,41 @@ const ClientList = ({ clients, loading, selectedClientId, onClientSelect, onClie
           <div className="flex items-center gap-1 flex-1 justify-end">
             {!isSelectMode && onSearchChange && (
               showSearch ? (
-                <div className="relative flex-1 max-w-[140px]">
+                <div className="relative flex-1 w-full max-w-[180px] sm:max-w-[240px]">
                   <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
                   <Input
+                    ref={searchInputRef}
                     type="text"
                     placeholder="Cari client..."
                     value={searchQuery}
                     autoFocus
-                    onClick={() => setIsCollapsed(false)}
+                    onClick={() => {
+                      setIsCollapsed(false);
+                      window.dispatchEvent(new CustomEvent('collapse-asset-list'));
+                    }}
                     onBlur={() => { if (!searchQuery) setShowSearch(false); }}
                     onChange={(e) => {
                       setIsCollapsed(false);
                       window.dispatchEvent(new CustomEvent('collapse-asset-list'));
                       onSearchChange(e.target.value);
                     }}
-                    className="pl-8 bg-input text-sm h-8"
+                    className="pl-8 pr-7 bg-input text-sm h-8"
                   />
+                  {searchQuery && (
+                    <button
+                      type="button"
+                      className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                      onMouseDown={(e) => e.preventDefault()} // Prevent blur on input
+                      onClick={() => {
+                        if (onSearchChange) onSearchChange('');
+                        setIsCollapsed(false);
+                        window.dispatchEvent(new CustomEvent('collapse-asset-list'));
+                        searchInputRef.current?.focus();
+                      }}
+                    >
+                      <X size={14} />
+                    </button>
+                  )}
                 </div>
               ) : (
                 <Button
@@ -181,7 +209,11 @@ const ClientList = ({ clients, loading, selectedClientId, onClientSelect, onClie
                   variant="ghost"
                   className="h-8 w-8 text-muted-foreground hover:text-foreground"
                   title="Cari Client"
-                  onClick={() => { setShowSearch(true); setIsCollapsed(false); }}
+                  onClick={() => {
+                    setShowSearch(true);
+                    setIsCollapsed(false);
+                    window.dispatchEvent(new CustomEvent('collapse-asset-list'));
+                  }}
                 >
                   <Search size={15} />
                 </Button>
@@ -248,7 +280,7 @@ const ClientList = ({ clients, loading, selectedClientId, onClientSelect, onClie
       </CardHeader>
 
       {!isCollapsed && (
-        <CardContent className="flex-grow overflow-y-auto p-1.5 max-h-[120px] lg:max-h-none">
+        <CardContent className="flex-grow overflow-y-auto p-1.5 max-h-[240px] lg:max-h-none">
           {loading ? (
             <div className="flex justify-center items-center h-full"><Loader2 className="animate-spin h-6 w-6 text-muted-foreground" /></div>
           ) : filteredClients.length === 0 ? (

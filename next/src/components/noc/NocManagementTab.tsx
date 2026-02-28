@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { motion } from '@/components/motion';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
-import { Power, PowerOff, Loader2, Search, ArrowUpDown, ChevronUp, ChevronDown, Users, UserCheck, UserX, MoreHorizontal, Edit, ZapOff, Trash2 } from 'lucide-react';
+import { Power, PowerOff, Loader2, Search, ArrowUpDown, ChevronUp, ChevronDown, Users, UserCheck, UserX, MoreHorizontal, Edit, ZapOff, Trash2, X } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { useAuth } from '../providers/auth-provider';
 import { formatUptime, formatCompactUptime } from '@/utils/format';
@@ -41,6 +41,7 @@ const NocManagementTab: React.FC<NocManagementTabProps> = ({ workspaceIds }) => 
     const [sortColumn, setSortColumn] = useState<string | null>(null);
     const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
     const [activeFilter, setActiveFilter] = useState<'all' | 'active' | 'inactive'>('all');
+    const searchInputRef = React.useRef<HTMLInputElement>(null);
 
     const [isActionLoading, setIsActionLoading] = useState(false);
     const [isEditModalOpen, setIsEditModalOpen] = useState(false);
@@ -190,6 +191,10 @@ const NocManagementTab: React.FC<NocManagementTabProps> = ({ workspaceIds }) => 
                         aValue = a.profile.toLowerCase();
                         bValue = b.profile.toLowerCase();
                         break;
+                    case 'remote-address':
+                        aValue = (a['remote-address'] || '').toLowerCase();
+                        bValue = (b['remote-address'] || '').toLowerCase();
+                        break;
                     default:
                         return 0;
                 }
@@ -322,15 +327,29 @@ const NocManagementTab: React.FC<NocManagementTabProps> = ({ workspaceIds }) => 
                 <CardHeader>
                     <div className="flex flex-col lg:flex-row lg:justify-between lg:items-center gap-4">
                         <CardTitle className="text-lg sm:text-xl">Secret PPPoE ({isInitialLoad ? '...' : filteredSecrets.length})</CardTitle>
-                        <div className="relative w-full lg:max-w-sm">
+                        <div className="relative w-full lg:max-w-md">
                             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                             <Input
+                                ref={searchInputRef}
                                 type="text"
                                 placeholder="Cari user, IP, atau workspace..."
                                 value={searchQuery}
                                 onChange={(e) => setSearchQuery(e.target.value)}
-                                className="pl-9 bg-input h-9"
+                                className="pl-9 pr-8 bg-input h-9"
                             />
+                            {searchQuery && (
+                                <button
+                                    type="button"
+                                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                                    onMouseDown={(e) => e.preventDefault()}
+                                    onClick={() => {
+                                        setSearchQuery('');
+                                        searchInputRef.current?.focus();
+                                    }}
+                                >
+                                    <X size={14} />
+                                </button>
+                            )}
                         </div>
                     </div>
                 </CardHeader>
@@ -339,12 +358,13 @@ const NocManagementTab: React.FC<NocManagementTabProps> = ({ workspaceIds }) => 
                         <table className="w-full text-xs sm:text-sm">
                             <thead className="text-left bg-secondary sticky top-0 z-10">
                                 <tr>
-                                    <th className="p-2 sm:p-4 font-semibold cursor-pointer select-none" onClick={() => handleSort('status')}>Status</th>
-                                    <th className="p-2 sm:p-4 font-semibold cursor-pointer select-none" onClick={() => handleSort('name')}>User / IP</th>
+                                    <th className="p-2 sm:p-4 font-semibold cursor-pointer select-none w-[80px] sm:w-[100px]" onClick={() => handleSort('status')}>Status</th>
+                                    <th className="p-2 sm:p-4 font-semibold cursor-pointer select-none" onClick={() => handleSort('name')}>User / Identitas</th>
                                     <th className="p-2 sm:p-4 font-semibold cursor-pointer select-none hidden md:table-cell" onClick={() => handleSort('workspace')}>Router</th>
                                     <th className="p-2 sm:p-4 font-semibold cursor-pointer select-none hidden sm:table-cell" onClick={() => handleSort('profile')}>Profil</th>
-                                    <th className="p-2 sm:p-4 font-semibold cursor-pointer select-none">Uptime</th>
-                                    <th className="p-2 sm:p-4 font-semibold text-center w-[50px] sm:w-auto">Aksi</th>
+                                    <th className="p-2 sm:p-4 font-semibold cursor-pointer select-none hidden lg:table-cell" onClick={() => handleSort('remote-address')}>Remote IP</th>
+                                    <th className="p-2 sm:p-4 font-semibold cursor-pointer select-none w-[80px] sm:w-[120px]">Uptime</th>
+                                    <th className="p-2 sm:p-4 font-semibold text-center w-[50px] sm:w-[80px]">Aksi</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -363,25 +383,39 @@ const NocManagementTab: React.FC<NocManagementTabProps> = ({ workspaceIds }) => 
                                             </td>
                                             <td className="p-2 sm:p-4">
                                                 <div className="flex flex-col gap-0.5">
-                                                    <span className="font-bold sm:font-medium">{user.name}</span>
-                                                    <span className="text-[10px] text-primary/80 font-mono">{user['remote-address'] || 'No IP'}</span>
-                                                    <span className="text-[10px] text-muted-foreground md:hidden mt-0.5" title="Router">
-                                                        {user.router_name || user.workspace_name}
-                                                    </span>
+                                                    <span className="font-bold sm:font-medium truncate max-w-[120px] sm:max-w-[200px]" title={user.name}>{user.name}</span>
+                                                    <div className="flex flex-col sm:hidden gap-0.5">
+                                                        <span className="text-[10px] text-muted-foreground truncate max-w-[120px]" title={`Profile: ${user.profile}`}>
+                                                            {user.profile}
+                                                        </span>
+                                                        <span className="text-[10px] text-primary/80 font-mono truncate max-w-[120px]">
+                                                            {user['remote-address'] || 'No IP'}
+                                                        </span>
+                                                        <span className="text-[10px] text-muted-foreground md:hidden truncate max-w-[120px]" title="Router">
+                                                            {user.router_name || user.workspace_name}
+                                                        </span>
+                                                    </div>
                                                 </div>
                                             </td>
                                             <td className="p-2 sm:p-4 hidden md:table-cell">
-                                                <span className="inline-flex items-center px-2 py-1 rounded-full text-[10px] font-medium bg-primary/10 text-primary">
+                                                <span className="inline-flex items-center px-2 py-1 rounded-full text-[10px] font-medium bg-primary/10 text-primary truncate max-w-[120px] lg:max-w-[180px]" title={user.router_name || user.workspace_name}>
                                                     {user.router_name || user.workspace_name}
                                                 </span>
                                             </td>
-                                            <td className="p-2 sm:p-4 hidden sm:table-cell">{user.profile}</td>
+                                            <td className="p-2 sm:p-4 hidden sm:table-cell">
+                                                <span className="truncate max-w-[100px] lg:max-w-[150px] block" title={user.profile}>{user.profile}</span>
+                                            </td>
+                                            <td className="p-2 sm:p-4 hidden lg:table-cell">
+                                                <span className="text-[10px] text-primary/80 font-mono truncate max-w-[120px]">
+                                                    {user['remote-address'] || '-'}
+                                                </span>
+                                            </td>
                                             <td className="p-2 sm:p-4 font-mono text-[10px] sm:text-xs whitespace-nowrap">
                                                 {user.isActive ? (
-                                                    <>
+                                                    <span className="flex flex-col sm:block">
                                                         <span className="sm:hidden">{formatCompactUptime(getUptime(user.name))}</span>
                                                         <span className="hidden sm:inline">{formatUptime(getUptime(user.name))}</span>
-                                                    </>
+                                                    </span>
                                                 ) : '-'}
                                             </td>
                                             <td className="p-2 sm:p-4 text-center">
