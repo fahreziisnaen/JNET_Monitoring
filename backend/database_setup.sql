@@ -46,6 +46,7 @@ DROP TABLE IF EXISTS `user_sessions`;
 DROP TABLE IF EXISTS `mikrotik_devices`;
 DROP TABLE IF EXISTS `users`;
 DROP TABLE IF EXISTS `workspaces`;
+DROP TABLE IF EXISTS `api_keys`;
 DROP TABLE IF EXISTS `alarms`;
 
 SET FOREIGN_KEY_CHECKS = 1;
@@ -64,6 +65,18 @@ CREATE TABLE `workspaces` (
   `main_interface` varchar(255) DEFAULT NULL,
   PRIMARY KEY (`id`),
   KEY `idx_whatsapp_group_id` (`whatsapp_group_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE `api_keys` (
+  `id` int NOT NULL AUTO_INCREMENT,
+  `workspace_id` int NOT NULL,
+  `name` varchar(100) NOT NULL,
+  `key_string` varchar(255) NOT NULL,
+  `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `key_string` (`key_string`),
+  KEY `idx_workspace_id` (`workspace_id`),
+  CONSTRAINT `fk_api_keys_workspace` FOREIGN KEY (`workspace_id`) REFERENCES `workspaces` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE `users` (

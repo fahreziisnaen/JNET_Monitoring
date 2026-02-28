@@ -409,16 +409,42 @@ exports.getSlaDetails = async (req, res) => {
 
 exports.updateSecret = async (req, res) => {
     const { id } = req.params;
-    const { password, profile } = req.body;
+    const { name, password, profile } = req.body;
+    const workspace_id = req.user.workspace_id;
     if (!profile) {
         return res.status(400).json({ message: 'Profil wajib diisi.' });
     }
     try {
+        // Get old secret details before updating, to check if name changed
+        const oldSecretData = await runCommandForWorkspace(workspace_id, '/ppp/secret/print', [`?=.id=${id}`]);
+        let oldName = null;
+        if (oldSecretData && oldSecretData.length > 0) {
+            oldName = oldSecretData[0].name;
+        }
+
         const params = [`=.id=${id}`, `=profile=${profile}`];
+        if (name) {
+            params.push(`=name=${name}`);
+        }
         if (password) {
             params.push(`=password=${password}`);
         }
-        await runCommandForWorkspace(req.user.workspace_id, '/ppp/secret/set', params);
+        await runCommandForWorkspace(workspace_id, '/ppp/secret/set', params);
+
+        // Update database references if name changed
+        if (name && oldName && name !== oldName) {
+            try {
+                // Update map clients
+                await pool.query('UPDATE clients SET pppoe_secret_name = ? WHERE pppoe_secret_name = ? AND workspace_id = ?', [name, oldName, workspace_id]);
+                // Update odp connections
+                await pool.query('UPDATE odp_user_connections SET pppoe_secret_name = ? WHERE pppoe_secret_name = ? AND workspace_id = ?', [name, oldName, workspace_id]);
+                // Update logs
+                await pool.query('UPDATE pppoe_usage_logs SET pppoe_user = ? WHERE pppoe_user = ? AND workspace_id = ?', [name, oldName, workspace_id]);
+            } catch (dbErr) {
+                console.error(`[Update Secret DB] Failed to cascade name update from ${oldName} to ${name}:`, dbErr);
+            }
+        }
+
         res.status(200).json({ message: 'Secret berhasil diperbarui.' });
     } catch (error) {
         res.status(500).json({ message: error.message });

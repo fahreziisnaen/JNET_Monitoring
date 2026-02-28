@@ -103,6 +103,51 @@ exports.getAssets = async (req, res) => {
                     // Jika error, set default values (sudah di-set di awal)
                 }
             }
+
+            // --- Logika untuk ODC ---
+            // Ambil semua ODC IDs
+            const odcIds = assets.filter(a => a && a.type === 'ODC' && a.id).map(a => a.id);
+            if (odcIds.length > 0) {
+                try {
+                    const placeholders = odcIds.map(() => '?').join(',');
+                    // Hitung total child assets 
+                    const [childAssetsResult] = await pool.query(
+                        `SELECT parent_asset_id, COUNT(*) as count FROM network_assets WHERE parent_asset_id IN (${placeholders}) AND workspace_id = ? GROUP BY parent_asset_id`,
+                        [...odcIds, workspaceId]
+                    );
+                    const childMap = new Map();
+                    if (Array.isArray(childAssetsResult)) {
+                        childAssetsResult.forEach(row => {
+                            if (row && row.parent_asset_id) {
+                                childMap.set(row.parent_asset_id, parseInt(row.count) || 0);
+                            }
+                        });
+                    }
+
+                    // Hitung child assets yang terpasang (active)
+                    const [activeChildResult] = await pool.query(
+                        `SELECT parent_asset_id, COUNT(*) as count FROM network_assets WHERE parent_asset_id IN (${placeholders}) AND workspace_id = ? AND connection_status = 'terpasang' GROUP BY parent_asset_id`,
+                        [...odcIds, workspaceId]
+                    );
+                    const activeChildMap = new Map();
+                    if (Array.isArray(activeChildResult)) {
+                        activeChildResult.forEach(row => {
+                            if (row && row.parent_asset_id) {
+                                activeChildMap.set(row.parent_asset_id, parseInt(row.count) || 0);
+                            }
+                        });
+                    }
+
+                    assets.forEach(asset => {
+                        if (asset && asset.type === 'ODC' && asset.id) {
+                            asset.totalUsers = childMap.get(asset.id) || 0;
+                            asset.activeUsers = activeChildMap.get(asset.id) || 0;
+                        }
+                    });
+                } catch (queryError) {
+                    console.warn('[GET ASSETS] Error in batch ODC child query:', queryError.message);
+                }
+            }
         }
 
         res.status(200).json(assets || []);
@@ -430,11 +475,24 @@ exports.getUnconnectedPppoeUsers = async (req, res) => {
     const { workspace_id } = req.user;
     try {
         const allSecrets = await runCommandForWorkspace(workspace_id, '/ppp/secret/print', ['?disabled=no']);
+
+        // Ambil dari odp_user_connections
         const [connectedUsers] = await pool.query(
             'SELECT pppoe_secret_name FROM odp_user_connections WHERE workspace_id = ?',
             [workspace_id]
         );
-        const connectedSecretNames = new Set(connectedUsers.map(c => c.pppoe_secret_name));
+
+        // Ambil dari map clients
+        const [mappedClients] = await pool.query(
+            'SELECT pppoe_secret_name FROM clients WHERE workspace_id = ? AND pppoe_secret_name IS NOT NULL',
+            [workspace_id]
+        );
+
+        const connectedSecretNames = new Set([
+            ...connectedUsers.map(c => c.pppoe_secret_name),
+            ...mappedClients.map(c => c.pppoe_secret_name)
+        ]);
+
         const unconnectedSecrets = allSecrets.filter(secret => !connectedSecretNames.has(secret.name));
         res.status(200).json(unconnectedSecrets);
     } catch (error) {

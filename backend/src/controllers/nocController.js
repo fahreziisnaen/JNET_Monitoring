@@ -18,12 +18,118 @@ exports.getAggregatedMapData = async (req, res) => {
         }
 
         // Ambil Assets
-        const [assets] = await pool.query(`
+        const [assetsResult] = await pool.query(`
             SELECT a.*, w.name as workspace_name
             FROM network_assets a
             JOIN workspaces w ON a.workspace_id = w.id
             WHERE a.workspace_id IN (?)
         `, [validWorkspaceIds]);
+
+        let assets = Array.isArray(assetsResult) ? assetsResult : [];
+
+        // Inisialisasi default
+        assets.forEach(asset => {
+            if (asset) {
+                asset.totalUsers = 0;
+                asset.activeUsers = 0;
+            }
+        });
+
+        // ODP Logic
+        const odpIds = assets.filter(a => a && a.type === 'ODP' && a.id).map(a => a.id);
+        if (odpIds.length > 0) {
+            try {
+                const placeholders = odpIds.map(() => '?').join(',');
+                const [totalUsersResult] = await pool.query(
+                    `SELECT asset_id, COUNT(*) as count 
+                     FROM odp_user_connections 
+                     WHERE asset_id IN (${placeholders}) 
+                     GROUP BY asset_id`,
+                    [...odpIds]
+                );
+
+                const totalUsersMap = new Map();
+                if (Array.isArray(totalUsersResult)) {
+                    totalUsersResult.forEach(row => {
+                        totalUsersMap.set(row.asset_id, parseInt(row.count) || 0);
+                    });
+                }
+
+                try {
+                    const [activeUsersResult] = await pool.query(
+                        `SELECT ouc.asset_id, COUNT(*) as count 
+                         FROM odp_user_connections ouc
+                         INNER JOIN pppoe_user_status pus ON ouc.pppoe_secret_name = pus.pppoe_user AND ouc.workspace_id = pus.workspace_id
+                         WHERE ouc.asset_id IN (${placeholders}) AND pus.is_active = 1
+                         GROUP BY ouc.asset_id`,
+                        [...odpIds]
+                    );
+
+                    const activeUsersMap = new Map();
+                    if (Array.isArray(activeUsersResult)) {
+                        activeUsersResult.forEach(row => {
+                            activeUsersMap.set(row.asset_id, parseInt(row.count) || 0);
+                        });
+                    }
+
+                    assets.forEach(asset => {
+                        if (asset && asset.type === 'ODP' && asset.id) {
+                            asset.totalUsers = totalUsersMap.get(asset.id) || 0;
+                            asset.activeUsers = activeUsersMap.get(asset.id) || 0;
+                        }
+                    });
+                } catch (statusError) {
+                    console.warn('[NOC Controller] Error getting active users, using totalUsers only:', statusError.message);
+                    assets.forEach(asset => {
+                        if (asset && asset.type === 'ODP' && asset.id) {
+                            asset.totalUsers = totalUsersMap.get(asset.id) || 0;
+                            asset.activeUsers = 0;
+                        }
+                    });
+                }
+            } catch (queryError) {
+                console.warn('[NOC Controller] Error in batch ODP user query:', queryError.message);
+            }
+        }
+
+        // ODC Logic
+        const odcIds = assets.filter(a => a && a.type === 'ODC' && a.id).map(a => a.id);
+        if (odcIds.length > 0) {
+            try {
+                const placeholders = odcIds.map(() => '?').join(',');
+
+                const [childAssetsResult] = await pool.query(
+                    `SELECT parent_asset_id, COUNT(*) as count FROM network_assets WHERE parent_asset_id IN (${placeholders}) GROUP BY parent_asset_id`,
+                    [...odcIds]
+                );
+                const childMap = new Map();
+                if (Array.isArray(childAssetsResult)) {
+                    childAssetsResult.forEach(row => {
+                        childMap.set(row.parent_asset_id, parseInt(row.count) || 0);
+                    });
+                }
+
+                const [activeChildResult] = await pool.query(
+                    `SELECT parent_asset_id, COUNT(*) as count FROM network_assets WHERE parent_asset_id IN (${placeholders}) AND connection_status = 'terpasang' GROUP BY parent_asset_id`,
+                    [...odcIds]
+                );
+                const activeChildMap = new Map();
+                if (Array.isArray(activeChildResult)) {
+                    activeChildResult.forEach(row => {
+                        activeChildMap.set(row.parent_asset_id, parseInt(row.count) || 0);
+                    });
+                }
+
+                assets.forEach(asset => {
+                    if (asset && asset.type === 'ODC' && asset.id) {
+                        asset.totalUsers = childMap.get(asset.id) || 0;
+                        asset.activeUsers = activeChildMap.get(asset.id) || 0;
+                    }
+                });
+            } catch (queryError) {
+                console.warn('[NOC Controller] Error in batch ODC child query:', queryError.message);
+            }
+        }
 
         // Ambil Clients
         const [clients] = await pool.query(`

@@ -27,67 +27,102 @@ const protect = async (req, res, next) => {
 
     if (token) {
         try {
-            const decoded = jwt.verify(token, process.env.JWT_SECRET);
-            // Hanya log di development atau jika DEBUG_AUTH di-set
-            if (process.env.NODE_ENV === 'development' && process.env.DEBUG_AUTH === 'true') {
-                console.log(`[Auth Middleware] Token ditemukan dan valid untuk user ${decoded.id}`);
+            // Coba verifikasi sebagai JWT biasa
+            let decoded;
+            let isApiKey = false;
+            let dbUser = null;
+
+            try {
+                decoded = jwt.verify(token, process.env.JWT_SECRET);
+            } catch (jwtError) {
+                // Jika gagal verify JWT, cek apakah token tersebut adalah API Key di database
+                const [apiKeys] = await pool.query(
+                    'SELECT id, workspace_id, name FROM api_keys WHERE key_string = ?',
+                    [token]
+                );
+
+                if (apiKeys.length > 0) {
+                    isApiKey = true;
+                    // Mock dbUser untuk API Key (diperlakukan seperti admin di workspace tersebut)
+                    dbUser = {
+                        id: -1, // ID khusus untuk Service Account/API Key
+                        username: `api_key_${apiKeys[0].name}`,
+                        display_name: `Service Account (${apiKeys[0].name})`,
+                        workspace_id: apiKeys[0].workspace_id,
+                        role: 'admin',
+                        is_owner: false,
+                        is_super_admin: false,
+                        jti: `apikey_${apiKeys[0].id}`
+                    };
+                } else {
+                    // Jika bukan JWT valid dan bukan API key, kembalikan error JWT
+                    throw jwtError;
+                }
             }
-            const [users] = await pool.query(
-                'SELECT id, username, display_name, profile_picture_url, workspace_id, whatsapp_number, role FROM users WHERE id = ?',
-                [decoded.id]
-            );
 
-            if (users.length === 0) {
-                return res.status(401).json({ message: 'Tidak terotorisasi, user tidak ditemukan.' });
-            }
+            if (!isApiKey) {
+                // Hanya log di development atau jika DEBUG_AUTH di-set
+                if (process.env.NODE_ENV === 'development' && process.env.DEBUG_AUTH === 'true') {
+                    console.log(`[Auth Middleware] Token ditemukan dan valid untuk user ${decoded.id}`);
+                }
+                const [users] = await pool.query(
+                    'SELECT id, username, display_name, profile_picture_url, workspace_id, whatsapp_number, role FROM users WHERE id = ?',
+                    [decoded.id]
+                );
 
-            // Verify if the session still exists in database (allows revoking tokens on logout)
-            const [sessions] = await pool.query(
-                'SELECT id, token_id, user_agent, ip_address FROM user_sessions WHERE token_id = ? AND user_id = ?',
-                [decoded.jti, decoded.id]
-            );
+                if (users.length === 0) {
+                    return res.status(401).json({ message: 'Tidak terotorisasi, user tidak ditemukan.' });
+                }
 
-            if (sessions.length === 0) {
-                console.warn(`[Auth Middleware] Session ${decoded.jti} not found in database for user ${decoded.id}. Token revoked.`);
-                return res.status(401).json({ message: 'Sesi telah berakhir atau dikeluarkan. Silakan login kembali.' });
-            }
+                // Verify if the session still exists in database (allows revoking tokens on logout)
+                const [sessions] = await pool.query(
+                    'SELECT id, token_id, user_agent, ip_address FROM user_sessions WHERE token_id = ? AND user_id = ?',
+                    [decoded.jti, decoded.id]
+                );
 
-            let dbUser = users[0];
+                if (sessions.length === 0) {
+                    console.warn(`[Auth Middleware] Session ${decoded.jti} not found in database for user ${decoded.id}. Token revoked.`);
+                    return res.status(401).json({ message: 'Sesi telah berakhir atau dikeluarkan. Silakan login kembali.' });
+                }
 
-            // Safeguard: Jika user tidak punya workspace_id, buat workspace otomatis
-            if (!dbUser.workspace_id) {
-                console.log(`[Auth Middleware] User ${dbUser.id} tidak punya workspace_id, membuat workspace otomatis...`);
-                try {
-                    const [wsResult] = await pool.query(
-                        'INSERT INTO workspaces (name, owner_id) VALUES (?, ?)',
-                        [`${dbUser.display_name || dbUser.username}'s Workspace`, dbUser.id]
-                    );
-                    await pool.query('UPDATE users SET workspace_id = ? WHERE id = ?', [wsResult.insertId, dbUser.id]);
-                    // Update dbUser object dengan workspace_id yang baru dibuat
-                    dbUser.workspace_id = wsResult.insertId;
-                    console.log(`[Auth Middleware] Workspace ${wsResult.insertId} berhasil dibuat untuk user ${dbUser.id}`);
-                } catch (error) {
-                    console.error(`[Auth Middleware] Error membuat workspace untuk user ${dbUser.id}:`, error);
-                    // Jika gagal membuat workspace, coba query lagi dari database
-                    const [updatedUsers] = await pool.query('SELECT workspace_id FROM users WHERE id = ?', [dbUser.id]);
-                    if (updatedUsers[0]?.workspace_id) {
-                        dbUser.workspace_id = updatedUsers[0].workspace_id;
+                dbUser = users[0];
+
+                // Safeguard: Jika user tidak punya workspace_id, buat workspace otomatis
+                if (!dbUser.workspace_id) {
+                    console.log(`[Auth Middleware] User ${dbUser.id} tidak punya workspace_id, membuat workspace otomatis...`);
+                    try {
+                        const [wsResult] = await pool.query(
+                            'INSERT INTO workspaces (name, owner_id) VALUES (?, ?)',
+                            [`${dbUser.display_name || dbUser.username}'s Workspace`, dbUser.id]
+                        );
+                        await pool.query('UPDATE users SET workspace_id = ? WHERE id = ?', [wsResult.insertId, dbUser.id]);
+                        // Update dbUser object dengan workspace_id yang baru dibuat
+                        dbUser.workspace_id = wsResult.insertId;
+                        console.log(`[Auth Middleware] Workspace ${wsResult.insertId} berhasil dibuat untuk user ${dbUser.id}`);
+                    } catch (error) {
+                        console.error(`[Auth Middleware] Error membuat workspace untuk user ${dbUser.id}:`, error);
+                        // Jika gagal membuat workspace, coba query lagi dari database
+                        const [updatedUsers] = await pool.query('SELECT workspace_id FROM users WHERE id = ?', [dbUser.id]);
+                        if (updatedUsers[0]?.workspace_id) {
+                            dbUser.workspace_id = updatedUsers[0].workspace_id;
+                        }
                     }
                 }
+
+                // Tentukan apakah user adalah Super Admin
+                const superAdminIds = process.env.SUPER_ADMIN_IDS
+                    ? process.env.SUPER_ADMIN_IDS.split(',').map(id => parseInt(id.trim()))
+                    : [1];
+                dbUser.is_super_admin = superAdminIds.includes(dbUser.id);
+
+                // Tentukan apakah user adalah owner dari workspace-nya
+                const [wsOwnerInfo] = await pool.query('SELECT owner_id FROM workspaces WHERE id = ?', [dbUser.workspace_id]);
+                dbUser.is_owner = wsOwnerInfo.length > 0 && wsOwnerInfo[0].owner_id === dbUser.id;
+                dbUser.jti = decoded.jti;
             }
 
             // Set default avatar jika tidak ada
             const profilePictureUrl = dbUser.profile_picture_url || '/public/uploads/avatars/default.jpg';
-
-            // Tentukan apakah user adalah Super Admin
-            const superAdminIds = process.env.SUPER_ADMIN_IDS
-                ? process.env.SUPER_ADMIN_IDS.split(',').map(id => parseInt(id.trim()))
-                : [1];
-            const isSuperAdmin = superAdminIds.includes(dbUser.id);
-
-            // Tentukan apakah user adalah owner dari workspace-nya
-            const [wsOwnerInfo] = await pool.query('SELECT owner_id FROM workspaces WHERE id = ?', [dbUser.workspace_id]);
-            const isOwner = wsOwnerInfo.length > 0 && wsOwnerInfo[0].owner_id === dbUser.id;
 
             req.user = {
                 id: dbUser.id,
@@ -97,26 +132,29 @@ const protect = async (req, res, next) => {
                 workspace_id: dbUser.workspace_id,
                 whatsapp_number: dbUser.whatsapp_number,
                 role: dbUser.role || 'user',
-                is_owner: isOwner,
-                is_super_admin: isSuperAdmin,
-                jti: decoded.jti
+                is_owner: dbUser.is_owner,
+                is_super_admin: dbUser.is_super_admin,
+                jti: dbUser.jti
             };
 
             // --- SUPER ADMIN WORKSPACE OVERRIDE ---
             // If the user is a superadmin, and explicitly passed a workspaceId in the body or query,
             // temporarily override their active workspace context just for this request.
             // This enables cross-workspace NOC actions seamlessly.
-            if (isSuperAdmin) {
+            if (req.user.is_super_admin) {
                 const targetWorkspaceId = (req.body && req.body.workspaceId) || (req.query && req.query.workspaceId);
                 if (targetWorkspaceId) {
                     req.user.workspace_id = parseInt(targetWorkspaceId, 10);
                 }
             }
 
-            await pool.query(
-                'UPDATE user_sessions SET last_seen = NOW() WHERE token_id = ?',
-                [decoded.jti]
-            );
+            // Update session last seen is only for JWT users, not API keys
+            if (!isApiKey) {
+                await pool.query(
+                    'UPDATE user_sessions SET last_seen = NOW() WHERE token_id = ?',
+                    [dbUser.jti]
+                );
+            }
 
             next();
         } catch (error) {

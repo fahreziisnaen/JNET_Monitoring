@@ -57,6 +57,7 @@ const clientRoutes = require('./src/routes/clientRoutes');
 const reportRoutes = require('./src/routes/reportRoutes');
 const backupRoutes = require('./src/routes/backupRoutes');
 const nocRoutes = require('./src/routes/nocRoutes');
+const apiKeyRoutes = require('./src/routes/apiKeyRoutes');
 
 const app = express();
 const server = http.createServer(app);
@@ -121,6 +122,7 @@ app.use('/api/clients', clientRoutes);
 app.use('/api/reports', reportRoutes);
 app.use('/api/backup', backupRoutes);
 app.use('/api/noc', nocRoutes);
+app.use('/api/api-keys', apiKeyRoutes);
 
 const wss = new WebSocket.Server({ server, path: "/ws" });
 
