@@ -710,11 +710,115 @@ const MapDisplay = ({
                     <p className="font-bold">{asset.name}</p>
                     <p>{asset.type}</p>
                     {(asset.type === 'ODP' || asset.type === 'ODC') && asset.totalUsers !== undefined && asset.totalUsers > 0 && (
-                      <p className="text-xs mt-1">
-                        {asset.type === 'ODC' ? 'Aset Terpasang:' : 'User:'} <span className={asset.activeUsers === 0 ? 'text-red-500 font-semibold' : asset.activeUsers === asset.totalUsers ? 'text-green-500' : 'text-amber-500'}>
-                          {asset.activeUsers || 0}/{asset.totalUsers}
-                        </span>
-                      </p>
+                      <div className="mt-1 flex flex-col">
+                        {asset.type === 'ODC' ? (
+                          <>
+                            {(() => {
+                              const childODPs = validAssets.filter(a => a.parent_asset_id === asset.id && a.type === 'ODP');
+                              const childOLTs = validAssets.filter(a => a.parent_asset_id === asset.id && a.type === 'OLT');
+
+                              const activeODPs = childODPs.filter(a => a.connection_status === 'terpasang').length;
+                              const totalODPs = childODPs.length;
+
+                              const activeOLTs = childOLTs.filter(a => a.connection_status === 'terpasang').length;
+                              const totalOLTs = childOLTs.length;
+
+                              return (
+                                <>
+                                  {totalODPs > 0 && (
+                                    <p className="text-xs">
+                                      ODP Terpasang: <span className={activeODPs === 0 ? 'text-red-500 font-semibold' : activeODPs === totalODPs ? 'text-green-500' : 'text-amber-500'}>
+                                        {activeODPs}/{totalODPs}
+                                      </span>
+                                    </p>
+                                  )}
+                                  {totalOLTs > 0 && (
+                                    <p className="text-xs">
+                                      OLT Terpasang: <span className={activeOLTs === 0 ? 'text-red-500 font-semibold' : activeOLTs === totalOLTs ? 'text-green-500' : 'text-amber-500'}>
+                                        {activeOLTs}/{totalOLTs}
+                                      </span>
+                                    </p>
+                                  )}
+                                </>
+                              );
+                            })()}
+                          </>
+                        ) : (
+                          <p className="text-xs">
+                            User: <span className={asset.activeUsers === 0 ? 'text-red-500 font-semibold' : asset.activeUsers === asset.totalUsers ? 'text-green-500' : 'text-amber-500'}>
+                              {asset.activeUsers || 0}/{asset.totalUsers}
+                            </span>
+                          </p>
+                        )}
+                        {asset.type === 'ODC' && (
+                          <div className="mt-2 pt-1.5 border-t border-gray-400/30">
+                            {(() => {
+                              const childODPs = validAssets.filter(a => a.parent_asset_id === asset.id && a.type === 'ODP');
+                              if (childODPs.length === 0) return null;
+
+                              let totalODPClients = 0;
+                              let activeODPClients = 0;
+
+                              const odpList = childODPs.map(odp => {
+                                const t = odp.totalUsers || 0;
+                                const a = odp.activeUsers || 0;
+                                totalODPClients += t;
+                                activeODPClients += a;
+                                return (
+                                  <div key={odp.id} className="text-[10px] text-muted-foreground flex justify-between gap-4">
+                                    <span className="truncate max-w-[120px]">{odp.name}</span>
+                                    <span className={a === 0 && t > 0 ? "text-red-500 font-medium" : a === t && t > 0 ? "text-green-500 font-medium" : a > 0 ? "text-amber-500 font-medium" : "font-medium"}>
+                                      ({a}/{t} clients)
+                                    </span>
+                                  </div>
+                                );
+                              });
+
+                              return (
+                                <>
+                                  <p className="text-[11px] font-semibold mb-1 text-primary">
+                                    Total Client: {activeODPClients}/{totalODPClients}
+                                  </p>
+                                  <div className="max-h-24 overflow-y-auto pr-1 flex flex-col gap-0.5 scrollbar-thin scrollbar-thumb-gray-300 dark:scrollbar-thumb-gray-600">
+                                    {odpList}
+                                  </div>
+                                </>
+                              );
+                            })()}
+                          </div>
+                        )}
+                        {asset.type === 'ODP' && (
+                          <div className="mt-2 pt-1.5 border-t border-gray-400/30">
+                            {(() => {
+                              const odpClients = validClients.filter(c => c.odp_asset_id === asset.id);
+                              if (odpClients.length === 0) return null;
+
+                              const clientList = odpClients.map(client => {
+                                const isActive = client.isActive === true;
+                                return (
+                                  <div key={`odp-client-${client.id}`} className="text-[10px] text-muted-foreground flex justify-between gap-4">
+                                    <span className="truncate max-w-[120px]">{client.pppoe_secret_name}</span>
+                                    <span className={isActive ? "text-green-500 font-medium" : "text-red-500 font-medium"}>
+                                      {isActive ? 'Aktif' : 'Offline'}
+                                    </span>
+                                  </div>
+                                );
+                              });
+
+                              return (
+                                <>
+                                  <p className="text-[11px] font-semibold mb-1 text-primary">
+                                    Daftar Client:
+                                  </p>
+                                  <div className="max-h-24 overflow-y-auto pr-1 flex flex-col gap-0.5 scrollbar-thin scrollbar-thumb-gray-300 dark:scrollbar-thumb-gray-600">
+                                    {clientList}
+                                  </div>
+                                </>
+                              );
+                            })()}
+                          </div>
+                        )}
+                      </div>
                     )}
                   </div>
                 </Tooltip>

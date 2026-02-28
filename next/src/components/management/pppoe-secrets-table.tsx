@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { motion } from '@/components/motion';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
-import { Power, PowerOff, MoreHorizontal, Loader2, Edit, Trash2, ZapOff, Search, ArrowUpDown, ChevronUp, ChevronDown } from 'lucide-react';
+import { Power, PowerOff, MoreHorizontal, Loader2, Edit, Trash2, ZapOff, Search, ArrowUpDown, ChevronUp, ChevronDown, X } from 'lucide-react';
 import { useMikrotik } from '@/components/providers/mikrotik-provider';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
 import { toast } from 'sonner';
@@ -424,8 +424,17 @@ const PppoeSecretsTable = ({ refreshTrigger, onActionComplete, initialFilter = '
                 placeholder="Cari nama, profil, atau IP..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-9 bg-input h-9"
+                className="pl-9 pr-8 bg-input h-9"
               />
+              {searchQuery && (
+                <button
+                  type="button"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                  onClick={() => setSearchQuery('')}
+                >
+                  <X size={14} />
+                </button>
+              )}
             </div>
           </div>
         </CardHeader>

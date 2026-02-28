@@ -389,10 +389,51 @@ exports.getAssetConnections = async (req, res) => {
             connections = userConnections.map(c => ({ name: c.pppoe_secret_name, type: 'user' }));
         } else if (assetType === 'ODC') {
             const [odpConnections] = await pool.query(
-                'SELECT name FROM network_assets WHERE parent_asset_id = ? AND workspace_id = ?',
+                'SELECT id, name FROM network_assets WHERE parent_asset_id = ? AND workspace_id = ? AND type = "ODP"',
                 [id, workspace_id]
             );
-            connections = odpConnections.map(c => ({ name: c.name, type: 'ODP' }));
+
+            if (odpConnections.length === 0) {
+                connections = [];
+            } else {
+                const odpIds = odpConnections.map(c => c.id);
+                const placeholders = odpIds.map(() => '?').join(',');
+
+                // Get total clients
+                const [totalUsersResult] = await pool.query(
+                    `SELECT asset_id, COUNT(*) as count FROM odp_user_connections WHERE asset_id IN (${placeholders}) GROUP BY asset_id`,
+                    [...odpIds]
+                );
+                const totalMap = new Map();
+                if (Array.isArray(totalUsersResult)) {
+                    totalUsersResult.forEach(r => totalMap.set(r.asset_id, parseInt(r.count) || 0));
+                }
+
+                // Get active clients
+                const activeMap = new Map();
+                try {
+                    const [activeUsersResult] = await pool.query(
+                        `SELECT ouc.asset_id, COUNT(*) as count 
+                         FROM odp_user_connections ouc
+                         INNER JOIN pppoe_user_status pus ON ouc.pppoe_secret_name = pus.pppoe_user AND ouc.workspace_id = pus.workspace_id
+                         WHERE ouc.asset_id IN (${placeholders}) AND pus.is_active = 1
+                         GROUP BY ouc.asset_id`,
+                        [...odpIds]
+                    );
+                    if (Array.isArray(activeUsersResult)) {
+                        activeUsersResult.forEach(r => activeMap.set(r.asset_id, parseInt(r.count) || 0));
+                    }
+                } catch (e) {
+                    // Ignore table not found errors for activity
+                }
+
+                connections = odpConnections.map(c => ({
+                    name: c.name,
+                    type: 'ODP',
+                    totalUsers: totalMap.get(c.id) || 0,
+                    activeUsers: activeMap.get(c.id) || 0
+                }));
+            }
         }
         res.status(200).json(connections);
     } catch (error) {

@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { Search, Loader2 } from 'lucide-react';
+import { Search, Loader2, X } from 'lucide-react';
 import { useAuth } from '@/components/providers/auth-provider';
 import { useMikrotik } from '@/components/providers/mikrotik-provider';
 import { DeviceSelector } from '@/components/ui/device-selector';
@@ -163,10 +163,19 @@ const SlaPage = () => {
             <Input
               type="text"
               placeholder="Cari nama pengguna..."
-              className="w-full pl-10"
+              className="w-full pl-10 pr-10"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
             />
+            {searchTerm && (
+              <button
+                type="button"
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                onClick={() => setSearchTerm('')}
+              >
+                <X size={16} />
+              </button>
+            )}
           </div>
         </div>
         <Card className="flex-1 min-h-0">

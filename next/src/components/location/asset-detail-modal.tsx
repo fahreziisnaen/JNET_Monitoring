@@ -22,6 +22,8 @@ import { apiFetch } from '@/utils/api';
 interface Connection {
   name: string;
   type: "user" | "ODP" | "client";
+  totalUsers?: number;
+  activeUsers?: number;
 }
 
 interface AssetDetailModalProps {
@@ -67,7 +69,9 @@ const AssetDetailModal = ({
           // Convert connections dari API menjadi format yang konsisten
           const formattedConnections: Connection[] = (Array.isArray(connections) ? connections : []).map((conn: any) => ({
             name: conn.name,
-            type: conn.type || 'user' as const
+            type: conn.type || 'user' as const,
+            totalUsers: conn.totalUsers,
+            activeUsers: conn.activeUsers
           }));
 
           // Gabungkan connections dan clientConnections
@@ -200,19 +204,31 @@ const AssetDetailModal = ({
                 )}
 
                 <div className="pt-4 border-t">
-                  <h3 className="text-sm font-semibold mb-2 flex items-center gap-2">
-                    <Users size={16} /> {connectionLabel} ({connections.length})
-                  </h3>
-                  <div className="max-h-28 overflow-y-auto space-y-1 pr-2">
+                  <div className="flex justify-between items-center mb-2">
+                    <h3 className="text-sm font-semibold flex items-center gap-2">
+                      <Users size={16} /> {asset.type === 'ODC' ? `Total ODP: ${connections.length}` : `${connectionLabel} (${connections.length})`}
+                    </h3>
+                    {asset.type === 'ODC' && connections.length > 0 && (
+                      <span className="text-xs font-semibold text-primary">
+                        Total Client: {connections.reduce((sum, c) => sum + (c.activeUsers || 0), 0)}/{connections.reduce((sum, c) => sum + (c.totalUsers || 0), 0)}
+                      </span>
+                    )}
+                  </div>
+                  <div className="max-h-28 overflow-y-auto space-y-1 pr-2 scrollbar-thin scrollbar-thumb-muted-foreground/20">
                     {loadingConnections ? (
                       <Loader2 className="animate-spin" />
                     ) : connections.length > 0 ? (
                       connections.map((conn, index) => (
                         <div
                           key={`${conn.type}-${conn.name}-${index}`}
-                          className="text-xs bg-secondary p-2 rounded-md"
+                          className="text-xs bg-secondary p-2 rounded-md flex justify-between items-center"
                         >
-                          {conn.name}
+                          <span className="truncate">{conn.name}</span>
+                          {conn.type === 'ODP' && conn.totalUsers !== undefined && (
+                            <span className={conn.activeUsers === 0 && conn.totalUsers > 0 ? "text-red-500 font-medium whitespace-nowrap" : conn.activeUsers === conn.totalUsers && conn.totalUsers > 0 ? "text-green-500 font-medium whitespace-nowrap" : conn.activeUsers && conn.activeUsers > 0 ? "text-amber-500 font-medium whitespace-nowrap" : "text-muted-foreground font-medium whitespace-nowrap"}>
+                              ({conn.activeUsers || 0}/{conn.totalUsers} clients)
+                            </span>
+                          )}
                         </div>
                       ))
                     ) : (

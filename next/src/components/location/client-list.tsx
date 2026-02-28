@@ -148,119 +148,125 @@ const ClientList = ({ clients, loading, selectedClientId, onClientSelect, onClie
   return (
     <Card className={`flex flex-col transition-all duration-300 ${isCollapsed ? 'flex-shrink-0' : 'flex-1 min-h-0'}`}>
       <CardHeader className="pb-2 px-3 py-2 lg:px-6 lg:py-3 lg:cursor-default">
-        <div className="flex items-center justify-between gap-2">
-          <div className="flex items-center gap-2 cursor-pointer" onClick={() => {
-            if (!isSelectMode) {
-              const willExpand = isCollapsed;
-              setIsCollapsed(!willExpand);
-              if (willExpand) {
-                window.dispatchEvent(new CustomEvent('collapse-asset-list'));
+        <div className="flex flex-col gap-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2 cursor-pointer hover:opacity-80 transition-opacity flex-1 min-w-0" title={isCollapsed ? "Buka daftar" : "Tutup daftar"} onClick={() => {
+              if (!isSelectMode) {
+                const willExpand = isCollapsed;
+                setIsCollapsed(!willExpand);
+                if (willExpand) {
+                  window.dispatchEvent(new CustomEvent('collapse-asset-list'));
+                }
               }
-            }
-          }}>
-            <CardTitle className="text-base lg:text-lg whitespace-nowrap">Client ({filteredClients.length})</CardTitle>
-            <button className="lg:hidden text-muted-foreground" aria-label="Toggle">
-              {isCollapsed ? <ChevronDown size={16} /> : <ChevronUp size={16} />}
-            </button>
-          </div>
+            }}>
+              <CardTitle className="text-base lg:text-lg truncate">Daftar Client ({filteredClients.length})</CardTitle>
+              <button className="lg:hidden text-muted-foreground shrink-0" aria-label="Toggle">
+                {isCollapsed ? <ChevronDown size={16} /> : <ChevronUp size={16} />}
+              </button>
+            </div>
 
-          <div className="flex items-center gap-1 flex-1 justify-end">
-            {!isSelectMode && onSearchChange && (
-              showSearch ? (
-                <div className="relative flex-1 w-full max-w-[180px] sm:max-w-[240px]">
-                  <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
-                  <Input
-                    ref={searchInputRef}
-                    type="text"
-                    placeholder="Cari client..."
-                    value={searchQuery}
-                    autoFocus
-                    onClick={() => {
-                      setIsCollapsed(false);
-                      window.dispatchEvent(new CustomEvent('collapse-asset-list'));
-                    }}
-                    onBlur={() => { if (!searchQuery) setShowSearch(false); }}
-                    onChange={(e) => {
-                      setIsCollapsed(false);
-                      window.dispatchEvent(new CustomEvent('collapse-asset-list'));
-                      onSearchChange(e.target.value);
-                    }}
-                    className="pl-8 pr-7 bg-input text-sm h-8"
-                  />
-                  {searchQuery && (
-                    <button
-                      type="button"
-                      className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                      onMouseDown={(e) => e.preventDefault()} // Prevent blur on input
-                      onClick={() => {
-                        if (onSearchChange) onSearchChange('');
-                        setIsCollapsed(false);
-                        window.dispatchEvent(new CustomEvent('collapse-asset-list'));
-                        searchInputRef.current?.focus();
-                      }}
-                    >
-                      <X size={14} />
-                    </button>
-                  )}
-                </div>
-              ) : (
-                <Button
-                  size="icon"
-                  variant="ghost"
-                  className="h-8 w-8 text-muted-foreground hover:text-foreground"
-                  title="Cari Client"
-                  onClick={() => {
-                    setShowSearch(true);
-                    setIsCollapsed(false);
-                    window.dispatchEvent(new CustomEvent('collapse-asset-list'));
-                  }}
-                >
-                  <Search size={15} />
-                </Button>
-              )
-            )}
-
-            {onBulkDelete && (
-              <>
-                {isSelectMode ? (
-                  <div className="flex items-center gap-1">
-                    {selectedIds.size > 0 && (
+            <div className="flex items-center gap-1 shrink-0 ml-2">
+              {onBulkDelete && (
+                <>
+                  {isSelectMode ? (
+                    <div className="flex items-center gap-1">
+                      {selectedIds.size > 0 && (
+                        <Button
+                          size="icon"
+                          variant="destructive"
+                          className="h-8 w-8 relative shrink-0"
+                          title={`Hapus ${selectedIds.size} item`}
+                          onClick={handleDeleteSelected}
+                        >
+                          <Trash2 size={14} />
+                          <span className="absolute -top-1.5 -right-1.5 bg-background text-destructive text-[9px] font-bold rounded-full w-4 h-4 flex items-center justify-center border border-destructive">
+                            {selectedIds.size}
+                          </span>
+                        </Button>
+                      )}
                       <Button
                         size="icon"
-                        variant="destructive"
-                        className="h-8 w-8 relative"
-                        title={`Hapus ${selectedIds.size} item`}
-                        onClick={handleDeleteSelected}
+                        variant="outline"
+                        className="h-8 w-8 shrink-0"
+                        title="Batal Mode Pilih"
+                        onClick={() => setIsSelectMode(false)}
                       >
-                        <Trash2 size={14} />
-                        <span className="absolute -top-1.5 -right-1.5 bg-background text-destructive text-[9px] font-bold rounded-full w-4 h-4 flex items-center justify-center border border-destructive">
-                          {selectedIds.size}
-                        </span>
+                        <span title="Batal Mode Pilih">✕</span>
                       </Button>
-                    )}
+                    </div>
+                  ) : (
                     <Button
                       size="icon"
-                      variant="outline"
-                      className="h-8 w-8"
-                      title="Batal"
-                      onClick={() => setIsSelectMode(false)}
+                      variant="ghost"
+                      className="h-8 w-8 text-destructive hover:bg-destructive/10 shrink-0"
+                      title="Pilih & Hapus Client Massal"
+                      onClick={() => { setIsSelectMode(true); setIsCollapsed(false); }}
                     >
-                      ✕
+                      <Trash2 size={15} />
                     </Button>
+                  )}
+                </>
+              )}
+            </div>
+          </div>
+
+          <div className="flex items-center justify-between w-full">
+            <div className="flex-1">
+              {(!isSelectMode && onSearchChange) && (
+                showSearch ? (
+                  <div className="relative w-full">
+                    <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+                    <Input
+                      ref={searchInputRef}
+                      type="text"
+                      placeholder="Cari client..."
+                      value={searchQuery}
+                      autoFocus
+                      onClick={() => {
+                        setIsCollapsed(false);
+                        window.dispatchEvent(new CustomEvent('collapse-asset-list'));
+                      }}
+                      onBlur={() => { if (!searchQuery) setShowSearch(false); }}
+                      onChange={(e) => {
+                        setIsCollapsed(false);
+                        window.dispatchEvent(new CustomEvent('collapse-asset-list'));
+                        onSearchChange(e.target.value);
+                      }}
+                      className="pl-8 pr-7 bg-input text-sm h-8 w-full"
+                    />
+                    {searchQuery && (
+                      <button
+                        type="button"
+                        className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                        onMouseDown={(e) => e.preventDefault()}
+                        onClick={() => {
+                          if (onSearchChange) onSearchChange('');
+                          setIsCollapsed(false);
+                          window.dispatchEvent(new CustomEvent('collapse-asset-list'));
+                          searchInputRef.current?.focus();
+                        }}
+                      >
+                        <X size={14} />
+                      </button>
+                    )}
                   </div>
                 ) : (
                   <Button
                     size="icon"
-                    variant="ghost"
-                    className="h-8 w-8 text-destructive hover:bg-destructive/10"
-                    title="Pilih & Hapus Client"
-                    onClick={() => { setIsSelectMode(true); setIsCollapsed(false); }}
+                    variant="outline"
+                    className="h-8 text-muted-foreground hover:text-foreground w-full justify-start px-3 text-xs"
+                    title="Cari Client"
+                    onClick={() => {
+                      setShowSearch(true);
+                      setIsCollapsed(false);
+                      window.dispatchEvent(new CustomEvent('collapse-asset-list'));
+                    }}
                   >
-                    <Trash2 size={15} />
+                    <Search size={14} className="mr-2" /> Cari client...
                   </Button>
-                )}
-              </>
-            )}
+                )
+              )}
+            </div>
           </div>
         </div>
 
