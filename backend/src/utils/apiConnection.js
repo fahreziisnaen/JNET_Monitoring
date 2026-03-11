@@ -324,6 +324,10 @@ async function runCommandForWorkspace(workspaceId, command, params = [], deviceI
         deviceId = workspaces[0].active_device_id;
     }
 
+    // Ambil nama device untuk logging
+    const [deviceRows] = await pool.query('SELECT name FROM mikrotik_devices WHERE id = ?', [deviceId]);
+    const deviceName = deviceRows[0]?.name || `Device-${deviceId}`;
+
     const deviceConnectionKey = await getDeviceConnectionKey(deviceId, workspaceId);
     let client = null;
     let retryCount = 0;
@@ -372,7 +376,7 @@ async function runCommandForWorkspace(workspaceId, command, params = [], deviceI
             while (executionRetryCount <= maxRetries) {
                 const startTime = Date.now();
                 try {
-                    console.log(`[API Command] [START] "${command}" pada ${deviceConnectionKey} (Timeout: ${timeoutMs}ms)`);
+                    console.log(`[API Command] [START] "${command}" pada Mikrotik (${deviceName}) (Timeout: ${timeoutMs}ms)`);
                     const result = await writeWithTimeout(client, command, params, timeoutMs);
                     console.log(`[API Command] [SUCCESS] "${command}" selesai dalam ${Date.now() - startTime}ms`);
                     return result;
@@ -383,7 +387,7 @@ async function runCommandForWorkspace(workspaceId, command, params = [], deviceI
                     // Hanya hapus koneksi jika ini perintah mutasi (unsafe) atau retry sudah habis
                     // Ini untuk mencegah monitoring rutin membunuh koneksi yang sedang dipakai perintah /add atau /remove
                     if (!isSafe || executionRetryCount >= maxRetries) {
-                        console.log(`[API-ROBUST] Membersihkan koneksi ${deviceConnectionKey} karena error/timeout.`);
+                        console.log(`[API-ROBUST] Membersihkan koneksi untuk Mikrotik (${deviceName}) karena error/timeout.`);
                         removeConnection(deviceConnectionKey);
                     }
 

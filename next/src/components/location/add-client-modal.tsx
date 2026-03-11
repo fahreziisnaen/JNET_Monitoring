@@ -102,6 +102,23 @@ const AddClientModal = ({ isOpen, onClose, onSuccess, assets = [] }: AddClientMo
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
+  // Handle ESC key to close modal
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        onClose();
+      }
+    };
+
+    if (isOpen) {
+      window.addEventListener('keydown', handleKeyDown);
+    }
+
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [isOpen, onClose]);
+
   // Filter unlinked secrets dari WebSocket data (sama seperti management page)
   const unlinkedSecrets = useMemo(() => {
     if (!pppoeSecrets || !selectedDeviceId) {
@@ -126,13 +143,19 @@ const AddClientModal = ({ isOpen, onClose, onSuccess, assets = [] }: AddClientMo
     return filtered.sort((a, b) => a.name.toLowerCase().localeCompare(b.name.toLowerCase()));
   }, [pppoeSecrets, selectedDeviceId, existingClients, odpConnections]);
 
-  // Auto-select first secret saat secrets tersedia
+  // Auto-select first secret saat secrets tersedia atau saat selectedSecret sudah tidak valid (misal baru saja ditambahkan jadi client)
   useEffect(() => {
-    if (unlinkedSecrets.length > 0 && !selectedSecret) {
-      const firstSecret = unlinkedSecrets[0];
-      setSelectedSecret(firstSecret.name);
-      if (firstSecret.connected_odp_id) {
-        setOdpAssetId(firstSecret.connected_odp_id.toString());
+    if (unlinkedSecrets.length > 0) {
+      const isSelectedStillValid = unlinkedSecrets.some(secret => secret.name === selectedSecret);
+      
+      if (!selectedSecret || (!isSelectedStillValid && selectedSecret !== '')) {
+        const firstSecret = unlinkedSecrets[0];
+        setSelectedSecret(firstSecret.name);
+        if (firstSecret.connected_odp_id) {
+          setOdpAssetId(firstSecret.connected_odp_id.toString());
+        } else {
+          setOdpAssetId('');
+        }
       }
     } else if (unlinkedSecrets.length === 0 && !loading) {
       setError("Semua PPPoE secrets sudah menjadi client.");

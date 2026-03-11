@@ -32,6 +32,7 @@ const LoginPage = () => {
       const apiUrl = process.env.NEXT_PUBLIC_API_BASE_URL;
       const res = await fetch(`${apiUrl}/api/auth/login`, {
         method: 'POST',
+        credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data),
       });

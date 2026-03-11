@@ -163,7 +163,6 @@ const SortableInterfaceCard = ({ id, etherId, currentTraffic, index, itemCount }
   const txMbps = parseFloat((txBps / 1000000).toFixed(2));
   const rxMbps = parseFloat((rxBps / 1000000).toFixed(2));
   const glowClass = txBps > rxBps ? 'shadow-glow-red' : 'shadow-glow-blue';
-  const isLastAndOdd = (index === itemCount - 1) && (itemCount % 2 !== 0) && (itemCount >= 3);
 
   // Format angka dengan baik
   const formatSpeed = (mbps: number) => {
@@ -177,10 +176,7 @@ const SortableInterfaceCard = ({ id, etherId, currentTraffic, index, itemCount }
     <div
       ref={setNodeRef}
       style={style}
-      className={cn(
-        'transition-all duration-500',
-        isLastAndOdd && 'md:col-span-2'
-      )}
+      className="transition-all duration-500"
     >
       <Card
         className={cn(
@@ -485,7 +481,7 @@ const MainContent = () => {
         <SortableContext
           items={displayedInterfaces}
         >
-          <div className={cn("grid grid-cols-1 gap-6", gridLayoutClass)}>
+          <div className={cn("grid grid-cols-1 gap-6 traffic-grid", gridLayoutClass)}>
             {displayedInterfaces.length > 0 ? (
               displayedInterfaces.map((etherId, index) => {
                 const currentTraffic = traffic[etherId];

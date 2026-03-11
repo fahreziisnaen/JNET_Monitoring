@@ -152,12 +152,13 @@ const WhatsappBotCard = () => {
         fetchData();
     }, [fetchData]);
 
-    // Polling untuk status QR (Always On)
+    // Polling untuk status QR (hanya jika user sudah login)
     useEffect(() => {
+        if (!user) return; // Jangan polling jika belum login
         fetchQrStatus(); // initial call
         const interval = setInterval(fetchQrStatus, 5000);
         return () => clearInterval(interval);
-    }, [fetchQrStatus]);
+    }, [fetchQrStatus, user]);
 
     // Jika status koneksi berubah jadi connected, refresh grup
     useEffect(() => {

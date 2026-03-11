@@ -71,6 +71,38 @@ const LocationManager: React.FC<LocationManagerProps> = ({ isNocMode = false, no
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [nocWorkspaceIdsKey]);
 
+  const [nocSecrets, setNocSecrets] = useState<any[]>([]);
+
+  const fetchNocSecrets = useCallback(async () => {
+    if (!isNocMode || nocWorkspaceIdsRef.current.length === 0) return;
+    try {
+      const apiUrl = process.env.NEXT_PUBLIC_API_BASE_URL;
+      const res = await apiFetch(`${apiUrl}/api/noc/secrets`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ workspaceIds: nocWorkspaceIdsRef.current })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setNocSecrets(data.secrets || []);
+      }
+    } catch (err) {
+      console.error('Failed to fetch noc secrets in LocationManager', err);
+    }
+  }, [isNocMode, nocWorkspaceIdsKey]);
+
+  useEffect(() => {
+    if (isNocMode) {
+      fetchNocSecrets();
+      const interval = setInterval(fetchNocSecrets, 5000);
+      return () => clearInterval(interval);
+    }
+  }, [isNocMode, fetchNocSecrets]);
+
+  const activeSecrets = isNocMode ? nocSecrets : pppoeSecrets;
+
   const [isClientModalOpen, setIsClientModalOpen] = useState(false);
   const [assets, setAssets] = useState<Asset[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
@@ -185,14 +217,14 @@ const LocationManager: React.FC<LocationManagerProps> = ({ isNocMode = false, no
   // Derive real-time client status from pppoeSecrets
   const realTimeClientsBySecrets = useMemo(() => {
     // Check global disconnected status first
-    if (!isConnected) {
+    if (!isNocMode && !isConnected) {
       return []; // If the selected Mikrotik is offline, we instantly hide ALL tracked clients on this map view
     }
 
-    if (!pppoeSecrets || pppoeSecrets.length === 0) return clients.filter(c => !c.isOffline); // Filter here too if no secrets
+    if (!activeSecrets || activeSecrets.length === 0) return clients.filter(c => !c.isOffline); // Filter here too if no secrets
 
     // Create a map for fast lookup by name
-    const secretMap = new Map(pppoeSecrets.map((s: any) => [s.name, s]));
+    const secretMap = new Map(activeSecrets.map((s: any) => [s.name, s]));
 
     return clients.map(client => {
       const secret = secretMap.get(client.pppoe_secret_name) as any;
@@ -201,7 +233,7 @@ const LocationManager: React.FC<LocationManagerProps> = ({ isNocMode = false, no
         isActive: secret ? secret.isActive : false
       };
     }).filter(c => !c.isOffline); // Automatically drop clients that are marked offline by the backend
-  }, [clients, pppoeSecrets, isConnected]);
+  }, [clients, activeSecrets, isConnected, isNocMode]);
 
   // Derive real-time asset status (specifically for ODPs based on their connected clients)
   const realTimeAssetsBySecrets = useMemo(() => {
@@ -1149,14 +1181,14 @@ const LocationManager: React.FC<LocationManagerProps> = ({ isNocMode = false, no
               onBulkDelete={!isNocMode ? handleBulkDeleteAssets : undefined}
             />
             <ClientList
-              clients={filteredClients}
+              clients={displayClients}
+              pppoeSecrets={activeSecrets}
               loading={clientsLoading}
               selectedClientId={selectedClient?.id}
               onClientSelect={handleClientSelect}
               onClientView={handleClientView}
               searchQuery={clientSearchQuery}
               onSearchChange={setClientSearchQuery}
-              pppoeSecrets={pppoeSecrets}
               onBulkDelete={!isNocMode ? handleBulkDeleteClients : undefined}
             />
           </div>
@@ -1265,6 +1297,7 @@ const LocationManager: React.FC<LocationManagerProps> = ({ isNocMode = false, no
             onDelete={handleDeleteClient}
             onEditPath={(client: Client) => handleStartEditPath('client', client)}
             nocWorkspaceId={isNocMode ? selectedClient.workspace_id : undefined}
+            overrideSecrets={isNocMode ? activeSecrets : undefined}
           />
           <EditClientModal
             isOpen={isEditClientModalOpen}

@@ -69,6 +69,7 @@ interface ClientDetailModalProps {
   onDelete: (_client: Client) => void;
   onEditPath?: (_client: Client) => void;
   nocWorkspaceId?: number;
+  overrideSecrets?: any[];
 }
 
 const formatDate = (dateString: string) => {
@@ -106,8 +107,11 @@ const ClientDetailModal = ({
   onEdit,
   onDelete,
   onEditPath,
+  overrideSecrets,
 }: ClientDetailModalProps) => {
-  const { pppoeSecrets } = useMikrotik() || {};
+  const { pppoeSecrets: mikrotikSecrets } = useMikrotik() || {};
+  const pppoeSecrets = overrideSecrets || mikrotikSecrets;
+
   const [slaData, setSlaData] = useState<SlaData | null>(null);
   const [usageData, setUsageData] = useState<UsageData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -195,9 +199,29 @@ const ClientDetailModal = ({
       setSlaData(null);
       setUsageData(null);
       setLoading(true);
-      setError(null);
     }
   }, [client, isOpen, fetchClientData]);
+
+  // Handle ESC key to close modal or full image
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        if (showFullImage) {
+          setShowFullImage(false);
+        } else {
+          onClose();
+        }
+      }
+    };
+
+    if (isOpen) {
+      window.addEventListener('keydown', handleKeyDown);
+    }
+
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [isOpen, showFullImage, onClose]);
 
   if (!isOpen || !client) return null;
 

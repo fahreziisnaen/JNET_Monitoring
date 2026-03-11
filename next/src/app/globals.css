@@ -162,3 +162,11 @@
   height: 100%;
   width: 100%;
 }
+
+/* Traffic grid: card pertama otomatis full-width saat jumlah ganjil */
+/* Menggunakan CSS agar tidak konflik dengan drag-and-drop (dnd-kit pakai transform, bukan DOM reorder) */
+@media (min-width: 768px) {
+  .traffic-grid > div:first-child:nth-last-child(odd) {
+    grid-column: span 2;
+  }
+}

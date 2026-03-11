@@ -102,6 +102,10 @@ app.use(express.json());
 app.use(cookieParser());
 app.use('/public', express.static('public'));
 
+// Health check endpoint (tanpa auth) - digunakan oleh BackendOfflineOverlay
+app.get('/api/health', (req, res) => res.status(200).json({ status: 'ok' }));
+app.head('/api/health', (req, res) => res.status(200).end());
+
 app.use('/api/auth', authRoutes);
 app.use('/api/user', userRoutes);
 app.use('/api/pppoe', pppoeRoutes);

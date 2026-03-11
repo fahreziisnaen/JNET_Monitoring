@@ -24,7 +24,7 @@ export function BackendOfflineOverlay() {
             heartbeatInterval = setInterval(async () => {
                 try {
                     const apiUrl = process.env.NEXT_PUBLIC_API_BASE_URL || '';
-                    await fetch(`${apiUrl}/api/workspaces/me`, { method: 'HEAD', cache: 'no-store' });
+                    await fetch(`${apiUrl}/api/health`, { method: 'HEAD', cache: 'no-store' });
                 } catch (error) {
                     // Jika ping mandiri gagal (NetworkError), langsung picu overlay!
                     handleOfflineEvent();
@@ -50,7 +50,7 @@ export function BackendOfflineOverlay() {
                     // Coba ping ringan ke server. Jika statusnya berhasil merespon tanpa throw error network, tutup overlay.
                     // Kita pakai endpoint ringan (workspaces/me), asalkan server merespon (bahkan 401 Unauthorized), 
                     // berarti server Node.js sudah bangun dan bisa meroute request lagi.
-                    await fetch(`${apiUrl}/api/workspaces/me`, { method: 'HEAD', cache: 'no-store' });
+                    await fetch(`${apiUrl}/api/health`, { method: 'HEAD', cache: 'no-store' });
                     // Backend is back! Force a full page reload so all data fetches seamlessly without user intervention.
                     window.location.reload();
                 } catch (error) {

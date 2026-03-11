@@ -78,19 +78,25 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       } else {
         const errorData = await response.json().catch(() => ({}));
         console.warn('[Auth Provider] Check login failed:', response.status, errorData);
-        // Hapus token dari localStorage jika unauthorized
-        if (response.status === 401 && typeof window !== 'undefined') {
-          try {
-            localStorage.removeItem('auth_token');
-            console.log('[Auth Provider] Token dihapus dari localStorage karena unauthorized');
-          } catch (e) {
-            // localStorage mungkin tidak tersedia, skip
-            console.warn('[Auth Provider] Gagal menghapus token dari localStorage:', e);
+        
+        if (response.status === 401) {
+          // 401 = token benar-benar tidak valid → hapus token dan logout
+          if (typeof window !== 'undefined') {
+            try {
+              localStorage.removeItem('auth_token');
+              console.log('[Auth Provider] Token dihapus dari localStorage karena unauthorized');
+            } catch (e) {
+              console.warn('[Auth Provider] Gagal menghapus token dari localStorage:', e);
+            }
           }
+          setIsLoggedIn(false);
+          setUser(null);
+          setToken(null);
+        } else {
+          // 500 atau error lain = server/DB error, JANGAN hapus token
+          // Biarkan user tetap login agar bisa retry otomatis saat server pulih
+          console.warn('[Auth Provider] Server error (bukan 401), mempertahankan state login saat ini.');
         }
-        setIsLoggedIn(false);
-        setUser(null);
-        setToken(null);
       }
     } catch (error) {
       console.error("[Auth Provider] Check login error:", error);

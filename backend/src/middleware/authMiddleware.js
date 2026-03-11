@@ -75,15 +75,23 @@ const protect = async (req, res, next) => {
                 }
 
                 // Verify if the session still exists in database (allows revoking tokens on logout)
+                console.log(`[Auth Debug] Checking session for user ${decoded.id}, jti: ${decoded.jti}, url: ${req.url}`);
                 const [sessions] = await pool.query(
                     'SELECT id, token_id, user_agent, ip_address FROM user_sessions WHERE token_id = ? AND user_id = ?',
                     [decoded.jti, decoded.id]
                 );
 
                 if (sessions.length === 0) {
+                    // Debug: tampilkan semua session yang ada untuk user ini
+                    const [allSessions] = await pool.query(
+                        'SELECT id, token_id, user_agent, ip_address, created_at FROM user_sessions WHERE user_id = ?',
+                        [decoded.id]
+                    );
                     console.warn(`[Auth Middleware] Session ${decoded.jti} not found in database for user ${decoded.id}. Token revoked.`);
+                    console.warn(`[Auth Middleware] Available sessions for user ${decoded.id}:`, allSessions.map(s => ({ id: s.id, token_id: s.token_id, created_at: s.created_at })));
                     return res.status(401).json({ message: 'Sesi telah berakhir atau dikeluarkan. Silakan login kembali.' });
                 }
+                console.log(`[Auth Debug] Session found for user ${decoded.id}, session id: ${sessions[0].id}`);
 
                 dbUser = users[0];
 
@@ -158,8 +166,16 @@ const protect = async (req, res, next) => {
 
             next();
         } catch (error) {
-            console.error(error);
-            return res.status(401).json({ message: 'Tidak terotorisasi, token tidak valid.' });
+            // Distinguish antara JWT error dan DB/server error
+            if (error.name === 'JsonWebTokenError' || error.name === 'TokenExpiredError' || error.name === 'NotBeforeError') {
+                console.warn('[Auth Middleware] Token tidak valid:', error.message);
+                return res.status(401).json({ message: 'Tidak terotorisasi, token tidak valid.' });
+            }
+            
+            // DB error (ECONNREFUSED, timeout, dll) → jangan kirim 401 karena token mungkin valid
+            // Frontend tidak boleh menghapus token karena ini bukan masalah token
+            console.error('[Auth Middleware] Server/DB error saat verifikasi:', error.message || error);
+            return res.status(500).json({ message: 'Terjadi kesalahan server saat memverifikasi sesi. Silakan coba lagi.' });
         }
     }
 
