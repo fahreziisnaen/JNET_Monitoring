@@ -3,8 +3,8 @@
  * Digunakan agar Controller bisa melakukan lookup instan tanpa query API berat.
  */
 
-const workspaceSecrets = new Map(); // Map<workspaceId, secrets[]>
-const workspaceActive = new Map();  // Map<workspaceId, active[]>
+const workspaceSecrets = new Map(); // Map<workspaceId_deviceId, secrets[]>
+const workspaceActive = new Map();  // Map<workspaceId_deviceId, active[]>
 const deviceStatus = new Map();     // Map<workspaceId_deviceId, status>
 
 module.exports = {
@@ -16,16 +16,16 @@ module.exports = {
         return deviceStatus.get(`${workspaceId}_${deviceId}`) || 'connected';
     },
 
-    setSecrets: (workspaceId, secrets) => {
-        workspaceSecrets.set(String(workspaceId), secrets);
+    setSecrets: (workspaceId, deviceId, secrets) => {
+        workspaceSecrets.set(`${workspaceId}_${deviceId}`, secrets);
     },
 
-    getSecrets: (workspaceId) => {
-        return workspaceSecrets.get(String(workspaceId)) || [];
+    getSecrets: (workspaceId, deviceId) => {
+        return workspaceSecrets.get(`${workspaceId}_${deviceId}`) || [];
     },
 
-    updateSecret: (workspaceId, action, attributes) => {
-        const id = String(workspaceId);
+    updateSecret: (workspaceId, deviceId, action, attributes) => {
+        const id = `${workspaceId}_${deviceId}`;
         let secrets = workspaceSecrets.get(id) || [];
 
         if (action === 'add' || action === 'change') {
@@ -42,17 +42,18 @@ module.exports = {
         workspaceSecrets.set(id, secrets);
     },
 
-    setActive: (workspaceId, active) => {
-        workspaceActive.set(String(workspaceId), active);
+    setActive: (workspaceId, deviceId, active) => {
+        workspaceActive.set(`${workspaceId}_${deviceId}`, active);
     },
 
-    getActive: (workspaceId) => {
-        return workspaceActive.get(String(workspaceId)) || [];
+    getActive: (workspaceId, deviceId) => {
+        return workspaceActive.get(`${workspaceId}_${deviceId}`) || [];
     },
 
-    clear: (workspaceId) => {
-        workspaceSecrets.delete(String(workspaceId));
-        workspaceActive.delete(String(workspaceId));
+    clear: (workspaceId, deviceId) => {
+        const id = `${workspaceId}_${deviceId}`;
+        workspaceSecrets.delete(id);
+        workspaceActive.delete(id);
         // Note: We don't clear deviceStatus here as it tracks physical connection state independent of data dumps
     }
 };

@@ -130,10 +130,11 @@ app.use('/api/api-keys', apiKeyRoutes);
 
 const wss = new WebSocket.Server({ server, path: "/ws" });
 
-function broadcastToWorkspace(workspaceId, data) {
+function broadcastToWorkspace(workspaceId, deviceId, data) {
     let sentCount = 0;
     wss.clients.forEach((client) => {
-        if (client.workspaceId === workspaceId && client.readyState === WebSocket.OPEN) {
+        const isDeviceMatch = !deviceId || client.deviceId == deviceId;
+        if (client.workspaceId === workspaceId && isDeviceMatch && client.readyState === WebSocket.OPEN) {
             try {
                 client.send(JSON.stringify(data));
                 sentCount++;
@@ -159,7 +160,7 @@ function stopWorkspaceMonitoring(connectionKey, reason = 'Koneksi terputus') {
             console.log(`[WebSocket] Stopping monitoring for workspace ${workspaceId}, device ${deviceId}. Reason: ${reason}`);
 
             try {
-                broadcastToWorkspace(workspaceId, {
+                broadcastToWorkspace(workspaceId, deviceId, {
                     type: 'connection-status',
                     payload: {
                         status: 'disconnected',
@@ -208,7 +209,7 @@ async function startWorkspaceMonitoring(workspaceId, connectionKey, deviceId = n
         const currentDeviceStatus = mikrotikStore.getDeviceStatus(workspaceId, deviceId);
 
         // Broadcast status
-        broadcastToWorkspace(workspaceId, {
+        broadcastToWorkspace(workspaceId, deviceId, {
             type: 'connection-status',
             payload: {
                 status: currentDeviceStatus,
@@ -235,7 +236,7 @@ async function startWorkspaceMonitoring(workspaceId, connectionKey, deviceId = n
          * Meminimalisir delay interval 3 detik.
          */
         const broadcastPppoeUpdate = () => {
-            const activeUsers = mikrotikStore.getActive(workspaceId);
+            const activeUsers = mikrotikStore.getActive(workspaceId, deviceId);
             const activeUserMap = new Map();
             activeUsers.forEach(user => {
                 if (user.name) {
@@ -262,7 +263,7 @@ async function startWorkspaceMonitoring(workspaceId, connectionKey, deviceId = n
                 return enriched;
             });
 
-            broadcastToWorkspace(workspaceId, {
+            broadcastToWorkspace(workspaceId, deviceId, {
                 type: 'pppoe-update',
                 payload: { pppoeSecrets: enrichedSecrets }
             });
@@ -293,14 +294,14 @@ async function startWorkspaceMonitoring(workspaceId, connectionKey, deviceId = n
                         }
 
                         // Update global store untuk diakses Controller
-                        mikrotikStore.updateSecret(workspaceId, action, attributes);
+                        mikrotikStore.updateSecret(workspaceId, deviceId, action, attributes);
 
                         // INSTANT BROADCAST (True Real-time)
                         broadcastPppoeUpdate();
                     },
                     onActiveUpdate: (action, attributes) => {
                         console.log(`[RealTime][Active] ${action.toUpperCase()}: ${attributes.name}`);
-                        const currentActive = mikrotikStore.getActive(workspaceId);
+                        const currentActive = mikrotikStore.getActive(workspaceId, deviceId);
                         let updatedActive = [...currentActive];
 
                         if (action === 'add' || action === 'change') {
@@ -314,7 +315,7 @@ async function startWorkspaceMonitoring(workspaceId, connectionKey, deviceId = n
                             updatedActive = updatedActive.filter(a => a['.id'] !== attributes['.id'] && a.name !== attributes.name);
                         }
 
-                        mikrotikStore.setActive(workspaceId, updatedActive);
+                        mikrotikStore.setActive(workspaceId, deviceId, updatedActive);
 
                         // INSTANT BROADCAST (True Real-time)
                         broadcastPppoeUpdate();
@@ -381,14 +382,14 @@ async function startWorkspaceMonitoring(workspaceId, connectionKey, deviceId = n
                         cachedSecrets = pppoeSecrets;
                         lastSecretFetchTime = now;
                         // Sync ke global store
-                        mikrotikStore.setSecrets(workspaceId, pppoeSecrets);
+                        mikrotikStore.setSecrets(workspaceId, deviceId, pppoeSecrets);
                     }
                 }
 
                 const pppoeSecrets = cachedSecrets;
 
                 // Sync data active ke store (setiap 3 detik)
-                mikrotikStore.setActive(workspaceId, pppoeActive);
+                mikrotikStore.setActive(workspaceId, deviceId, pppoeActive);
 
                 // Merge pppoeActive ke pppoeSecrets: tambahkan info aktif (isActive, uptime, currentAddress)
                 // Buat Map untuk lookup cepat dari pppoeActive
@@ -501,7 +502,7 @@ async function startWorkspaceMonitoring(workspaceId, connectionKey, deviceId = n
                     activeInterfaces: activeInterfacesList || [], // Kirim list interface aktif
                     traffic: trafficUpdateBatch
                 };
-                broadcastToWorkspace(workspaceId, { type: 'batch-update', payload: batchPayload });
+                broadcastToWorkspace(workspaceId, deviceId, { type: 'batch-update', payload: batchPayload });
 
             } catch (cycleError) {
                 // Handle error khusus untuk UNKNOWNREPLY
@@ -510,7 +511,7 @@ async function startWorkspaceMonitoring(workspaceId, connectionKey, deviceId = n
                     if (cycleError.message?.includes('!empty')) {
                         // Tetap kirim data kosong agar frontend tahu koneksi masih aktif
                         const emptyPayload = { resource: {}, pppoeSecrets: [], activeInterfaces: [], traffic: {} };
-                        broadcastToWorkspace(workspaceId, { type: 'batch-update', payload: emptyPayload });
+                        broadcastToWorkspace(workspaceId, deviceId, { type: 'batch-update', payload: emptyPayload });
                         return; // Lanjutkan monitoring
                     }
                     stopWorkspaceMonitoring(connectionKey, `Gagal mendapatkan respon dari perangkat: ${cycleError.message}`);
@@ -519,7 +520,7 @@ async function startWorkspaceMonitoring(workspaceId, connectionKey, deviceId = n
                 // Jangan stop monitoring untuk error lain, coba kirim data kosong dulu
                 try {
                     const emptyPayload = { resource: {}, pppoeSecrets: [], activeInterfaces: [], traffic: {} };
-                    broadcastToWorkspace(workspaceId, { type: 'batch-update', payload: emptyPayload });
+                    broadcastToWorkspace(workspaceId, deviceId, { type: 'batch-update', payload: emptyPayload });
                 } catch (broadcastError) {
                     // Log WS monitoring disabled
                 }

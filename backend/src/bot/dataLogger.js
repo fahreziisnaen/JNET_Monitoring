@@ -1390,7 +1390,7 @@ async function syncMikrotikSecrets() {
                     const deviceNames = group.devices.map(d => d.name).join(', ');
                     console.log(`[Secret Sync] ✅ Mendapat ${pppoeSecrets.length} secrets dari Mikrotik (${deviceNames})`);
                     for (const device of group.devices) {
-                        mikrotikStore.setSecrets(device.workspace_id, pppoeSecrets);
+                        mikrotikStore.setSecrets(device.workspace_id, device.device_id, pppoeSecrets);
                         mikrotikStore.setDeviceStatus(device.workspace_id, device.device_id, 'connected');
                     }
                 }
