@@ -112,9 +112,11 @@ const DeviceModal = ({ isOpen, onClose, onSuccess, deviceToEdit }: DeviceModalPr
 
     try {
         const apiUrl = process.env.NEXT_PUBLIC_API_BASE_URL;
+        const payload = { ...formData, deviceId: deviceToEdit?.id };
+        
         const res = await apiFetch(`${apiUrl}/api/devices/test-connection`, {
             method: 'POST',
-            body: JSON.stringify(formData)
+            body: JSON.stringify(payload)
         });
         
         const data = await res.json();

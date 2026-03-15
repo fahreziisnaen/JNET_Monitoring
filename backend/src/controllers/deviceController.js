@@ -100,13 +100,24 @@ exports.deleteDevice = async (req, res) => {
 
 exports.testConnection = async (req, res) => {
     const RouterOSAPI = require('node-routeros').RouterOSAPI;
-    const { host, user, password, port } = req.body;
+    let { host, user, password, port, deviceId } = req.body;
     
     if (!host || !user || !port) {
         return res.status(400).json({ message: 'Host, User, dan Port wajib diisi.' });
     }
 
     try {
+        // Jika deviceId dikirim (mode edit) dan password kosong, ambil password lama dari DB
+        if (deviceId && !password) {
+            const workspaceId = req.user?.workspace_id;
+            if (workspaceId) {
+                const [rows] = await pool.query('SELECT password FROM mikrotik_devices WHERE id = ? AND workspace_id = ?', [deviceId, workspaceId]);
+                if (rows.length > 0 && rows[0].password) {
+                    password = rows[0].password;
+                }
+            }
+        }
+
         const client = new RouterOSAPI({
             host: host,
             user: user,
