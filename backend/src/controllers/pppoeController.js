@@ -58,8 +58,8 @@ exports.getSecrets = async (req, res) => {
 
 
         // Optimasi: Cek di local store dulu (instant)
-        let secrets = mikrotikStore.getSecrets(workspaceId);
-        let activeUsers = mikrotikStore.getActive(workspaceId);
+        let secrets = mikrotikStore.getSecrets(workspaceId, deviceId);
+        let activeUsers = mikrotikStore.getActive(workspaceId, deviceId);
 
         // Jika store kosong (monitoring belum jalan), fallback ke API (slow)
         if (!secrets || secrets.length === 0) {
@@ -158,13 +158,13 @@ exports.getNextIp = async (req, res) => {
         const { ip_start, ip_end, gateway } = pools[0];
 
         // OPTIMIZATION: Ambil data dari local store (instant)
-        let allSecrets = mikrotikStore.getSecrets(workspace_id);
-        let allActive = mikrotikStore.getActive(workspace_id);
+        const deviceId = req.query.deviceId ? parseInt(req.query.deviceId) : null;
+        let allSecrets = mikrotikStore.getSecrets(workspace_id, deviceId);
+        let allActive = mikrotikStore.getActive(workspace_id, deviceId);
 
         // Jika store kosong (monitoring belum jalan), fallback ke API (slow)
         if ((!allSecrets || allSecrets.length === 0) && (!allActive || allActive.length === 0)) {
             console.log(`[Next IP] Store kosong, fallback ke MikroTik API...`);
-            const deviceId = req.query.deviceId ? parseInt(req.query.deviceId) : null;
             allSecrets = await runCommandForWorkspace(workspace_id, '/ppp/secret/print', [
                 '.proplist=.id,name,profile,remote-address,last-logged-out,disabled'
             ], deviceId).catch(() => []);
@@ -249,7 +249,8 @@ exports.addSecret = async (req, res) => {
     try {
         try {
             console.log(`[Add Secret][${requestId}] Pengecekan proaktif via local store (instant)...`);
-            const localSecrets = mikrotikStore.getSecrets(req.user.workspace_id);
+            const targetDeviceId = req.query.deviceId || req.body.deviceId || null;
+            const localSecrets = mikrotikStore.getSecrets(req.user.workspace_id, targetDeviceId);
             const isExisting = localSecrets.some(s => s.name === name);
 
             if (isExisting) {

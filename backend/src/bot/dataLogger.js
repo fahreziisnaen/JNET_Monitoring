@@ -506,7 +506,7 @@ async function monitorSlaAndNotifications(broadcastCallback = null) {
                 for (const device of group.devices) {
                     try {
                         // Sync data active ke store agar NOC mode punya data real-time
-                        mikrotikStore.setActive(device.workspace_id, pppoeActive);
+                        mikrotikStore.setActive(device.workspace_id, device.device_id, pppoeActive);
                         mikrotikStore.setDeviceStatus(device.workspace_id, device.device_id, 'connected');
 
                         await processSlaEvents(device.workspace_id, pppoeActive, device.device_id, broadcastCallback);

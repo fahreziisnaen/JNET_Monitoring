@@ -182,8 +182,8 @@ exports.getAggregatedSecrets = async (req, res) => {
             const workspaceId = workspace.id;
 
             // Ambil data secrets dan active users dari store realtime (memory) untuk workspace ini
-            const secrets = mikrotikStore.getSecrets(workspaceId);
-            const activeUsers = mikrotikStore.getActive(workspaceId);
+            const secrets = mikrotikStore.getSecrets(workspaceId, workspace.device_id);
+            const activeUsers = mikrotikStore.getActive(workspaceId, workspace.device_id);
             const status = mikrotikStore.getDeviceStatus(workspaceId, workspace.device_id);
 
             // Jika offline atau tidak ada data di store, kita kembalikan array kosong untuk workspace tersebut,
