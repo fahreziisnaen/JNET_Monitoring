@@ -9,6 +9,8 @@ router.route('/')
     .get(deviceController.listDevices)
     .post(authorizeAdmin, deviceController.addDevice);
 
+router.post('/test-connection', authorizeAdmin, deviceController.testConnection);
+
 router.route('/:id')
     .put(authorizeAdmin, deviceController.updateDevice)
     .delete(authorizeAdmin, deviceController.deleteDevice);

@@ -97,3 +97,40 @@ exports.deleteDevice = async (req, res) => {
         res.status(500).json({ message: 'Gagal menghapus perangkat.', error: error.message });
     }
 };
+
+exports.testConnection = async (req, res) => {
+    const RouterOSAPI = require('node-routeros').RouterOSAPI;
+    const { host, user, password, port } = req.body;
+    
+    if (!host || !user || !port) {
+        return res.status(400).json({ message: 'Host, User, dan Port wajib diisi.' });
+    }
+
+    try {
+        const client = new RouterOSAPI({
+            host: host,
+            user: user,
+            password: password || '',
+            port: parseInt(port, 10),
+            timeout: 10000 // 10 detik batas tes
+        });
+
+        await client.connect();
+        client.close(); // Tutup setelah sukses
+        
+        res.status(200).json({ message: 'Koneksi Sukses! MikroTik merespons dengan baik.' });
+    } catch (error) {
+        console.error('[Device Controller] Test connection failed:', error.message);
+        let errorMsg = error.message;
+        if (error.message.includes('time') || error.message.includes('ETIMEDOUT')) {
+            errorMsg = 'Timeout: IP/Port salah, atau port API di router tertutup.';
+        } else if (error.message.includes('invalid') || error.message.includes('login') || error.message.includes('authentication')) {
+            errorMsg = 'Username atau password salah.';
+        } else if (error.message.includes('ECONNREFUSED')) {
+            errorMsg = 'Koneksi ditolak (port salah atau diblokir firewall).';
+        } else if (error.message.includes('EHOSTUNREACH')) {
+            errorMsg = 'Host Unreachable: IP tidak dapat dijangkau dari server ini.';
+        }
+        res.status(400).json({ message: errorMsg });
+    }
+};

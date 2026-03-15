@@ -346,28 +346,37 @@ server {
 #### Apache2
 
 ```apache
-<VirtualHost *:443>
-    ServerName monitor.yourdomain.com
-    
-    # SSL config... (Certbot)
+<VirtualHost *:80>
 
-    # API & Public Files
-    ProxyPass /api http://localhost:9494
-    ProxyPass /public http://localhost:9494/public
+    ServerName monitoring.j-net.my.id
+    # Note: ServerName disesuaikan dengan domain yang Anda gunakan
+    ProxyPreserveHost On
+
+    # Backend API
+    ProxyPass /api/ http://127.0.0.1:9494/api/
+    ProxyPassReverse /api/ http://127.0.0.1:9494/api/
+
+    # Static uploads
+    ProxyPass /public/ http://127.0.0.1:9494/public/
+    ProxyPassReverse /public/ http://127.0.0.1:9494/public/
 
     # WebSocket
-    ProxyPass /ws ws://localhost:9494/ws
-    ProxyPassReverse /ws ws://localhost:9494/ws
+    ProxyPass /ws ws://127.0.0.1:9494/ws
+    ProxyPassReverse /ws ws://127.0.0.1:9494/ws
 
-    # Frontend
-    ProxyPass / http://localhost:3000/
+    # Frontend Next.js
+    ProxyPass / http://127.0.0.1:3000/
+    ProxyPassReverse / http://127.0.0.1:3000/
+
 </VirtualHost>
 ```
 
 Required Apache2 modules:
 ```bash
-a2enmod proxy proxy_http proxy_wstunnel rewrite headers
-systemctl restart apache2
+sudo a2enmod proxy
+sudo a2enmod proxy_http
+sudo a2enmod proxy_wstunnel
+sudo systemctl restart apache2
 ```
 
 ### Phase 5: Verification

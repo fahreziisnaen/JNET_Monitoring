@@ -121,7 +121,16 @@ exports.getMembers = async (req, res) => {
              WHERE u.workspace_id = ?`,
             [workspaceId]
         );
-        res.status(200).json(members);
+        const superAdminIds = process.env.SUPER_ADMIN_IDS
+            ? process.env.SUPER_ADMIN_IDS.split(',').map(id => parseInt(id.trim()))
+            : [1];
+
+        const mappedMembers = members.map(m => ({
+            ...m,
+            is_super_admin: superAdminIds.includes(m.id)
+        }));
+
+        res.status(200).json(mappedMembers);
     } catch (error) {
         console.error("GET MEMBERS ERROR:", error);
         res.status(500).json({ message: 'Gagal mengambil daftar anggota.' });
@@ -306,7 +315,16 @@ exports.getAllUsers = async (req, res) => {
              LEFT JOIN workspaces w ON u.workspace_id = w.id
              ORDER BY w.name ASC, u.display_name ASC`
         );
-        res.status(200).json(users);
+        const superAdminIds = process.env.SUPER_ADMIN_IDS
+            ? process.env.SUPER_ADMIN_IDS.split(',').map(id => parseInt(id.trim()))
+            : [1];
+
+        const mappedUsers = users.map(u => ({
+            ...u,
+            is_super_admin: superAdminIds.includes(u.id)
+        }));
+
+        res.status(200).json(mappedUsers);
     } catch (error) {
         console.error("GET ALL USERS ERROR:", error);
         res.status(500).json({ message: 'Gagal mengambil daftar user.' });

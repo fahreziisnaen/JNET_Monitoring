@@ -3,8 +3,9 @@
 import React, { createContext, useContext, useState, useCallback, useRef, useEffect } from 'react';
 import { Toast, ToastContainer } from '@/components/ui/toast';
 import { useMikrotik } from './mikrotik-provider';
-import { useAuth } from './auth-provider';
+import { useAuth, publicPaths } from './auth-provider';
 import { apiFetch } from '@/utils/api';
+import { usePathname } from 'next/navigation';
 
 interface NotificationItem {
   id: string;
@@ -39,10 +40,14 @@ export const NotificationProvider = ({ children }: { children: React.ReactNode }
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const { pppoeSecrets } = useMikrotik() || { pppoeSecrets: [] };
   const { user } = useAuth();
+  const pathname = usePathname();
   const previousActiveRef = useRef<Set<string>>(new Set());
   const lastNotificationTimeRef = useRef<Map<string, number>>(new Map());
   const isInitializedRef = useRef<boolean>(false); // Flag untuk track apakah sudah initialized
   const notificationCooldown = 60000; // 1 menit cooldown per user
+
+  // Helper to check if we should show notifications
+  const shouldShowNotification = !publicPaths.includes(pathname);
   
   // Filter hanya yang aktif dari pppoeSecrets
   const pppoeActive = pppoeSecrets.filter((secret: any) => secret.isActive === true);
@@ -61,6 +66,12 @@ export const NotificationProvider = ({ children }: { children: React.ReactNode }
       const { notifications } = event.detail;
       
       if (!notifications || !Array.isArray(notifications) || notifications.length === 0) {
+        return;
+      }
+
+      // Jangan tampilkan toast jika masih di halaman publik (login/register)
+      if (!shouldShowNotification) {
+        console.log('[Notification] Menerima downtime notification tapi skip toast karena di halaman publik');
         return;
       }
 
@@ -105,6 +116,12 @@ export const NotificationProvider = ({ children }: { children: React.ReactNode }
       const { notifications } = event.detail;
       
       if (!notifications || !Array.isArray(notifications) || notifications.length === 0) {
+        return;
+      }
+
+      // Jangan tampilkan toast jika masih di halaman publik (login/register)
+      if (!shouldShowNotification) {
+        console.log('[Notification] Menerima reconnect notification tapi skip toast karena di halaman publik');
         return;
       }
 

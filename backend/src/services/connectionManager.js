@@ -14,7 +14,8 @@ function setIdleTimeout(connectionKey, connection, timeout) {
         clearTimeout(connection.idleTimer);
     }
     connection.idleTimer = setTimeout(() => {
-        console.log(`[Connection Manager] Menutup koneksi idle untuk ${connectionKey} setelah ${timeout/1000} detik.`);
+        const label = connection.label || connectionKey;
+        console.log(`[Connection Manager] Menutup koneksi idle: ${label} (setelah ${timeout/1000} detik tidak aktif).`);
         if (connection.client && connection.client.connected) {
             connection.client.close();
         }
@@ -38,12 +39,14 @@ const addConnection = (connectionKey, connectionData, timeout = DEFAULT_IDLE_TIM
     const conn = { ...connectionData, timeout: effectiveTimeout };
     setIdleTimeout(connectionKey, conn, effectiveTimeout);
     workspaceConnections.set(connectionKey, conn);
-    console.log(`[Connection Manager] Koneksi untuk ${connectionKey} didaftarkan dengan timeout ${effectiveTimeout/1000} detik.`);
+    const label = conn.label || connectionKey;
+    console.log(`[Connection Manager] Koneksi terdaftar: ${label} (timeout ${effectiveTimeout/1000} detik).`);
     
     // Resolve semua pending requests yang menunggu koneksi ini
     const pending = pendingConnections.get(connectionKey);
     if (pending && pending.length > 0) {
-        console.log(`[Connection Manager] Resolving ${pending.length} pending request(s) untuk ${connectionKey}`);
+        const label = conn.label || connectionKey;
+        console.log(`[Connection Manager] Resolving ${pending.length} pending request(s) untuk ${label}`);
         pending.forEach(({ resolve }) => {
             try {
                 resolve(conn.client);
@@ -61,7 +64,8 @@ const addConnection = (connectionKey, connectionData, timeout = DEFAULT_IDLE_TIM
 const removeConnection = (connectionKey) => {
     const connection = workspaceConnections.get(connectionKey);
     if (connection) {
-        console.log(`[Connection Manager] Menghapus koneksi untuk ${connectionKey}`);
+        const label = connection.label || connectionKey;
+        console.log(`[Connection Manager] Menghapus koneksi: ${label}`);
         clearTimeout(connection.idleTimer);
         if (connection.client && connection.client.connected) {
             connection.client.close().catch(err => console.error("Error saat menutup koneksi:", err));
@@ -72,7 +76,8 @@ const removeConnection = (connectionKey) => {
     // Reject semua pending requests jika koneksi dihapus
     const pending = pendingConnections.get(connectionKey);
     if (pending && pending.length > 0) {
-        console.log(`[Connection Manager] Rejecting ${pending.length} pending request(s) untuk ${connectionKey} karena koneksi dihapus`);
+        const label = connection ? (connection.label || connectionKey) : connectionKey;
+        console.log(`[Connection Manager] Rejecting ${pending.length} pending request(s) untuk ${label} karena koneksi dihapus`);
         pending.forEach(({ reject }) => {
             try {
                 reject(new Error('Koneksi dihapus sebelum selesai dibuat'));
@@ -123,7 +128,7 @@ const getConnectionLock = (connectionKey) => {
  */
 const clearConnectionLock = (connectionKey) => {
     if (connectionLocks.has(connectionKey)) {
-        console.warn(`[Connection Manager] Clearing hang lock untuk ${connectionKey}`);
+        console.warn(`[Connection Manager] Clearing hang lock untuk key=${connectionKey} — kemungkinan deadlock`);
         connectionLocks.delete(connectionKey);
     }
 };

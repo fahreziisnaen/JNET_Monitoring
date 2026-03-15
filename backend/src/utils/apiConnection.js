@@ -69,6 +69,18 @@ async function getOrCreateConnection(workspaceId, timeout, customKey = null, dev
     // Gunakan customKey jika diberikan (untuk backward compatibility), atau device-based key
     const connectionKey = customKey || deviceConnectionKey;
 
+    // Ambil label yang mudah dibaca (name + host) untuk keperluan logging
+    // Ini dilakukan sekali di sini agar semua log di bawah bisa memakai label yang sama
+    let deviceLabel = connectionKey; // fallback ke key jika query gagal
+    try {
+        const [labelRows] = await pool.query('SELECT name, host, port FROM mikrotik_devices WHERE id = ?', [deviceId]);
+        if (labelRows[0]) {
+            deviceLabel = `${labelRows[0].name} (${labelRows[0].host}:${labelRows[0].port})`;
+        }
+    } catch {
+        // Tidak kritis — label hanyalah untuk log
+    }
+
     // STEP 1: Cek apakah koneksi sudah ada dan connected
     let connection = getConnection(connectionKey);
     if (connection && connection.client && connection.client.connected) {
@@ -91,7 +103,7 @@ async function getOrCreateConnection(workspaceId, timeout, customKey = null, dev
         const now = Date.now();
         const lastLog = waitLogCache.get(connectionKey) || 0;
         if (now - lastLog > 5000) { // Hanya log maksimal 1x setiap 5 detik per device
-            console.log(`[Connection] Menunggu koneksi ${connectionKey} yang sedang dibuat oleh request lain...`);
+            console.log(`[Connection] Menunggu koneksi ke ${deviceLabel} yang sedang dibuat oleh request lain...`);
             waitLogCache.set(connectionKey, now);
         }
         return new Promise((resolve, reject) => {
@@ -100,10 +112,10 @@ async function getOrCreateConnection(workspaceId, timeout, customKey = null, dev
                 // Timeout menunggu lock, cek apakah koneksi sudah ada
                 const existingConnection = getConnection(connectionKey);
                 if (existingConnection && existingConnection.client && existingConnection.client.connected) {
-                    console.log(`[Connection] Timeout menunggu lock, tapi koneksi ${connectionKey} sudah ada, menggunakan yang ada`);
+                    console.log(`[Connection] Timeout menunggu lock, koneksi ke ${deviceLabel} sudah ada — menggunakan yang ada`);
                     resolve(existingConnection.client);
                 } else {
-                    console.warn(`[Connection] Timeout menunggu lock untuk ${connectionKey}, akan membuat koneksi baru`);
+                    console.warn(`[Connection] Timeout menunggu lock untuk ${deviceLabel}, akan membuat koneksi baru`);
                     // Clear lock yang hang
                     clearConnectionLock(connectionKey);
                     // Fall through ke STEP 3 dengan membuat koneksi baru
@@ -125,7 +137,7 @@ async function getOrCreateConnection(workspaceId, timeout, customKey = null, dev
                         // Jika lock promise reject, cek lagi apakah koneksi sudah ada (mungkin dibuat oleh request lain)
                         const existingConnection = getConnection(connectionKey);
                         if (existingConnection && existingConnection.client && existingConnection.client.connected) {
-                            console.log(`[Connection] Koneksi ${connectionKey} berhasil dibuat oleh request lain setelah error`);
+                            console.log(`[Connection] Koneksi ke ${deviceLabel} sudah dibuat oleh request lain setelah error`);
                             resolve(existingConnection.client);
                         } else {
                             // Jika masih belum ada, reject dan caller akan retry
@@ -135,7 +147,7 @@ async function getOrCreateConnection(workspaceId, timeout, customKey = null, dev
             } else {
                 clearTimeout(lockTimeout);
                 // Lock hilang, coba lagi dengan membuat koneksi baru
-                console.log(`[Connection] Lock hilang untuk ${connectionKey}, akan membuat koneksi baru`);
+                console.log(`[Connection] Lock hilang untuk ${deviceLabel}, akan membuat koneksi baru`);
                 // Fall through ke STEP 3
                 reject(new Error('Lock tidak ditemukan, akan membuat koneksi baru'));
             }
@@ -158,7 +170,7 @@ async function getOrCreateConnection(workspaceId, timeout, customKey = null, dev
             // Double-check: cek lagi apakah koneksi sudah dibuat oleh request lain
             connection = getConnection(connectionKey);
             if (connection && connection.client && connection.client.connected) {
-                console.log(`[Connection] Koneksi ${connectionKey} sudah dibuat oleh request lain, menggunakan yang ada`);
+                console.log(`[Connection] Koneksi ke ${deviceLabel} sudah dibuat oleh request lain, menggunakan yang ada`);
                 return connection.client;
             }
 
@@ -166,6 +178,8 @@ async function getOrCreateConnection(workspaceId, timeout, customKey = null, dev
             if (devices.length === 0) throw new Error(`Perangkat dengan ID ${deviceId} tidak ditemukan untuk workspace ini.`);
 
             const device = devices[0];
+            // Label yang mudah dibaca manusia untuk log (menggantikan hash yang tidak berguna)
+            const deviceLabel = `${device.name} (${device.host}:${device.port})`;
             const connectionOptions = {
                 host: device.host,
                 user: device.user,
@@ -185,12 +199,12 @@ async function getOrCreateConnection(workspaceId, timeout, customKey = null, dev
             client.on('error', (error) => {
                 // Jangan hapus koneksi untuk !empty, ini bukan error fatal
                 if (error.message?.includes('!empty') || error.message?.includes('unknown reply: !empty')) {
-                    console.debug(`[RouterOS API] Query kosong pada koneksi ${connectionKey} - ini normal.`);
+                    // '!empty' bukan error — hanya query yang hasilnya kosong, tidak perlu dilog
                     return;
                 }
 
                 errorCount++;
-                console.error(`[RouterOS API Error] Error pada koneksi ${connectionKey} (${errorCount}/${MAX_ERROR_COUNT}):`, error.message || error);
+                console.error(`[RouterOS API Error] Error pada koneksi ${deviceLabel} (${errorCount}/${MAX_ERROR_COUNT}):`, error.message || error);
 
                 // Hanya hapus koneksi jika error terjadi berulang kali atau error fatal
                 // Timeout tunggal tidak langsung menghapus koneksi
@@ -199,23 +213,24 @@ async function getOrCreateConnection(workspaceId, timeout, customKey = null, dev
                     error.message?.includes('ECONNREFUSED') ||
                     error.message?.includes('ENOTFOUND') ||
                     errorCount >= MAX_ERROR_COUNT) {
-                    console.warn(`[RouterOS API] Menghapus koneksi ${connectionKey} karena error fatal atau terlalu banyak error`);
+                    console.warn(`[RouterOS API] Menghapus koneksi ${deviceLabel} karena error fatal atau terlalu banyak error`);
                     removeConnection(connectionKey);
                 } else {
                     // Untuk timeout atau error sementara, coba reconnect tanpa menghapus koneksi
-                    console.warn(`[RouterOS API] Error sementara pada koneksi ${connectionKey}, tidak menghapus koneksi`);
+                    console.warn(`[RouterOS API] Error sementara pada koneksi ${deviceLabel}, tidak menghapus koneksi`);
                 }
             });
 
-            console.log(`[Connection] Membuat koneksi baru untuk ${connectionKey}...`);
+            console.log(`[Connection] Membuat koneksi baru ke ${deviceLabel}...`);
             await client.connect();
             // Pastikan timeout tidak null atau 0 - gunakan default jika tidak ada
             const effectiveTimeout = (timeout && timeout > 0) ? timeout : DEFAULT_IDLE_TIMEOUT;
-            addConnection(connectionKey, { client }, effectiveTimeout);
-            console.log(`[Connection] Koneksi ${connectionKey} berhasil dibuat`);
+            // Simpan label di connection object agar connectionManager bisa tampilkan nama device
+            addConnection(connectionKey, { client, label: deviceLabel }, effectiveTimeout);
+            console.log(`[Connection] Koneksi ke ${deviceLabel} berhasil dibuat`);
             return client;
         } catch (error) {
-            console.error(`[RouterOS API] Gagal membuat koneksi untuk ${connectionKey}:`, error.message);
+            console.error(`[RouterOS API] Gagal membuat koneksi ke ${deviceLabel}:`, error.message);
             // Pastikan koneksi ditutup jika gagal
             try {
                 if (client && client.connected) {

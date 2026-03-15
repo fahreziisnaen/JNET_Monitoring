@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from '@/components/motion';
-import { X, Server, Loader2 } from 'lucide-react';
+import { X, Server, Loader2, Plug, CheckCircle2, AlertCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/components/providers/auth-provider';
 import { apiFetch } from '@/utils/api';
@@ -30,6 +30,10 @@ const DeviceModal = ({ isOpen, onClose, onSuccess, deviceToEdit }: DeviceModalPr
     name: '', host: '', user: '', password: '', port: 8728
   });
   const [loading, setLoading] = useState(false);
+  const [isTesting, setIsTesting] = useState(false);
+  const [testResultModal, setTestResultModal] = useState<{isOpen: boolean, type: 'success' | 'error', title: string, message: string}>({
+      isOpen: false, type: 'success', title: '', message: ''
+  });
   const [error, setError] = useState('');
 
   useEffect(() => {
@@ -91,6 +95,57 @@ const DeviceModal = ({ isOpen, onClose, onSuccess, deviceToEdit }: DeviceModalPr
     }
   };
 
+  const handleTestConnection = async () => {
+    // Validasi basic
+    if (!formData.host || !formData.user || !formData.port) {
+        setTestResultModal({
+            isOpen: true,
+            type: 'error',
+            title: 'Validasi Gagal',
+            message: 'Host, Port, dan Username wajib diisi untuk tes koneksi.'
+        });
+        return;
+    }
+
+    setIsTesting(true);
+    setError('');
+
+    try {
+        const apiUrl = process.env.NEXT_PUBLIC_API_BASE_URL;
+        const res = await apiFetch(`${apiUrl}/api/devices/test-connection`, {
+            method: 'POST',
+            body: JSON.stringify(formData)
+        });
+        
+        const data = await res.json();
+        
+        if (!res.ok) {
+            setTestResultModal({
+                isOpen: true,
+                type: 'error',
+                title: 'Uji Koneksi Gagal',
+                message: data.message
+            });
+        } else {
+            setTestResultModal({
+                isOpen: true,
+                type: 'success',
+                title: 'Uji Koneksi Sukses!',
+                message: data.message
+            });
+        }
+    } catch (err: any) {
+        setTestResultModal({
+            isOpen: true,
+            type: 'error',
+            title: 'Error Sistem',
+            message: err.message || "Gagal menghubungi server untuk tes koneksi."
+        });
+    } finally {
+        setIsTesting(false);
+    }
+  };
+
   return (
     <AnimatePresence>
       {isOpen && (
@@ -141,14 +196,70 @@ const DeviceModal = ({ isOpen, onClose, onSuccess, deviceToEdit }: DeviceModalPr
                 {error && <p className="text-sm text-center text-destructive">{error}</p>}
               </div>
 
-              <footer className="flex justify-end gap-4 p-4 bg-secondary/50 rounded-b-2xl">
-                <Button type="button" variant="ghost" onClick={onClose}>Batal</Button>
-                <Button type="submit" disabled={loading}>
-                    {loading && <Loader2 className="animate-spin h-4 w-4 mr-2"/>}
-                    {isEditMode ? 'Simpan Perubahan' : 'Tambah Perangkat'}
+              <footer className="flex justify-between items-center p-4 py-3 bg-secondary/50 rounded-b-2xl border-t">
+                <Button 
+                    type="button" 
+                    variant="outline" 
+                    onClick={handleTestConnection} 
+                    disabled={isTesting || loading}
+                    className="gap-2 border-primary/20 hover:bg-primary/10 hover:text-primary transition-colors"
+                >
+                    {isTesting ? <Loader2 className="animate-spin h-4 w-4" /> : <Plug className="h-4 w-4 text-primary" />}
+                    Test Connection
                 </Button>
+                
+                <div className="flex gap-2">
+                    <Button type="button" variant="ghost" onClick={onClose} disabled={loading || isTesting}>Batal</Button>
+                    <Button type="submit" disabled={loading || isTesting}>
+                        {loading && <Loader2 className="animate-spin h-4 w-4 mr-2"/>}
+                        {isEditMode ? 'Simpan Perubahan' : 'Tambah Perangkat'}
+                    </Button>
+                </div>
               </footer>
             </form>
+
+            {/* Test Result Modal Overlay */}
+            <AnimatePresence>
+                {testResultModal.isOpen && (
+                    <motion.div
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        className="absolute inset-0 z-[1010] bg-black/60 backdrop-blur-sm flex items-center justify-center rounded-2xl p-4"
+                        onClick={(e) => e.stopPropagation()}
+                    >
+                        <motion.div
+                            initial={{ scale: 0.9, opacity: 0 }}
+                            animate={{ scale: 1, opacity: 1 }}
+                            exit={{ scale: 0.9, opacity: 0 }}
+                            className="bg-card w-full max-w-sm rounded-xl shadow-2xl overflow-hidden border"
+                        >
+                            <div className={`p-6 flex flex-col items-center text-center ${testResultModal.type === 'success' ? 'bg-green-500/10' : 'bg-destructive/10'}`}>
+                                {testResultModal.type === 'success' ? (
+                                    <div className="w-16 h-16 rounded-full bg-green-500/20 flex items-center justify-center mb-4 text-green-500">
+                                        <CheckCircle2 size={32} />
+                                    </div>
+                                ) : (
+                                    <div className="w-16 h-16 rounded-full bg-destructive/20 flex items-center justify-center mb-4 text-destructive">
+                                        <AlertCircle size={32} />
+                                    </div>
+                                )}
+                                <h3 className="text-xl font-bold mb-2">{testResultModal.title}</h3>
+                                <p className="text-muted-foreground text-sm leading-relaxed mb-6">
+                                    {testResultModal.message}
+                                </p>
+                                <Button 
+                                    className="w-full" 
+                                    variant={testResultModal.type === 'success' ? 'default' : 'destructive'}
+                                    onClick={() => setTestResultModal({ ...testResultModal, isOpen: false })}
+                                >
+                                    Tutup
+                                </Button>
+                            </div>
+                        </motion.div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
           </motion.div>
         </motion.div>
       )}

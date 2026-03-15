@@ -23,7 +23,7 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | null>(null);
 
-const publicPaths = ["/login", "/register", "/forgot-password"];
+export const publicPaths = ["/login", "/register", "/forgot-password"];
 
 export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
@@ -153,8 +153,14 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   }, [checkLoggedIn]);
 
   useEffect(() => {
-    if (!loading && !isLoggedIn && !publicPaths.includes(pathname)) {
-      router.push("/login");
+    if (!loading) {
+      if (!isLoggedIn && !publicPaths.includes(pathname)) {
+        // Not logged in and on a private page -> redirect to login
+        router.push("/login");
+      } else if (isLoggedIn && publicPaths.includes(pathname)) {
+        // Logged in and on a public page -> redirect to dashboard
+        router.push("/dashboard");
+      }
     }
   }, [loading, isLoggedIn, pathname, router]);
 

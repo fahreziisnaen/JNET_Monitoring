@@ -18,6 +18,7 @@ interface Member {
     is_owner: number | boolean;
     workspace_id?: number;
     workspace_name?: string;
+    is_super_admin?: boolean;
 }
 
 const WorkspaceMembersCard = () => {
@@ -173,6 +174,13 @@ const WorkspaceMembersCard = () => {
     };
 
     const getRoleBadge = (member: Member) => {
+        if (member.is_super_admin) {
+            return (
+                <span className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider bg-purple-500/10 text-purple-600 px-2 py-0.5 rounded-full border border-purple-500/20">
+                    <ShieldAlert size={10} /> Superadmin
+                </span>
+            );
+        }
         if (member.is_owner) {
             return (
                 <span className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider bg-amber-500/10 text-amber-600 px-2 py-0.5 rounded-full border border-amber-500/20">
@@ -227,7 +235,11 @@ const WorkspaceMembersCard = () => {
                             (e.target as HTMLImageElement).src = `${apiUrl}/public/uploads/avatars/default.jpg`;
                         }}
                     />
-                    {member.is_owner ? (
+                    {member.is_super_admin ? (
+                        <div className="absolute -bottom-1 -right-1 bg-purple-500 rounded-full p-0.5 text-white border-2 border-background">
+                            <ShieldAlert size={8} />
+                        </div>
+                    ) : member.is_owner ? (
                         <div className="absolute -bottom-1 -right-1 bg-amber-500 rounded-full p-0.5 text-white border-2 border-background">
                             <ShieldAlert size={8} />
                         </div>
