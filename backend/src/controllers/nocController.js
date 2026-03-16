@@ -177,7 +177,6 @@ exports.getAggregatedSecrets = async (req, res) => {
                 ps.is_active as isActive,
                 ps.uptime,
                 ps.current_address as currentAddress,
-                ps.last_logged_out as 'last-logged-out',
                 ps.active_connection_id as activeConnectionId,
                 ps.workspace_id,
                 ps.device_id,
