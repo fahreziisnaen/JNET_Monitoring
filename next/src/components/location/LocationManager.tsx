@@ -61,7 +61,7 @@ const LocationManager: React.FC<LocationManagerProps> = ({ isNocMode = false, no
   const [activeFilter, setActiveFilter] = useState('all');
   const [selectedWorkspaceForNocAdd, setSelectedWorkspaceForNocAdd] = useState<number | null>(null);
 
-  const { pppoeSecrets, isConnected } = useMikrotik() || { pppoeSecrets: [] };
+  const { pppoeSecrets, isConnected, selectedDeviceId: currentDeviceId } = useMikrotik() || { pppoeSecrets: [], isConnected: false, selectedDeviceId: null };
 
   // Stabilize nocWorkspaceIds array — serialize to string to avoid new object reference on every render
   const nocWorkspaceIdsRef = useRef(nocWorkspaceIds);
@@ -216,24 +216,34 @@ const LocationManager: React.FC<LocationManagerProps> = ({ isNocMode = false, no
 
   // Derive real-time client status from pppoeSecrets
   const realTimeClientsBySecrets = useMemo(() => {
-    // Check global disconnected status first
-    if (!isNocMode && !isConnected) {
-      return []; // If the selected Mikrotik is offline, we instantly hide ALL tracked clients on this map view
+    // NOC mode: use activeSecrets from NOC endpoint
+    if (isNocMode) {
+      if (!activeSecrets || activeSecrets.length === 0) return clients.filter(c => !c.isOffline);
+      const secretMap = new Map(activeSecrets.map((s: any) => [s.name, s]));
+      return clients.map(client => {
+        const secret = secretMap.get(client.pppoe_secret_name) as any;
+        return { ...client, isActive: secret ? secret.isActive : (client as any).isActive ?? false };
+      }).filter(c => !c.isOffline);
     }
 
-    if (!activeSecrets || activeSecrets.length === 0) return clients.filter(c => !c.isOffline); // Filter here too if no secrets
-
-    // Create a map for fast lookup by name
-    const secretMap = new Map(activeSecrets.map((s: any) => [s.name, s]));
+    // Normal mode: real-time WS only applies for the currently selected device.
+    // Clients from other devices use isActive from the database (pppoe_user_status).
+    const secretMap = new Map(
+      (activeSecrets || []).map((s: any) => [s.name, s])
+    );
 
     return clients.map(client => {
-      const secret = secretMap.get(client.pppoe_secret_name) as any;
-      return {
-        ...client,
-        isActive: secret ? secret.isActive : false
-      };
-    }).filter(c => !c.isOffline); // Automatically drop clients that are marked offline by the backend
-  }, [clients, activeSecrets, isConnected, isNocMode]);
+      const clientDeviceId = (client as any).device_id;
+      // If client belongs to current device, use live WS data (or false if WS offline)
+      if (clientDeviceId && currentDeviceId && clientDeviceId === currentDeviceId) {
+        if (!isConnected) return { ...client, isActive: false };
+        const secret = secretMap.get(client.pppoe_secret_name) as any;
+        return { ...client, isActive: secret ? secret.isActive : false };
+      }
+      // For other devices: use pre-computed isActive from DB (already per-device accurate)
+      return { ...client, isActive: (client as any).isActive ?? false };
+    }).filter(c => !c.isOffline);
+  }, [clients, activeSecrets, isConnected, isNocMode, currentDeviceId]);
 
   // Derive real-time asset status (specifically for ODPs based on their connected clients)
   const realTimeAssetsBySecrets = useMemo(() => {

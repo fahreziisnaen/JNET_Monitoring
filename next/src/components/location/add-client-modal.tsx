@@ -183,20 +183,10 @@ const AddClientModal = ({ isOpen, onClose, onSuccess, assets = [] }: AddClientMo
       .sort((a, b) => a.name.toLowerCase().localeCompare(b.name.toLowerCase()));
   }, [allSecrets, selectedDeviceId, existingClients, odpConnections]);
 
-  // Auto-select first secret saat secrets tersedia
+  // Tampilkan error jika tidak ada secret setelah fetch selesai
   useEffect(() => {
-    if (unlinkedSecrets.length > 0) {
-      const isSelectedStillValid = unlinkedSecrets.some(s => s.name === selectedSecret);
-      if (!selectedSecret || !isSelectedStillValid) {
-        const first = unlinkedSecrets[0];
-        setSelectedSecret(first.name);
-        setSecretSearchQuery(first.name);
-        setOdpAssetId(first.connected_odp_id ? first.connected_odp_id.toString() : '');
-      }
-    } else if (unlinkedSecrets.length === 0 && !secretsLoading && selectedDeviceId && secretsInitialized) {
-      // Hanya tampilkan error setelah fetch selesai (bukan saat initial render sebelum fetch mulai)
+    if (unlinkedSecrets.length === 0 && !secretsLoading && selectedDeviceId && secretsInitialized) {
       setError("Semua PPPoE secrets sudah menjadi client atau tidak ada secret di device ini.");
-      setSecretSearchQuery('');
     } else {
       setError('');
     }
