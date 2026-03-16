@@ -138,7 +138,10 @@ exports.orphanCheck = async (req, res) => {
 
         // Cek setiap group device secara paralel
         const checks = Array.from(byDevice.entries()).map(async ([key, deviceClients]) => {
-            const deviceId = key === 'null' ? null : parseInt(key);
+            // Client lama tanpa device_id — tidak bisa dicek dengan akurat, skip
+            if (key === 'null') return;
+
+            const deviceId = parseInt(key);
             try {
                 const secrets = await runCommandForWorkspace(
                     workspace_id,
@@ -146,6 +149,14 @@ exports.orphanCheck = async (req, res) => {
                     [],
                     deviceId
                 );
+
+                // Safety guard: jika kosong, artinya device belum ready / store kosong
+                // Jangan tandai semua client sebagai orphan — skip saja
+                if (!secrets || secrets.length === 0) {
+                    console.warn(`[ORPHAN CHECK] Device ${deviceId} mengembalikan secrets kosong (skip, mungkin belum ready)`);
+                    return;
+                }
+
                 const secretNames = new Set(secrets.map(s => s.name));
                 deviceClients.forEach(client => {
                     if (!secretNames.has(client.pppoe_secret_name)) {
