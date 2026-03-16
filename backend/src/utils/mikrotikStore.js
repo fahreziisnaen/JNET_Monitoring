@@ -5,6 +5,7 @@
 
 const workspaceSecrets = new Map(); // Map<workspaceId_deviceId, secrets[]>
 const workspaceActive = new Map();  // Map<workspaceId_deviceId, active[]>
+const workspaceHotspotActive = new Map(); // Map<workspaceId_deviceId, hotspotActive[]>
 const deviceStatus = new Map();     // Map<workspaceId_deviceId, status>
 
 module.exports = {
@@ -48,6 +49,14 @@ module.exports = {
 
     getActive: (workspaceId, deviceId) => {
         return workspaceActive.get(`${workspaceId}_${deviceId}`) || [];
+    },
+
+    setHotspotActive: (workspaceId, deviceId, hotspotActive) => {
+        workspaceHotspotActive.set(`${workspaceId}_${deviceId}`, hotspotActive);
+    },
+
+    getHotspotActive: (workspaceId, deviceId) => {
+        return workspaceHotspotActive.get(`${workspaceId}_${deviceId}`) || [];
     },
 
     clear: (workspaceId, deviceId) => {

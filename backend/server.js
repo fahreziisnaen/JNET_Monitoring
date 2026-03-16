@@ -25,6 +25,7 @@ const cron = require('node-cron');
 const { startWhatsApp } = require('./src/services/whatsappService');
 const { generateAndSendDailyReports } = require('./src/bot/reportGenerator');
 const { monitorSlaAndNotifications, sendDowntimeNotifications, syncMikrotikSecrets } = require('./src/bot/dataLogger');
+const { startBackgroundMonitoring } = require('./src/bot/backgroundMonitor');
 const { setupPppoeListeners } = require('./src/utils/mikrotikListener');
 const mikrotikStore = require('./src/utils/mikrotikStore');
 
@@ -751,49 +752,60 @@ wss.on('connection', (ws, req) => {
             ws.deviceId = finalDeviceId;
             const connectionKey = `ws-${ws.workspaceId}-${finalDeviceId}`;
 
-            let connection = getConnection(connectionKey);
-            if (!connection) {
-                // Cek lagi sebelum start monitoring (ini bisa lama)
-                if (checkIfClosed()) return;
+            // Cek apakah backgroundMonitor sudah populate mikrotikStore untuk device ini
+            const storedSecrets = mikrotikStore.getSecrets(ws.workspaceId, finalDeviceId);
+            const storedActive = mikrotikStore.getActive(ws.workspaceId, finalDeviceId);
+            const deviceStatus = mikrotikStore.getDeviceStatus(ws.workspaceId, finalDeviceId);
 
-                console.log(`[WebSocket] Memulai monitoring untuk workspace ${ws.workspaceId}, device ${finalDeviceId} dengan key ${connectionKey}`);
-                await startWorkspaceMonitoring(ws.workspaceId, connectionKey, finalDeviceId);
+            // Kirim status koneksi terkini ke client
+            try {
+                ws.send(JSON.stringify({
+                    type: 'connection-status',
+                    payload: {
+                        status: deviceStatus,
+                        deviceId: finalDeviceId,
+                        message: deviceStatus === 'connected' ? 'Terhubung ke perangkat Mikrotik' : 'Koneksi ke perangkat Mikrotik terputus',
+                        timestamp: Date.now()
+                    }
+                }));
+            } catch (e) { }
 
-                // Cek lagi setelah start monitoring
-                if (checkIfClosed()) return;
-
-                connection = getConnection(connectionKey);
-                console.log(`[WebSocket] Hasil mendapatkan connection untuk key ${connectionKey} setelah monitoring:`, !!connection);
-
-                // Kirim status koneksi terkini ke client baru ini (bisa offline sejak awal)
-                const initialStatus = mikrotikStore.getDeviceStatus(ws.workspaceId, finalDeviceId);
+            // Jika background monitor sudah punya data, kirim snapshot langsung
+            if (storedSecrets.length > 0 && deviceStatus === 'connected') {
+                console.log(`[WebSocket] BGMonitor data tersedia untuk device ${finalDeviceId}, kirim snapshot langsung`);
+                const activeMap = new Map(storedActive.map(u => [u.name, u]));
+                const enriched = storedSecrets.map(secret => {
+                    const activeInfo = activeMap.get(secret.name);
+                    const s = Object.assign({}, secret);
+                    s.isActive = !!activeInfo;
+                    if (activeInfo?.uptime) s.uptime = activeInfo.uptime;
+                    if (activeInfo?.['.id']) s.activeConnectionId = activeInfo['.id'];
+                    if (activeInfo?.address) {
+                        s.currentAddress = activeInfo.address;
+                        if (!s['remote-address']) s['remote-address'] = activeInfo.address;
+                    }
+                    return s;
+                });
                 try {
                     ws.send(JSON.stringify({
-                        type: 'connection-status',
-                        payload: {
-                            status: initialStatus,
-                            deviceId: finalDeviceId,
-                            message: initialStatus === 'connected' ? 'Terhubung ke perangkat Mikrotik' : 'Koneksi ke perangkat Mikrotik terputus',
-                            timestamp: Date.now()
-                        }
+                        type: 'batch-update',
+                        payload: { resource: {}, pppoeSecrets: enriched, activeInterfaces: [], traffic: {} }
                     }));
                 } catch (e) { }
             } else {
-                // Connection sudah ada, broadcast status terkininya
-                const status = mikrotikStore.getDeviceStatus(ws.workspaceId, finalDeviceId);
-                try {
-                    ws.send(JSON.stringify({
-                        type: 'connection-status',
-                        payload: {
-                            status: status,
-                            deviceId: finalDeviceId,
-                            message: status === 'connected' ? 'Terhubung ke perangkat Mikrotik' : 'Koneksi ke perangkat Mikrotik terputus',
-                            timestamp: Date.now()
-                        }
-                    }));
-                } catch (e) { }
+                // Fallback: start monitoring loop jika backgroundMonitor belum ready
+                console.log(`[WebSocket] BGMonitor belum ada data untuk device ${finalDeviceId}, start monitoring loop`);
+                let connection = getConnection(connectionKey);
+                if (!connection) {
+                    if (checkIfClosed()) return;
+                    await startWorkspaceMonitoring(ws.workspaceId, connectionKey, finalDeviceId);
+                    if (checkIfClosed()) return;
+                    connection = getConnection(connectionKey);
+                }
+                if (connection) connection.userCount = (connection.userCount || 0) + 1;
             }
 
+            let connection = getConnection(connectionKey);
             if (connection) {
                 connection.userCount = (connection.userCount || 0) + 1;
             }
@@ -1006,3 +1018,12 @@ server.listen(PORT, '0.0.0.0', () => {
 startWhatsApp().catch(err => {
     console.error("Gagal memulai WhatsApp Service:", err);
 });
+
+// Mulai background monitoring untuk semua device secara independen
+// Ini memastikan mikrotikStore selalu diupdate tanpa bergantung pada WS connections
+setTimeout(() => {
+    startBackgroundMonitoring(broadcastToWorkspace).catch(err => {
+        console.error('[BGMonitor] Failed to start:', err.message);
+    });
+}, 3000); // Tunggu 3 detik setelah server ready
+console.log('[BGMonitor] Background monitoring will start in 3 seconds...');

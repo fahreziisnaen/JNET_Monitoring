@@ -16,6 +16,7 @@ interface DeviceData {
     activeInterfaces: Array<{ name: string; type: string; running: boolean }>;
     traffic: any;
     isConnected: boolean;
+    hotspotActive: any[];
 }
 
 const DEFAULT_DEVICE_DATA: DeviceData = {
@@ -24,6 +25,7 @@ const DEFAULT_DEVICE_DATA: DeviceData = {
     activeInterfaces: [],
     traffic: {},
     isConnected: false,
+    hotspotActive: [],
 };
 
 export const MikrotikProvider = ({ children }: { children: React.ReactNode }) => {
@@ -108,6 +110,7 @@ export const MikrotikProvider = ({ children }: { children: React.ReactNode }) =>
                         activeInterfaces: message.payload.activeInterfaces || [],
                         traffic: message.payload.traffic ?? {},
                         isConnected: prev.isConnected,
+                        hotspotActive: message.payload.hotspotActive || prev.hotspotActive || [],
                     });
                     triggerRender();
                 } else if (message.type === 'pppoe-update' && message.payload) {
@@ -181,7 +184,7 @@ export const MikrotikProvider = ({ children }: { children: React.ReactNode }) =>
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [triggerRender, user]);
 
-    // On login: fetch devices and connect all
+    // On login: fetch devices and connect all (with stagger to avoid race conditions)
     useEffect(() => {
         if (!user?.workspace_id) {
             // Cleanup on logout
@@ -198,37 +201,45 @@ export const MikrotikProvider = ({ children }: { children: React.ReactNode }) =>
         }
 
         const apiUrl = process.env.NEXT_PUBLIC_API_BASE_URL;
+        const staggerTimers: NodeJS.Timeout[] = [];
+
         apiFetch(`${apiUrl}/api/devices`)
             .then(res => res.ok ? res.json() : [])
             .then((devices: any[]) => {
                 if (!Array.isArray(devices)) return;
-                devices.forEach((device: any) => {
-                    if (device.id) {
-                        // Load snapshot for instant display first
-                        apiFetch(`${apiUrl}/api/dashboard/snapshot?deviceId=${device.id}`)
-                            .then(res => res.ok ? res.json() : null)
-                            .then(data => {
-                                if (!data) return;
-                                const prev = deviceDataRef.current.get(device.id) || { ...DEFAULT_DEVICE_DATA };
-                                deviceDataRef.current.set(device.id, {
-                                    pppoeSecrets: data.pppoeSecrets || prev.pppoeSecrets,
-                                    resource: data.resource || prev.resource,
-                                    activeInterfaces: data.activeInterfaces || prev.activeInterfaces,
-                                    traffic: data.traffic || prev.traffic,
-                                    isConnected: data.deviceStatus === 'connected',
-                                });
-                                triggerRender();
-                            })
-                            .catch(() => {});
+                devices.forEach((device: any, index: number) => {
+                    if (!device.id) return;
 
-                        // Connect WS
-                        connectDevice(device.id, user.workspace_id);
-                    }
+                    // Load snapshot for instant display (no stagger needed)
+                    apiFetch(`${apiUrl}/api/dashboard/snapshot?deviceId=${device.id}`)
+                        .then(res => res.ok ? res.json() : null)
+                        .then(data => {
+                            if (!data) return;
+                            const prev = deviceDataRef.current.get(device.id) || { ...DEFAULT_DEVICE_DATA };
+                            deviceDataRef.current.set(device.id, {
+                                pppoeSecrets: data.pppoeSecrets || prev.pppoeSecrets,
+                                resource: data.resource || prev.resource,
+                                activeInterfaces: data.activeInterfaces || prev.activeInterfaces,
+                                traffic: data.traffic || prev.traffic,
+                                isConnected: data.deviceStatus === 'connected',
+                                hotspotActive: prev.hotspotActive || [],
+                            });
+                            triggerRender();
+                        })
+                        .catch(() => {});
+
+                    // Stagger WS connections: 800ms apart to avoid simultaneous
+                    // backend listener initialization race condition
+                    const timer = setTimeout(() => {
+                        if (user) connectDevice(device.id, user.workspace_id!);
+                    }, index * 800);
+                    staggerTimers.push(timer);
                 });
             })
             .catch(err => console.error('[WS Pool] Error fetching devices:', err));
 
         return () => {
+            staggerTimers.forEach(t => clearTimeout(t));
             // On unmount / user change: close all WS
             wsPoolRef.current.forEach((ws) => {
                 if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) ws.close(1000, 'Unmount');
@@ -276,6 +287,7 @@ export const MikrotikProvider = ({ children }: { children: React.ReactNode }) =>
         activeInterfaces: currentData.activeInterfaces,
         traffic: currentData.traffic,
         isConnected: currentData.isConnected,
+        hotspotActive: currentData.hotspotActive,
         selectedDeviceId,
         setSelectedDeviceId: handleDeviceChange,
         forceRefresh,
