@@ -324,12 +324,29 @@ export const MikrotikProvider = ({ children }: { children: React.ReactNode }) =>
         // Connect jika belum ada koneksi
         // Tambahkan small delay untuk memastikan state sudah ter-update
         if (selectedDeviceId && user) {
-            // Cek apakah sudah ada koneksi yang valid
+            // Cek apakah sudah ada koneksi yang valid KE DEVICE YANG SAMA
             if (ws.current) {
                 const currentState = ws.current.readyState;
                 if (currentState === WebSocket.OPEN || currentState === WebSocket.CONNECTING) {
-                    // Sudah ada koneksi yang aktif atau sedang connecting
-                    return;
+                    // Cek apakah koneksi ini memang untuk device yang dipilih saat ini
+                    try {
+                        const currentUrl = ws.current.url;
+                        if (currentUrl) {
+                            const urlObj = new URL(currentUrl);
+                            const connectedDeviceId = urlObj.searchParams.get('deviceId');
+                            if (connectedDeviceId === selectedDeviceId.toString()) {
+                                // Sudah terhubung ke device yang benar, skip
+                                return;
+                            }
+                            // Terhubung ke device yang BERBEDA, close dan reconnect
+                            console.log('[WebSocket] useEffect: Koneksi ke device lain ditemukan, force close dan reconnect');
+                            ws.current.close();
+                            ws.current = null;
+                        }
+                    } catch (e) {
+                        ws.current.close();
+                        ws.current = null;
+                    }
                 }
             }
 
@@ -371,50 +388,16 @@ export const MikrotikProvider = ({ children }: { children: React.ReactNode }) =>
             return;
         }
 
-        // Close WebSocket to reconnect with new device
-        // Tapi jangan close jika masih CONNECTING (tunggu sampai OPEN atau CLOSED)
+        // Force close WebSocket apapun kondisinya - jangan tunggu async
+        // Ini mencegah race condition di useEffect yang melihat WS masih CONNECTING
         if (ws.current) {
-            const currentState = ws.current.readyState;
-
-            if (currentState === WebSocket.OPEN) {
-                console.log('[MikrotikProvider] Menutup WebSocket yang OPEN sebelum change device');
-                ws.current.close(1000, 'Device changed'); // Normal closure
-                ws.current = null;
-            } else if (currentState === WebSocket.CONNECTING) {
-                // Tunggu sampai CONNECTING selesai, baru close
-                console.log('[MikrotikProvider] WebSocket masih CONNECTING, akan close setelah open');
-                const checkAndClose = () => {
-                    if (ws.current) {
-                        const state = ws.current.readyState;
-                        if (state === WebSocket.OPEN) {
-                            console.log('[MikrotikProvider] WebSocket sekarang OPEN, menutup...');
-                            ws.current.close(1000, 'Device changed');
-                            ws.current = null;
-                        } else if (state === WebSocket.CONNECTING) {
-                            // Masih connecting, coba lagi setelah 100ms
-                            setTimeout(checkAndClose, 100);
-                        } else {
-                            // Sudah CLOSED atau CLOSING, clear saja
-                            ws.current = null;
-                        }
-                    }
-                };
-
-                // Set timeout maksimal 5 detik untuk menunggu
-                setTimeout(() => {
-                    if (ws.current && ws.current.readyState === WebSocket.CONNECTING) {
-                        console.warn('[MikrotikProvider] WebSocket masih CONNECTING setelah 5 detik, force close');
-                        ws.current.close();
-                        ws.current = null;
-                    }
-                }, 5000);
-
-                // Mulai check setelah 200ms
-                setTimeout(checkAndClose, 200);
-            } else {
-                // CLOSED atau CLOSING, clear saja
-                ws.current = null;
+            console.log('[MikrotikProvider] Force closing WebSocket sebelum ganti device, state:', ws.current.readyState);
+            try {
+                ws.current.close(1000, 'Device changed');
+            } catch (e) {
+                // Ignore error saat close
             }
+            ws.current = null;
         }
 
         // Clear data
@@ -424,7 +407,7 @@ export const MikrotikProvider = ({ children }: { children: React.ReactNode }) =>
         setTraffic({});
         setIsConnected(false);
 
-        // Set deviceId setelah clear data dan close WebSocket
+        // Set deviceId - ini akan trigger useEffect yang akan buat WS baru
         setSelectedDeviceId(deviceId);
 
         if (user?.workspace_id && deviceId) {
