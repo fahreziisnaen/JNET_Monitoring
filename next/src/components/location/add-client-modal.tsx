@@ -40,6 +40,7 @@ const AddClientModal = ({ isOpen, onClose, onSuccess, assets = [] }: AddClientMo
   // PPPoE secrets from selected device
   const [allSecrets, setAllSecrets] = useState<PppoeSecret[]>([]);
   const [secretsLoading, setSecretsLoading] = useState(false);
+  const [secretsInitialized, setSecretsInitialized] = useState(false);
 
   const [existingClients, setExistingClients] = useState<string[]>([]);
   const [odpConnections, setOdpConnections] = useState<Map<string, number>>(new Map());
@@ -57,6 +58,9 @@ const AddClientModal = ({ isOpen, onClose, onSuccess, assets = [] }: AddClientMo
   const [odpSearchQuery, setOdpSearchQuery] = useState('');
   const [isOdpDropdownOpen, setIsOdpDropdownOpen] = useState(false);
   const odpDropdownRef = React.useRef<HTMLDivElement>(null);
+  const [secretSearchQuery, setSecretSearchQuery] = useState('');
+  const [isSecretDropdownOpen, setIsSecretDropdownOpen] = useState(false);
+  const secretDropdownRef = React.useRef<HTMLDivElement>(null);
   const apiUrl = process.env.NEXT_PUBLIC_API_BASE_URL;
 
   // Filter assets untuk hanya ODP
@@ -124,10 +128,12 @@ const AddClientModal = ({ isOpen, onClose, onSuccess, assets = [] }: AddClientMo
     if (!selectedDeviceId) {
       setAllSecrets([]);
       setSelectedSecret('');
+      setSecretsInitialized(false);
       return;
     }
 
     setSecretsLoading(true);
+    setSecretsInitialized(false);
     setSelectedSecret('');
     apiFetch(`${apiUrl}/api/pppoe/secrets?deviceId=${selectedDeviceId}`)
       .then(res => res.ok ? res.json() : { secrets: [] })
@@ -136,7 +142,7 @@ const AddClientModal = ({ isOpen, onClose, onSuccess, assets = [] }: AddClientMo
         setAllSecrets(secrets);
       })
       .catch(() => setAllSecrets([]))
-      .finally(() => setSecretsLoading(false));
+      .finally(() => { setSecretsLoading(false); setSecretsInitialized(true); });
   }, [selectedDeviceId, apiUrl]);
 
   // Close dropdown when clicking outside
@@ -144,6 +150,9 @@ const AddClientModal = ({ isOpen, onClose, onSuccess, assets = [] }: AddClientMo
     const handleClickOutside = (event: MouseEvent) => {
       if (odpDropdownRef.current && !odpDropdownRef.current.contains(event.target as Node)) {
         setIsOdpDropdownOpen(false);
+      }
+      if (secretDropdownRef.current && !secretDropdownRef.current.contains(event.target as Node)) {
+        setIsSecretDropdownOpen(false);
       }
     };
     document.addEventListener('mousedown', handleClickOutside);
@@ -181,14 +190,17 @@ const AddClientModal = ({ isOpen, onClose, onSuccess, assets = [] }: AddClientMo
       if (!selectedSecret || !isSelectedStillValid) {
         const first = unlinkedSecrets[0];
         setSelectedSecret(first.name);
+        setSecretSearchQuery(first.name);
         setOdpAssetId(first.connected_odp_id ? first.connected_odp_id.toString() : '');
       }
-    } else if (unlinkedSecrets.length === 0 && !secretsLoading && selectedDeviceId) {
+    } else if (unlinkedSecrets.length === 0 && !secretsLoading && selectedDeviceId && secretsInitialized) {
+      // Hanya tampilkan error setelah fetch selesai (bukan saat initial render sebelum fetch mulai)
       setError("Semua PPPoE secrets sudah menjadi client atau tidak ada secret di device ini.");
+      setSecretSearchQuery('');
     } else {
       setError('');
     }
-  }, [unlinkedSecrets, secretsLoading, selectedDeviceId]);
+  }, [unlinkedSecrets, secretsLoading, selectedDeviceId, secretsInitialized]);
 
   // Filter ODP assets based on search query
   const filteredOdpAssets = useMemo(() => {
@@ -331,40 +343,67 @@ const AddClientModal = ({ isOpen, onClose, onSuccess, assets = [] }: AddClientMo
 
               {/* PPPoE Secret */}
               <div>
-                <label htmlFor="pppoe-secret" className="block text-sm font-medium mb-2">PPPoE Secret</label>
+                <label className="block text-sm font-medium mb-2">PPPoE Secret</label>
                 {secretsLoading ? (
                   <div className="flex items-center gap-2 p-2 text-muted-foreground text-sm">
                     <Loader2 size={14} className="animate-spin" /> Memuat secrets...
                   </div>
                 ) : (
-                  <select
-                    id="pppoe-secret"
-                    value={selectedSecret}
-                    onChange={(e) => {
-                      const secretName = e.target.value;
-                      setSelectedSecret(secretName);
-                      const secretData = unlinkedSecrets.find(s => s.name === secretName);
-                      if (secretData?.connected_odp_id) {
-                        setOdpAssetId(secretData.connected_odp_id.toString());
-                      } else {
-                        setOdpAssetId('');
-                      }
-                    }}
-                    className="w-full p-2 rounded-md bg-input border"
-                    disabled={loading || unlinkedSecrets.length === 0 || !selectedDeviceId}
-                    required
-                  >
-                    {!selectedDeviceId && <option>Pilih MikroTik terlebih dahulu</option>}
-                    {selectedDeviceId && unlinkedSecrets.length === 0 && !secretsLoading && (
-                      <option>Tidak ada secret tersedia</option>
+                  <div ref={secretDropdownRef} className="relative">
+                    <div className="relative">
+                      <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground" size={16} />
+                      <input
+                        type="text"
+                        value={secretSearchQuery}
+                        onChange={(e) => {
+                          setSecretSearchQuery(e.target.value);
+                          setIsSecretDropdownOpen(true);
+                          if (!e.target.value) setSelectedSecret('');
+                        }}
+                        onFocus={() => { if (selectedDeviceId) setIsSecretDropdownOpen(true); }}
+                        placeholder={!selectedDeviceId ? 'Pilih MikroTik terlebih dahulu' : 'Cari PPPoE secret...'}
+                        disabled={!selectedDeviceId}
+                        className="w-full p-2 pl-10 pr-10 rounded-md bg-input border disabled:opacity-50 disabled:cursor-not-allowed"
+                      />
+                      <ChevronDown
+                        className="absolute right-3 top-1/2 transform -translate-y-1/2 text-muted-foreground cursor-pointer"
+                        size={16}
+                        onClick={() => { if (selectedDeviceId) setIsSecretDropdownOpen(prev => !prev); }}
+                      />
+                    </div>
+                    {isSecretDropdownOpen && selectedDeviceId && (
+                      <div className="absolute z-50 w-full mt-1 bg-card border rounded-md shadow-lg max-h-52 overflow-y-auto">
+                        {unlinkedSecrets.length === 0 ? (
+                          <div className="px-3 py-2 text-sm text-muted-foreground">Tidak ada secret tersedia</div>
+                        ) : (
+                          unlinkedSecrets
+                            .filter(s => s.name.toLowerCase().includes(secretSearchQuery.toLowerCase()))
+                            .map(secret => (
+                              <div
+                                key={secret.name}
+                                className={`px-3 py-2 cursor-pointer hover:bg-secondary text-sm ${selectedSecret === secret.name ? 'bg-secondary font-medium' : ''}`}
+                                onClick={() => {
+                                  setSelectedSecret(secret.name);
+                                  setSecretSearchQuery(secret.name);
+                                  setIsSecretDropdownOpen(false);
+                                  if (secret.connected_odp_id) {
+                                    setOdpAssetId(secret.connected_odp_id.toString());
+                                  } else {
+                                    setOdpAssetId('');
+                                  }
+                                }}
+                              >
+                                {secret.name}
+                              </div>
+                            ))
+                        )}
+                        {unlinkedSecrets.length > 0 &&
+                          unlinkedSecrets.filter(s => s.name.toLowerCase().includes(secretSearchQuery.toLowerCase())).length === 0 && (
+                            <div className="px-3 py-2 text-sm text-muted-foreground">Tidak ada hasil untuk &quot;{secretSearchQuery}&quot;</div>
+                          )}
+                      </div>
                     )}
-                    {unlinkedSecrets.map(secret => (
-                      <option key={secret.name} value={secret.name}>{secret.name}</option>
-                    ))}
-                  </select>
-                )}
-                {!selectedDeviceId && (
-                  <p className="text-xs text-muted-foreground mt-1">Pilih MikroTik terlebih dahulu untuk melihat PPPoE secrets.</p>
+                  </div>
                 )}
               </div>
 
