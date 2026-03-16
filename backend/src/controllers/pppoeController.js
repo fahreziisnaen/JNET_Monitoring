@@ -338,16 +338,18 @@ exports.getProfiles = async (req, res) => {
 exports.setSecretStatus = async (req, res) => {
     const { id } = req.params;
     const { disabled } = req.body;
+    const deviceId = req.query.deviceId ? parseInt(req.query.deviceId) : null;
     try {
-        await runCommandForWorkspace(req.user.workspace_id, '/ppp/secret/set', [`=.id=${id}`, `=disabled=${disabled}`]);
+        await runCommandForWorkspace(req.user.workspace_id, '/ppp/secret/set', [`=.id=${id}`, `=disabled=${disabled}`], deviceId);
         res.status(200).json({ message: `Secret berhasil di-${disabled === 'true' ? 'disable' : 'enable'}.` });
     } catch (error) { res.status(500).json({ message: error.message }); }
 };
 
 exports.kickActiveUser = async (req, res) => {
     const { id } = req.params;
+    const deviceId = req.query.deviceId ? parseInt(req.query.deviceId) : null;
     try {
-        await runCommandForWorkspace(req.user.workspace_id, '/ppp/active/remove', [`=.id=${id}`]);
+        await runCommandForWorkspace(req.user.workspace_id, '/ppp/active/remove', [`=.id=${id}`], deviceId);
         res.status(200).json({ message: 'Koneksi pengguna berhasil diputuskan.' });
     } catch (error) { res.status(500).json({ message: error.message }); }
 };
@@ -455,18 +457,19 @@ exports.updateSecret = async (req, res) => {
 exports.deleteSecret = async (req, res) => {
     const { id } = req.params;
     const workspace_id = req.user.workspace_id;
+    const deviceId = req.query.deviceId ? parseInt(req.query.deviceId) : null;
     try {
-        console.log(`[Delete Secret] Request hapus secret ID: ${id} untuk workspace: ${workspace_id}`);
+        console.log(`[Delete Secret] Request hapus secret ID: ${id} untuk workspace: ${workspace_id}, device: ${deviceId}`);
 
         // 1. Dapatkan nama secret dari Mikrotik terlebih dahulu sebelum dihapus
-        const secretData = await runCommandForWorkspace(workspace_id, '/ppp/secret/print', [`?=.id=${id}`]);
+        const secretData = await runCommandForWorkspace(workspace_id, '/ppp/secret/print', [`?=.id=${id}`], deviceId);
         let secretName = null;
         if (secretData && secretData.length > 0) {
             secretName = secretData[0].name;
         }
 
         // 2. Hapus secret dari router Mikrotik
-        await runCommandForWorkspace(workspace_id, '/ppp/secret/remove', [`=.id=${id}`]);
+        await runCommandForWorkspace(workspace_id, '/ppp/secret/remove', [`=.id=${id}`], deviceId);
         console.log(`[Delete Secret] Berhasil hapus id: ${id} dari Mikrotik`);
 
         // 3. Jika nama secret ditemukan, hapus referensi data lokasinya dari MySQL
