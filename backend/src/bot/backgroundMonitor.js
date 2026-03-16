@@ -153,7 +153,7 @@ async function startDeviceMonitor(workspaceId, deviceId, broadcastCallback) {
             // 3. Secrets (tiap 20 detik)
             if (now - state.lastSecretFetch >= SECRET_REFRESH_MS || state.cachedSecrets.length === 0) {
                 const secrets = await safeWrite('/ppp/secret/print', [
-                    '.proplist=.id,name,profile,remote-address,last-logged-out,disabled'
+                    '.proplist=.id,name,profile,remote-address,disabled'
                 ], 45000).catch(err => {
                     console.warn(`[BGMonitor] Device ${deviceId} secrets fetch error: ${err.message}`);
                     return null;
@@ -222,6 +222,30 @@ async function startDeviceMonitor(workspaceId, deviceId, broadcastCallback) {
                             `DELETE FROM pppoe_secrets WHERE workspace_id = ? AND device_id = ? AND updated_at < DATE_SUB(NOW(), INTERVAL 1 MINUTE)`, 
                             [workspaceId, deviceId]
                         );
+
+                        // --- Sync pppoe_user_status agar isActive di peta NOC up-to-date ---
+                        const activeUsers = enriched.filter(s => s.isActive);
+                        const inactiveUsers = enriched.filter(s => !s.isActive);
+
+                        if (activeUsers.length > 0) {
+                            const activeValues = activeUsers.map(s => [workspaceId, deviceId, s.name]);
+                            await pool.query(
+                                `INSERT INTO pppoe_user_status (workspace_id, device_id, pppoe_user, is_active, last_seen_active)
+                                 VALUES ?
+                                 ON DUPLICATE KEY UPDATE is_active = TRUE, last_seen_active = NOW()`,
+                                [activeValues.map(v => [...v, true, new Date()])]
+                            );
+                        }
+                        if (inactiveUsers.length > 0) {
+                            for (const s of inactiveUsers) {
+                                await pool.query(
+                                    `INSERT INTO pppoe_user_status (workspace_id, device_id, pppoe_user, is_active)
+                                     VALUES (?, ?, ?, FALSE)
+                                     ON DUPLICATE KEY UPDATE is_active = FALSE`,
+                                    [workspaceId, deviceId, s.name]
+                                );
+                            }
+                        }
                     } catch (dbErr) {
                         console.error(`[BGMonitor] DB Sync Error device ${deviceId}: ${dbErr.message}`);
                     }

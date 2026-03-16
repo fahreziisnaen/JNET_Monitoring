@@ -131,18 +131,32 @@ exports.getAggregatedMapData = async (req, res) => {
             }
         }
 
-        // Ambil Clients
+        // Ambil Clients dengan status aktif dari pppoe_user_status
         const [clients] = await pool.query(`
-            SELECT c.*, a.name as odp_name, a.owner_name as odp_owner_name, w.name as workspace_name
+            SELECT 
+                c.*,
+                a.name as odp_name, 
+                a.owner_name as odp_owner_name, 
+                w.name as workspace_name,
+                COALESCE(pus.is_active, 0) as isActive
             FROM clients c
             LEFT JOIN network_assets a ON c.odp_asset_id = a.id
             JOIN workspaces w ON c.workspace_id = w.id
+            LEFT JOIN pppoe_user_status pus 
+                ON c.pppoe_secret_name = pus.pppoe_user 
+                AND pus.workspace_id = c.workspace_id
             WHERE c.workspace_id IN (?)
         `, [validWorkspaceIds]);
 
+        // Convert isActive dari TINYINT ke boolean
+        const clientsWithBoolean = clients.map(client => ({
+            ...client,
+            isActive: client.isActive === 1 || client.isActive === true
+        }));
+
         res.json({
             assets,
-            clients
+            clients: clientsWithBoolean
         });
     } catch (error) {
         console.error('[NOC Controller] Error getting aggregated map data:', error);
