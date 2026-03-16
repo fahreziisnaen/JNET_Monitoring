@@ -112,6 +112,61 @@ exports.getClients = async (req, res) => {
     }
 };
 
+// Check which clients are orphaned (PPPoE secret no longer exists on their respective device)
+exports.orphanCheck = async (req, res) => {
+    const { workspace_id } = req.user;
+    try {
+        // Ambil semua client beserta device_id-nya
+        const [clients] = await pool.query(
+            'SELECT id, pppoe_secret_name, device_id FROM clients WHERE workspace_id = ?',
+            [workspace_id]
+        );
+
+        if (clients.length === 0) {
+            return res.status(200).json({ orphanedIds: [] });
+        }
+
+        // Kelompokkan client berdasarkan device_id
+        const byDevice = new Map(); // device_id (or null) -> [client, ...]
+        clients.forEach(client => {
+            const key = client.device_id || 'null';
+            if (!byDevice.has(key)) byDevice.set(key, []);
+            byDevice.get(key).push(client);
+        });
+
+        const orphanedIds = [];
+
+        // Cek setiap group device secara paralel
+        const checks = Array.from(byDevice.entries()).map(async ([key, deviceClients]) => {
+            const deviceId = key === 'null' ? null : parseInt(key);
+            try {
+                const secrets = await runCommandForWorkspace(
+                    workspace_id,
+                    '/ppp/secret/print',
+                    [],
+                    deviceId
+                );
+                const secretNames = new Set(secrets.map(s => s.name));
+                deviceClients.forEach(client => {
+                    if (!secretNames.has(client.pppoe_secret_name)) {
+                        orphanedIds.push(client.id);
+                    }
+                });
+            } catch (err) {
+                // Jika device offline/error, skip — jangan anggap semua client orphan
+                console.warn(`[ORPHAN CHECK] Device ${deviceId} error (skipped):`, err.message);
+            }
+        });
+
+        await Promise.all(checks);
+
+        res.status(200).json({ orphanedIds });
+    } catch (error) {
+        console.error('[ORPHAN CHECK ERROR]:', error);
+        res.status(500).json({ message: 'Gagal mengecek orphan status.' });
+    }
+};
+
 // Get unlinked PPPoE secrets (secrets that are not yet clients)
 exports.getUnlinkedPppoeSecrets = async (req, res) => {
     const { workspace_id } = req.user;

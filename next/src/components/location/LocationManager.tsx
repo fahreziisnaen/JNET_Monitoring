@@ -63,6 +63,19 @@ const LocationManager: React.FC<LocationManagerProps> = ({ isNocMode = false, no
 
   const { pppoeSecrets, isConnected, selectedDeviceId: currentDeviceId } = useMikrotik() || { pppoeSecrets: [], isConnected: false, selectedDeviceId: null };
 
+  // Orphan detection: set of client IDs whose PPPoE secret no longer exists on their device
+  const [orphanedIds, setOrphanedIds] = useState<Set<number>>(new Set());
+  const fetchOrphanCheck = useCallback(async () => {
+    if (isNocMode) return; // NOC mode tidak perlu orphan check
+    try {
+      const apiUrl = process.env.NEXT_PUBLIC_API_BASE_URL;
+      const res = await apiFetch(`${apiUrl}/api/clients/orphan-check`);
+      if (!res.ok) return;
+      const data = await res.json();
+      setOrphanedIds(new Set(data.orphanedIds || []));
+    } catch { /* silent fail */ }
+  }, [isNocMode]);
+
   // Stabilize nocWorkspaceIds array — serialize to string to avoid new object reference on every render
   const nocWorkspaceIdsRef = useRef(nocWorkspaceIds);
   const nocWorkspaceIdsKey = nocWorkspaceIds.join(',');
@@ -193,6 +206,8 @@ const LocationManager: React.FC<LocationManagerProps> = ({ isNocMode = false, no
         if (clientRes.ok) {
           const clientData = await clientRes.json();
           setClients(Array.isArray(clientData) ? clientData : []);
+          // Cek orphan status untuk semua client dari semua device
+          fetchOrphanCheck();
         } else {
           setClients([]);
         }
@@ -1193,6 +1208,8 @@ const LocationManager: React.FC<LocationManagerProps> = ({ isNocMode = false, no
             <ClientList
               clients={displayClients}
               pppoeSecrets={activeSecrets}
+              currentDeviceId={isNocMode ? undefined : currentDeviceId}
+              orphanedIds={isNocMode ? undefined : orphanedIds}
               loading={clientsLoading}
               selectedClientId={selectedClient?.id}
               onClientSelect={handleClientSelect}

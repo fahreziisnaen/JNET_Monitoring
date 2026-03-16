@@ -14,7 +14,7 @@ export const MikrotikProvider = ({ children }: { children: React.ReactNode }) =>
     const { user } = useAuth();
     const [selectedDeviceId, setSelectedDeviceId] = useState<number | null>(null);
     const [resource, setResource] = useState(null);
-    const [pppoeSecrets, setPppoeSecrets] = useState([]);
+    const [pppoeSecrets, setPppoeSecrets] = useState<any[]>([]);
     const [activeInterfaces, setActiveInterfaces] = useState<Array<{ name: string, type: string, running: boolean }>>([]);
     const [traffic, setTraffic] = useState({});
     const [isConnected, setIsConnected] = useState(false);
@@ -423,6 +423,27 @@ export const MikrotikProvider = ({ children }: { children: React.ReactNode }) =>
 
         if (user?.workspace_id && deviceId) {
             localStorage.setItem(`selected-device-${user.workspace_id}`, deviceId.toString());
+
+            // Pre-fetch via REST untuk tampilkan data segera (dari mikrotikStore cache di backend)
+            // WS akan otomatis replace data ini saat stream pertama masuk
+            const apiUrl = process.env.NEXT_PUBLIC_API_BASE_URL;
+            fetch(`${apiUrl}/api/pppoe/secrets?deviceId=${deviceId}`, {
+                headers: {
+                    'Authorization': `Bearer ${localStorage.getItem('token') || ''}`,
+                    'credentials': 'include'
+                },
+                credentials: 'include'
+            })
+                .then(res => res.ok ? res.json() : [])
+                .then((secrets: any[]) => {
+                    if (Array.isArray(secrets) && secrets.length > 0) {
+                        // Hanya set jika WS belum kirim data (pppoeSecrets masih kosong)
+                        // Gunakan functional update agar tidak tumpuk state WS yang baru masuk
+                        setPppoeSecrets((prev: any[]) => prev.length === 0 ? secrets : prev);
+                        setIsConnected(true); // Tampilkan sebagai connected sementara
+                    }
+                })
+                .catch(() => { /* silent fail - WS akan handle */ });
         }
     };
 

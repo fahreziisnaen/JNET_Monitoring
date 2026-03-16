@@ -33,12 +33,14 @@ interface ClientListProps {
   onClientSelect: (client: Client) => void;
   onClientView?: (client: Client) => void;
   searchQuery?: string;
-  onSearchChange?: (query: string) => void;
+  onSearchChange?: (query: string) => string | void;
   pppoeSecrets?: any[];
+  currentDeviceId?: number | null;
+  orphanedIds?: Set<number>;
   onBulkDelete?: (ids: number[]) => void;
 }
 
-const ClientList = ({ clients, loading, selectedClientId, onClientSelect, onClientView, searchQuery = '', onSearchChange, pppoeSecrets, onBulkDelete }: ClientListProps) => {
+const ClientList = ({ clients, loading, selectedClientId, onClientSelect, onClientView, searchQuery = '', onSearchChange, pppoeSecrets, currentDeviceId, orphanedIds, onBulkDelete }: ClientListProps) => {
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [isSelectMode, setIsSelectMode] = useState(false);
   const [showSearch, setShowSearch] = useState(false);
@@ -331,11 +333,22 @@ const ClientList = ({ clients, loading, selectedClientId, onClientSelect, onClie
                       <div className="flex-grow overflow-hidden">
                         <div className="flex items-center gap-2">
                           <p className="font-semibold truncate text-sm lg:text-base">{client.pppoe_secret_name}</p>
-                          {secretsReady && !existingSecretsSet.has(client.pppoe_secret_name) && (
-                            <span className="flex-shrink-0 px-1.5 py-0.5 rounded text-[10px] font-bold bg-destructive text-destructive-foreground">
-                              ORPHAN
-                            </span>
-                          )}
+                          {/* ORPHAN badge:
+                               - Jika orphanedIds tersedia (multi-device REST check): gunakan itu
+                               - Fallback ke WS-based check untuk NOC mode atau jika endpoint belum tersedia */}
+                          {orphanedIds
+                            ? orphanedIds.has(client.id) && (
+                              <span className="flex-shrink-0 px-1.5 py-0.5 rounded text-[10px] font-bold bg-destructive text-destructive-foreground">
+                                ORPHAN
+                              </span>
+                            )
+                            : secretsReady && !existingSecretsSet.has(client.pppoe_secret_name) &&
+                              (!currentDeviceId || !(client as any).device_id || (client as any).device_id === currentDeviceId) && (
+                              <span className="flex-shrink-0 px-1.5 py-0.5 rounded text-[10px] font-bold bg-destructive text-destructive-foreground">
+                                ORPHAN
+                              </span>
+                            )
+                          }
                         </div>
                         {client.odp_name ? (
                           <p className="text-sm text-muted-foreground">ODP: {client.odp_name}</p>
