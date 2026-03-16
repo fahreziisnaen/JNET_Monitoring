@@ -39,13 +39,16 @@ exports.getClients = async (req, res) => {
         const [clients] = await pool.query(
             `SELECT c.id, c.workspace_id, c.pppoe_secret_name, c.client_name, c.whatsapp_number, c.latitude, c.longitude, 
                     c.odp_asset_id, c.connection_path, c.photo_url, c.created_at, c.updated_at,
+                    c.device_id as stored_device_id,
                     na.name as odp_name,
                     na.owner_name as odp_owner_name,
-                    pus.device_id,
+                    COALESCE(pus.device_id, c.device_id) as device_id,
                     COALESCE(pus.is_active, FALSE) as isActive
              FROM clients c
              LEFT JOIN network_assets na ON c.odp_asset_id = na.id
-             LEFT JOIN pppoe_user_status pus ON c.pppoe_secret_name = pus.pppoe_user AND pus.workspace_id = c.workspace_id
+             LEFT JOIN pppoe_user_status pus ON c.pppoe_secret_name = pus.pppoe_user 
+                 AND pus.workspace_id = c.workspace_id
+                 AND (c.device_id IS NULL OR pus.device_id = c.device_id)
              WHERE c.workspace_id = ?
              ORDER BY c.pppoe_secret_name ASC`,
             [workspace_id]
@@ -159,8 +162,9 @@ exports.getUnlinkedPppoeSecrets = async (req, res) => {
 // Create new client from PPPoE secret
 exports.createClient = async (req, res) => {
     const { workspace_id } = req.user;
-    const { pppoe_secret_name, client_name, whatsapp_number, latitude, longitude, odp_asset_id, connection_path } = req.body;
+    const { pppoe_secret_name, client_name, whatsapp_number, latitude, longitude, odp_asset_id, connection_path, device_id } = req.body;
     const photo_url = req.file ? `/public/uploads/clients/${req.file.filename}` : null;
+    const deviceId = device_id ? parseInt(device_id) : null;
 
     if (!pppoe_secret_name || latitude === undefined || longitude === undefined) {
         return res.status(400).json({ message: 'pppoe_secret_name, latitude, dan longitude wajib diisi.' });
@@ -218,10 +222,10 @@ exports.createClient = async (req, res) => {
             }
         }
 
-        // Insert client
+        // Insert client (simpan device_id agar JOIN pppoe_user_status nanti lebih akurat)
         const [result] = await pool.query(
-            'INSERT INTO clients (workspace_id, pppoe_secret_name, client_name, whatsapp_number, latitude, longitude, odp_asset_id, connection_path, photo_url) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
-            [workspace_id, pppoe_secret_name, client_name || null, whatsapp_number || null, lat, lon, odp_asset_id || null, connection_path || null, photo_url]
+            'INSERT INTO clients (workspace_id, pppoe_secret_name, client_name, whatsapp_number, latitude, longitude, odp_asset_id, connection_path, photo_url, device_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+            [workspace_id, pppoe_secret_name, client_name || null, whatsapp_number || null, lat, lon, odp_asset_id || null, connection_path || null, photo_url, deviceId]
         );
 
         // If linked to ODP, also add to odp_user_connections if not exists

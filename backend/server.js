@@ -34,6 +34,12 @@ if (RouterOSAPI.RouterOSAPI) {
 }
 
 const pool = require('./src/config/database');
+
+// Auto-migration: tambah kolom device_id ke tabel clients jika belum ada
+pool.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS device_id INT DEFAULT NULL`)
+    .then(() => console.log('[Migration] clients.device_id OK'))
+    .catch(err => console.error('[Migration] Error:', err.message));
+
 const { addConnection, removeConnection, getConnection } = require('./src/services/connectionManager');
 const { getOrCreateConnection } = require('./src/utils/apiConnection');
 
