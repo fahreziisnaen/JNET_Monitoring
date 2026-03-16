@@ -20,6 +20,7 @@ export const MikrotikProvider = ({ children }: { children: React.ReactNode }) =>
     const [isConnected, setIsConnected] = useState(false);
 
     const ws = useRef<WebSocket | null>(null);
+    const intentionalClose = useRef(false); // Flag: true = tutup sengaja (ganti device), jangan reconnect
 
     // Load selected device from localStorage
     useEffect(() => {
@@ -222,6 +223,13 @@ export const MikrotikProvider = ({ children }: { children: React.ReactNode }) =>
                         console.log('[WebSocket] Koneksi ditutup.');
                     }
 
+                    // Jika ini adalah intentional close (ganti device), JANGAN reconnect
+                    if (intentionalClose.current) {
+                        console.log('[WebSocket] Intentional close (device changed), skip auto-reconnect');
+                        intentionalClose.current = false;
+                        return;
+                    }
+
                     // Auto-reconnect jika masih ada user dan belum mencapai max attempts
                     // Jangan reconnect jika close code adalah 1008 (Unauthorized) atau 1003 (Invalid data)
                     if (user && reconnectAttempts < maxReconnectAttempts && event.code !== 1008 && event.code !== 1003) {
@@ -394,6 +402,7 @@ export const MikrotikProvider = ({ children }: { children: React.ReactNode }) =>
         // Ini mencegah race condition di useEffect yang melihat WS masih CONNECTING
         if (ws.current) {
             console.log('[MikrotikProvider] Force closing WebSocket sebelum ganti device, state:', ws.current.readyState);
+            intentionalClose.current = true; // Tandai bahwa ini intentional close, skip auto-reconnect
             try {
                 ws.current.close(1000, 'Device changed');
             } catch (e) {
