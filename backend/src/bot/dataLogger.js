@@ -65,7 +65,7 @@ async function checkAlarms(workspaceId, device, broadcastCallback = null) {
             // Transmit 'connected' broadcast to UI to dismiss failure Toast instantly
             if (broadcastCallback) {
                 console.log(`[Alarms] Broadcasting DEVICE_ONLINE to workspace ${workspaceId} via WebSocket`);
-                broadcastCallback(workspaceId, {
+                broadcastCallback(workspaceId, device.id, {
                     type: 'connection-status',
                     payload: {
                         status: 'connected',
@@ -105,7 +105,7 @@ async function checkAlarms(workspaceId, device, broadcastCallback = null) {
             // Broadcast ke UI setiap kali transisi ke offline
             if (broadcastCallback) {
                 console.log(`[Alarms] Broadcasting DEVICE_OFFLINE to workspace ${workspaceId} via WebSocket`);
-                broadcastCallback(workspaceId, {
+                broadcastCallback(workspaceId, device.id, {
                     type: 'connection-status',
                     payload: {
                         status: 'disconnected',
@@ -256,7 +256,7 @@ async function processSlaEvents(workspaceId, currentActiveUsers, deviceId, broad
                         reconnectTime: new Date().toISOString()
                     }));
 
-                    broadcastCallback(workspaceId, {
+                    broadcastCallback(workspaceId, deviceId, {
                         type: 'reconnect-notification',
                         payload: {
                             notifications: reconnectNotifications,
@@ -364,7 +364,7 @@ async function sendDowntimeNotifications(broadcastCallback = null) {
                             startTime: event.start_time
                         }));
 
-                        broadcastCallback(workspaceId, {
+                        broadcastCallback(workspaceId, null, {
                             type: 'downtime-notification',
                             payload: {
                                 notifications: disconnectNotifications,
