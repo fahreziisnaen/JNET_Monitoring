@@ -26,7 +26,6 @@ interface PppoeSecret {
     activeConnectionId?: string;
     workspace_name: string;
     workspace_id: number;
-    device_id: number;
     router_name?: string;
 }
 
@@ -234,7 +233,7 @@ const NocManagementTab: React.FC<NocManagementTabProps> = ({ workspaceIds }) => 
 
                 try {
                     const encodedId = encodeURIComponent(secret.activeConnectionId);
-                    const res = await apiFetch(`${apiUrl}/api/pppoe/active/${encodedId}/kick?workspaceId=${secret.workspace_id}&deviceId=${secret.device_id}`, {
+                    const res = await apiFetch(`${apiUrl}/api/pppoe/active/${encodedId}/kick?workspaceId=${secret.workspace_id}`, {
                         method: 'POST'
                     });
                     if (!res.ok) {
@@ -245,8 +244,8 @@ const NocManagementTab: React.FC<NocManagementTabProps> = ({ workspaceIds }) => 
                     throw new Error(error.message || "Gagal melakukan kick");
                 }
             } else if (action === 'disable') {
-                const encodedId = encodeURIComponent(secret['.id'] || secret.name);
-                const res = await apiFetch(`${apiUrl}/api/pppoe/secrets/${encodedId}/status?workspaceId=${secret.workspace_id}&deviceId=${secret.device_id}`, {
+                const encodedId = encodeURIComponent(secret.name);
+                const res = await apiFetch(`${apiUrl}/api/pppoe/secrets/${encodedId}/status?workspaceId=${secret.workspace_id}`, {
                     method: 'PUT',
                     body: JSON.stringify({ disabled: 'yes' })
                 });
@@ -258,7 +257,7 @@ const NocManagementTab: React.FC<NocManagementTabProps> = ({ workspaceIds }) => 
                 if (secret.isActive && secret.activeConnectionId) {
                     try {
                         const encodedActiveId = encodeURIComponent(secret.activeConnectionId);
-                        await apiFetch(`${apiUrl}/api/pppoe/active/${encodedActiveId}/kick?workspaceId=${secret.workspace_id}&deviceId=${secret.device_id}`, {
+                        await apiFetch(`${apiUrl}/api/pppoe/active/${encodedActiveId}/kick?workspaceId=${secret.workspace_id}`, {
                             method: 'POST'
                         });
                     } catch (kickError: any) {
@@ -267,8 +266,8 @@ const NocManagementTab: React.FC<NocManagementTabProps> = ({ workspaceIds }) => 
                 }
             } else {
                 // Enable
-                const encodedId = encodeURIComponent(secret['.id'] || secret.name);
-                const res = await apiFetch(`${apiUrl}/api/pppoe/secrets/${encodedId}/status?workspaceId=${secret.workspace_id}&deviceId=${secret.device_id}`, {
+                const encodedId = encodeURIComponent(secret.name);
+                const res = await apiFetch(`${apiUrl}/api/pppoe/secrets/${encodedId}/status?workspaceId=${secret.workspace_id}`, {
                     method: 'PUT',
                     body: JSON.stringify({ disabled: 'no' })
                 });
@@ -294,8 +293,8 @@ const NocManagementTab: React.FC<NocManagementTabProps> = ({ workspaceIds }) => 
         const apiUrl = process.env.NEXT_PUBLIC_API_BASE_URL;
 
         try {
-            const encodedId = encodeURIComponent(secretToDelete['.id'] || secretToDelete.name);
-            const res = await apiFetch(`${apiUrl}/api/pppoe/secrets/${encodedId}?workspaceId=${secretToDelete.workspace_id}&deviceId=${secretToDelete.device_id}`, { method: 'DELETE' });
+            const encodedId = encodeURIComponent(secretToDelete.name);
+            const res = await apiFetch(`${apiUrl}/api/pppoe/secrets/${encodedId}?workspaceId=${secretToDelete.workspace_id}`, { method: 'DELETE' });
             if (!res.ok) throw new Error("Gagal Menghapus Secret");
 
             toast.success("Berhasil Menghapus Secret", { description: `Secret untuk ${secretToDelete.name} telah dihapus.` });
@@ -478,7 +477,6 @@ const NocManagementTab: React.FC<NocManagementTabProps> = ({ workspaceIds }) => 
                     // Given we added workspaceId override natively in edit mode this requires passing workspaceId as prop. 
                     // To do this simply, we will construct apiFetch locally inside the EditModal? No, just pass prop:
                     nocWorkspaceId={secretToEdit.workspace_id}
-                    deviceId={secretToEdit.device_id}
                 />
             )}
         </div>

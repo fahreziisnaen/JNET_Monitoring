@@ -25,6 +25,13 @@ const isIpAddress = (ip) => {
     return regex.test(ip || '');
 };
 
+const resolveSecretId = async (workspace_id, identifier, deviceId) => {
+    if (identifier.startsWith('*')) return identifier;
+    const data = await runCommandForWorkspace(workspace_id, '/ppp/secret/print', [`?name=${identifier}`], deviceId);
+    if (!data || data.length === 0) throw new Error(`Secret '${identifier}' tidak ditemukan di router Mikrotik.`);
+    return data[0]['.id'];
+};
+
 exports.getSummary = async (req, res) => {
     const startTime = Date.now();
     try {
@@ -316,7 +323,8 @@ exports.setSecretStatus = async (req, res) => {
     const { disabled } = req.body;
     const deviceId = req.query.deviceId ? parseInt(req.query.deviceId) : null;
     try {
-        await runCommandForWorkspace(req.user.workspace_id, '/ppp/secret/set', [`=.id=${id}`, `=disabled=${disabled}`], deviceId);
+        const realId = await resolveSecretId(req.user.workspace_id, id, deviceId);
+        await runCommandForWorkspace(req.user.workspace_id, '/ppp/secret/set', [`=.id=${realId}`, `=disabled=${disabled}`], deviceId);
         res.status(200).json({ message: `Secret berhasil di-${disabled === 'true' ? 'disable' : 'enable'}.` });
     } catch (error) { res.status(500).json({ message: error.message }); }
 };
@@ -394,14 +402,18 @@ exports.updateSecret = async (req, res) => {
         return res.status(400).json({ message: 'Profil wajib diisi.' });
     }
     try {
-        // Get old secret details before updating, to check if name changed
-        const oldSecretData = await runCommandForWorkspace(workspace_id, '/ppp/secret/print', [`?=.id=${id}`]);
+        // Resolve .id and oldName
+        const oldSecretData = await runCommandForWorkspace(workspace_id, '/ppp/secret/print', [id.startsWith('*') ? `?=.id=${id}` : `?name=${id}`]);
         let oldName = null;
+        let realId = id;
         if (oldSecretData && oldSecretData.length > 0) {
             oldName = oldSecretData[0].name;
+            realId = oldSecretData[0]['.id'];
+        } else {
+             return res.status(404).json({ message: 'Secret tidak ditemukan di router' });
         }
 
-        const params = [`=.id=${id}`, `=profile=${profile}`];
+        const params = [`=.id=${realId}`, `=profile=${profile}`];
         if (name) {
             params.push(`=name=${name}`);
         }
@@ -438,15 +450,24 @@ exports.deleteSecret = async (req, res) => {
         console.log(`[Delete Secret] Request hapus secret ID: ${id} untuk workspace: ${workspace_id}, device: ${deviceId}`);
 
         // 1. Dapatkan nama secret dari Mikrotik terlebih dahulu sebelum dihapus
-        const secretData = await runCommandForWorkspace(workspace_id, '/ppp/secret/print', [`?=.id=${id}`], deviceId);
+        const secretData = await runCommandForWorkspace(workspace_id, '/ppp/secret/print', [id.startsWith('*') ? `?=.id=${id}` : `?name=${id}`], deviceId);
         let secretName = null;
+        let realId = id;
         if (secretData && secretData.length > 0) {
             secretName = secretData[0].name;
+            realId = secretData[0]['.id'];
+        } else {
+            console.warn(`[Delete Secret] Tidak dapat menemukan data secret ${id} di router. Namun mencoba melanjutkan proses db hapus...`);
+            secretName = !id.startsWith('*') ? id : null;
         }
 
         // 2. Hapus secret dari router Mikrotik
-        await runCommandForWorkspace(workspace_id, '/ppp/secret/remove', [`=.id=${id}`], deviceId);
-        console.log(`[Delete Secret] Berhasil hapus id: ${id} dari Mikrotik`);
+        try {
+            await runCommandForWorkspace(workspace_id, '/ppp/secret/remove', [`=.id=${realId}`], deviceId);
+            console.log(`[Delete Secret] Berhasil hapus Mikrotik ID: ${realId}`);
+        } catch (e) {
+            console.warn(`[Delete Secret] Penghapusan di router gagal/tidak ada: ${e.message}`);
+        }
 
         // 3. Jika nama secret ditemukan, hapus referensi data lokasinya dari MySQL
         if (secretName) {

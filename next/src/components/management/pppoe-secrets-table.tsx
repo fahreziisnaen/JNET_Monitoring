@@ -336,7 +336,7 @@ const PppoeSecretsTable = ({ refreshTrigger, onActionComplete, initialFilter = '
         }
       } else if (action === 'disable') {
         // Disable secret terlebih dahulu untuk mencegah reconnect otomatis
-        const encodedId = encodeURIComponent(secret['.id']);
+        const encodedId = encodeURIComponent(secret.name);
         const deviceQuery = selectedDeviceId ? `?deviceId=${selectedDeviceId}` : '';
         const res = await apiFetch(`${apiUrl}/api/pppoe/secrets/${encodedId}/status${deviceQuery}`, {
           method: 'PUT',
@@ -367,7 +367,7 @@ const PppoeSecretsTable = ({ refreshTrigger, onActionComplete, initialFilter = '
         }
       } else {
         // Enable
-        const encodedId = encodeURIComponent(secret['.id']);
+        const encodedId = encodeURIComponent(secret.name);
         const deviceQuery = selectedDeviceId ? `?deviceId=${selectedDeviceId}` : '';
         const res = await apiFetch(`${apiUrl}/api/pppoe/secrets/${encodedId}/status${deviceQuery}`, {
           method: 'PUT',
@@ -396,7 +396,7 @@ const PppoeSecretsTable = ({ refreshTrigger, onActionComplete, initialFilter = '
     if (!secretToDelete) return;
     setIsActionLoading(true);
     try {
-      const encodedId = encodeURIComponent(secretToDelete['.id']);
+      const encodedId = encodeURIComponent(secretToDelete.name);
       const deviceQuery = selectedDeviceId ? `?deviceId=${selectedDeviceId}` : '';
       await apiFetch(`${apiUrl}/api/pppoe/secrets/${encodedId}${deviceQuery}`, { method: 'DELETE' });
       toast.success("Berhasil Menghapus Secret", { description: `Secret untuk ${secretToDelete.name} telah dihapus.` });
