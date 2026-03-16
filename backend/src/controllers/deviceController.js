@@ -145,3 +145,29 @@ exports.testConnection = async (req, res) => {
         res.status(400).json({ message: errorMsg });
     }
 };
+
+exports.getTrafficHistory = async (req, res) => {
+    const { id } = req.params;
+    const { interface: interfaceName, hours = 24 } = req.query;
+    const workspaceId = req.user.workspace_id;
+
+    if (!interfaceName) {
+        return res.status(400).json({ message: 'Parameter interface wajib diisi.' });
+    }
+
+    try {
+        const query = `
+            SELECT interface_name, tx_bps, rx_bps, timestamp
+            FROM interface_traffic_logs
+            WHERE workspace_id = ? AND device_id = ? AND interface_name = ?
+            AND timestamp >= DATE_SUB(NOW(), INTERVAL ? HOUR)
+            ORDER BY timestamp ASC
+        `;
+        
+        const [rows] = await pool.query(query, [workspaceId, id, interfaceName, parseInt(hours)]);
+        res.status(200).json(rows);
+    } catch (error) {
+        console.error('[Device Controller] Error fetching traffic history:', error.message);
+        res.status(500).json({ message: 'Gagal mengambil riwayat traffic.' });
+    }
+};

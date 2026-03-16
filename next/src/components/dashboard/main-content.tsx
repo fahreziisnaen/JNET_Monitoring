@@ -27,8 +27,7 @@ import {
 import { CSS } from '@dnd-kit/utilities';
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend);
-
-const EtherChart = ({ trafficData, interfaceName }: { trafficData: any; interfaceName: string }) => {
+const EtherChart = ({ trafficData, interfaceName, deviceId }: { trafficData: any; interfaceName: string; deviceId: number | null }) => {
   const { user } = useAuth();
   const workspaceId = user?.workspace_id || 'default';
   const storageKey = `chart-data-${workspaceId}-${interfaceName}`;
@@ -68,26 +67,82 @@ const EtherChart = ({ trafficData, interfaceName }: { trafficData: any; interfac
   const lastUpdateRef = useRef<number | null>(null);
   const isInitializedRef = useRef(false);
 
-  // Initialize chart data from localStorage on mount
+  // Initialize chart data from API or localStorage on mount
   useEffect(() => {
-    if (!isInitializedRef.current) {
-      const saved = loadSavedData();
-      if (saved) {
-        setChartData(saved);
-        // Set lastUpdateRef to prevent immediate update saat data baru masuk
+    if (!isInitializedRef.current && deviceId) {
+      isInitializedRef.current = true; // Langsung set true agar tidak fetch dobel
+      
+      const fetchHistory = async () => {
         try {
-          const savedItem = localStorage.getItem(storageKey);
-          if (savedItem) {
-            const parsed = JSON.parse(savedItem);
-            lastUpdateRef.current = parsed.lastUpdate || Date.now();
+          // Fetch dari database
+          const token = localStorage.getItem('token');
+          const res = await fetch(`http://${process.env.NEXT_PUBLIC_API_HOST || window.location.hostname}:9494/api/devices/${deviceId}/traffic-history?interface=${interfaceName}`, {
+            headers: { Authorization: `Bearer ${token}` }
+          });
+          
+          if (res.ok) {
+            const data = await res.json();
+            if (data && data.length > 0) {
+              // Reconstruct data from API (up to 24h history)
+            // Limit to last 30 points to not overcrowd the labels, or show all if it's fine.
+            // But if we have 1440 points, showing all is good for history but hard to read.
+            // Let's just keep max 60 data points (1 hour history if graphed per minute, or skip every n to fit in 60 points) 
+            // Untuk kesederhanaan, kita muat semua ke Chart.js, Chart.js cukup pintar menanganinya
+            
+            // Format labels dan datasets
+            const historyLabels = data.map((r: any) => new Date(r.timestamp).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }));
+            const historyTx = data.map((r: any) => parseFloat((r.tx_bps / 1000000).toFixed(2)));
+            const historyRx = data.map((r: any) => parseFloat((r.rx_bps / 1000000).toFixed(2)));
+            
+            // Limit to max 200 data points agar browser tidak berat
+            const maxLength = 200;
+            const sliceLabels = historyLabels.slice(-maxLength);
+            const sliceTx = historyTx.slice(-maxLength);
+            const sliceRx = historyRx.slice(-maxLength);
+
+            // Jika hasil < 30 (minimum length awal), pad dengan empty & 0 di depan
+            while (sliceLabels.length < 30) {
+              sliceLabels.unshift('');
+              sliceTx.unshift(0);
+              sliceRx.unshift(0);
+            }
+
+            const mergedData = {
+              labels: sliceLabels,
+              datasets: [
+                { label: 'Upload (Mbps)', data: sliceTx, borderColor: '#ef4444', backgroundColor: '#ef444433', tension: 0.4, pointRadius: 0 },
+                { label: 'Download (Mbps)', data: sliceRx, borderColor: '#3b82f6', backgroundColor: '#3b82f633', tension: 0.4, pointRadius: 0 },
+              ]
+            };
+
+            setChartData(mergedData);
+            lastUpdateRef.current = Date.now();
+            return;
+            }
           }
-        } catch (e) {
-          // Ignore error
+        } catch (error) {
+          console.warn('Gagal memuat history traffic:', error);
         }
-      }
-      isInitializedRef.current = true;
+
+        // Fallback to local storage if API fails or no data
+        const saved = loadSavedData();
+        if (saved) {
+          setChartData(saved);
+          try {
+            const savedItem = localStorage.getItem(storageKey);
+            if (savedItem) {
+              const parsed = JSON.parse(savedItem);
+              lastUpdateRef.current = parsed.lastUpdate || Date.now();
+            }
+          } catch (e) {
+            // Ignore error
+          }
+        }
+      };
+
+      fetchHistory();
     }
-  }, [storageKey]);
+  }, [deviceId, interfaceName, storageKey]);
 
   useEffect(() => {
     if (trafficData && isInitializedRef.current) {
@@ -140,9 +195,10 @@ interface SortableInterfaceCardProps {
   currentTraffic: any;
   index: number;
   itemCount: number;
+  deviceId: number | null;
 }
 
-const SortableInterfaceCard = ({ id, etherId, currentTraffic, index, itemCount }: SortableInterfaceCardProps) => {
+const SortableInterfaceCard = ({ id, etherId, currentTraffic, index, itemCount, deviceId }: SortableInterfaceCardProps) => {
   const {
     attributes,
     listeners,
@@ -208,7 +264,7 @@ const SortableInterfaceCard = ({ id, etherId, currentTraffic, index, itemCount }
           </div>
         </CardHeader>
         <CardContent className="h-80">
-          <EtherChart trafficData={currentTraffic} interfaceName={etherId} />
+          <EtherChart trafficData={currentTraffic} interfaceName={etherId} deviceId={deviceId} />
         </CardContent>
       </Card>
     </div>
@@ -216,7 +272,8 @@ const SortableInterfaceCard = ({ id, etherId, currentTraffic, index, itemCount }
 };
 
 const MainContent = () => {
-  const { traffic, activeInterfaces: availableInterfaces, isConnected } = useMikrotik() || { traffic: {}, activeInterfaces: [], isConnected: false };
+  const mikrotikContext = useMikrotik() || { traffic: {}, activeInterfaces: [], isConnected: false, selectedDeviceId: null };
+  const { traffic, activeInterfaces: availableInterfaces, isConnected, selectedDeviceId } = mikrotikContext;
   const [selectedInterfaces, setSelectedInterfaces] = useState<Set<string>>(new Set());
   const [showFilter, setShowFilter] = useState(false);
   const [interfaceOrder, setInterfaceOrder] = useState<string[]>([]);
@@ -493,6 +550,7 @@ const MainContent = () => {
                     currentTraffic={currentTraffic}
                     index={index}
                     itemCount={itemCount}
+                    deviceId={selectedDeviceId}
                   />
                 );
               })

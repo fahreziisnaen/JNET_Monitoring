@@ -15,4 +15,6 @@ router.route('/:id')
     .put(authorizeAdmin, deviceController.updateDevice)
     .delete(authorizeAdmin, deviceController.deleteDevice);
 
+router.get('/:id/traffic-history', deviceController.getTrafficHistory);
+
 module.exports = router;

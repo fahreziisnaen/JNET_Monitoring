@@ -44,6 +44,7 @@ async function startDeviceMonitor(workspaceId, deviceId, broadcastCallback) {
         lastSecretFetch: 0,
         cachedSecrets: [],
         lastCycleTime: 0,
+        lastTrafficLog: 0,
     };
     deviceMonitors.set(key, state);
 
@@ -124,6 +125,30 @@ async function startDeviceMonitor(workspaceId, deviceId, broadcastCallback) {
             trafficResults.forEach(result => {
                 if (result && result.name) traffic[result.name] = result;
             });
+
+            // 2e. Simpan History Traffic ke Database (Tiap 1 menit)
+            if (now - state.lastTrafficLog >= 60000 && Object.keys(traffic).length > 0) {
+                state.lastTrafficLog = now;
+                const trafficValues = [];
+                for (const [ifaceName, tf] of Object.entries(traffic)) {
+                    trafficValues.push([workspaceId, deviceId, ifaceName, tf['tx-bits-per-second'] || 0, tf['rx-bits-per-second'] || 0]);
+                }
+                if (trafficValues.length > 0) {
+                    try {
+                        await pool.query(
+                            'INSERT INTO interface_traffic_logs (workspace_id, device_id, interface_name, tx_bps, rx_bps) VALUES ?',
+                            [trafficValues]
+                        );
+                        // Auto-cleanup data lama (> 7 hari)
+                        await pool.query(
+                            'DELETE FROM interface_traffic_logs WHERE workspace_id = ? AND device_id = ? AND timestamp < DATE_SUB(NOW(), INTERVAL 7 DAY)',
+                            [workspaceId, deviceId]
+                        );
+                    } catch (dbErr) {
+                        console.error(`[BGMonitor] Failed to log DB traffic history for device ${deviceId}: ${dbErr.message}`);
+                    }
+                }
+            }
 
             // 3. Secrets (tiap 20 detik)
             if (now - state.lastSecretFetch >= SECRET_REFRESH_MS || state.cachedSecrets.length === 0) {

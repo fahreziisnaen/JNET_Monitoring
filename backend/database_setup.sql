@@ -31,6 +31,7 @@ USE `jnet_monitoring`;
 SET FOREIGN_KEY_CHECKS = 0;
 
 DROP TABLE IF EXISTS `dashboard_snapshot`;
+DROP TABLE IF EXISTS `interface_traffic_logs`;
 DROP TABLE IF EXISTS `resource_logs`;
 DROP TABLE IF EXISTS `pppoe_usage_logs`;
 DROP TABLE IF EXISTS `downtime_events`;
@@ -316,6 +317,19 @@ CREATE TABLE `pppoe_usage_logs` (
   KEY `idx_usage_date` (`usage_date`),
   CONSTRAINT `fk_pppoe_usage_logs_workspace` FOREIGN KEY (`workspace_id`) REFERENCES `workspaces`(`id`) ON DELETE CASCADE,
   CONSTRAINT `fk_pppoe_usage_logs_device` FOREIGN KEY (`device_id`) REFERENCES `mikrotik_devices`(`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE `interface_traffic_logs` (
+  `id` BIGINT AUTO_INCREMENT PRIMARY KEY,
+  `workspace_id` INT NOT NULL,
+  `device_id` INT NOT NULL,
+  `interface_name` VARCHAR(100) NOT NULL,
+  `tx_bps` BIGINT UNSIGNED DEFAULT 0,
+  `rx_bps` BIGINT UNSIGNED DEFAULT 0,
+  `timestamp` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  INDEX `idx_workspace_device_iface_time` (`workspace_id`, `device_id`, `interface_name`, `timestamp`),
+  CONSTRAINT `fk_traffic_logs_workspace` FOREIGN KEY (`workspace_id`) REFERENCES `workspaces`(`id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_traffic_logs_device` FOREIGN KEY (`device_id`) REFERENCES `mikrotik_devices`(`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE `resource_logs` (
