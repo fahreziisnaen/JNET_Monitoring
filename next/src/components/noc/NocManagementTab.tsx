@@ -126,6 +126,11 @@ const NocManagementTab: React.FC<NocManagementTabProps> = ({ workspaceIds }) => 
     }, [workspaceIds, token, lastFetchTime]);
 
     // Polling data every 5 seconds for NOC view (slower than regular websocket but good enough for multi-workspace)
+    // Reset lastFetchTime when workspaceIds changes so filter switch always triggers a fresh fetch
+    useEffect(() => {
+        setLastFetchTime(0);
+    }, [workspaceIds.join(',')]);
+
     useEffect(() => {
         fetchSecrets(false); // first load shows spinner
 
