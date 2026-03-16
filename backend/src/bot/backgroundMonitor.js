@@ -283,7 +283,7 @@ async function startBackgroundMonitoring(broadcastCallback = null) {
         // Ambil semua device dari semua workspace
         const [devices] = await pool.query(`
             SELECT d.id, d.workspace_id, d.name, d.host
-            FROM devices d
+            FROM mikrotik_devices d
             ORDER BY d.workspace_id, d.id
         `);
 
