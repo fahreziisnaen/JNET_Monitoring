@@ -198,13 +198,12 @@ async function startDeviceMonitor(workspaceId, deviceId, broadcastCallback) {
                         s.isActive ? 1 : 0,
                         s.uptime || null,
                         s.currentAddress || null,
-                        s['last-logged-out'] || null,
                         s.activeConnectionId || null
                     ]);
                     
                     const query = `
                         INSERT INTO pppoe_secrets 
-                        (workspace_id, device_id, name, profile, remote_address, disabled, is_active, uptime, current_address, last_logged_out, active_connection_id)
+                        (workspace_id, device_id, name, profile, remote_address, disabled, is_active, uptime, current_address, active_connection_id)
                         VALUES ?
                         ON DUPLICATE KEY UPDATE
                         profile = VALUES(profile),
@@ -213,7 +212,6 @@ async function startDeviceMonitor(workspaceId, deviceId, broadcastCallback) {
                         is_active = VALUES(is_active),
                         uptime = VALUES(uptime),
                         current_address = VALUES(current_address),
-                        last_logged_out = VALUES(last_logged_out),
                         active_connection_id = VALUES(active_connection_id)
                     `;
                     
