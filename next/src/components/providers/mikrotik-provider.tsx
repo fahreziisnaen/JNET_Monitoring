@@ -344,8 +344,10 @@ export const MikrotikProvider = ({ children }: { children: React.ReactNode }) =>
                             ws.current = null;
                         }
                     } catch (e) {
-                        ws.current.close();
-                        ws.current = null;
+                        if (ws.current) {
+                            ws.current.close();
+                            ws.current = null;
+                        }
                     }
                 }
             }
