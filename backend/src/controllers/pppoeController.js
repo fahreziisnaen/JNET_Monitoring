@@ -31,17 +31,22 @@ exports.getSummary = async (req, res) => {
         const workspaceId = req.user.workspace_id;
         const deviceId = req.query.deviceId ? parseInt(req.query.deviceId) : null;
 
+        let query = 'SELECT COUNT(*) as total, SUM(is_active = 1) as active FROM pppoe_secrets WHERE workspace_id = ?';
+        let params = [workspaceId];
 
-        // Jalankan secara sequential untuk menghindari deadlock dengan locking mechanism
-        // Kedua command akan menggunakan koneksi yang sama (karena deviceId sama)
-        // Locking mechanism akan memastikan hanya satu koneksi dibuat dan di-reuse
-        const secrets = await runCommandForWorkspace(workspaceId, '/ppp/secret/print', ['.proplist=.id'], deviceId);
-        const active = await runCommandForWorkspace(workspaceId, '/ppp/active/print', ['.proplist=.id', '?service=pppoe'], deviceId).catch(() => []);
+        if (deviceId) {
+            query += ' AND device_id = ?';
+            params.push(deviceId);
+        }
+
+        const [rows] = await pool.query(query, params);
+        const { total = 0, active = 0 } = rows[0] || {};
+        const inactive = total - active;
 
         const duration = Date.now() - startTime;
-        console.log(`[PPPoE Summary] Berhasil dalam ${duration}ms - total: ${secrets.length}, active: ${active.length}`);
+        console.log(`[PPPoE Summary] Berhasil dalam ${duration}ms - total: ${total}, active: ${active}`);
 
-        res.json({ total: secrets.length, active: active.length, inactive: secrets.length - active.length });
+        res.json({ total: Number(total), active: Number(active), inactive: Number(inactive) });
     } catch (error) {
         const duration = Date.now() - startTime;
         console.error(`[PPPoE Summary] Error setelah ${duration}ms:`, error.message);
@@ -56,77 +61,55 @@ exports.getSecrets = async (req, res) => {
         const deviceId = req.query.deviceId ? parseInt(req.query.deviceId) : null;
         const disabled = req.query.disabled;
 
+        let query = `
+            SELECT 
+                name, 
+                profile, 
+                remote_address as 'remote-address', 
+                current_address as currentAddress,
+                disabled, 
+                is_active as isActive, 
+                uptime, 
+                last_logged_out as 'last-logged-out',
+                active_connection_id as activeConnectionId
+            FROM pppoe_secrets 
+            WHERE workspace_id = ?
+        `;
+        let params = [workspaceId];
 
-        // Optimasi: Cek di local store dulu (instant)
-        let secrets = mikrotikStore.getSecrets(workspaceId, deviceId);
-        let activeUsers = mikrotikStore.getActive(workspaceId, deviceId);
-
-        // Jika store kosong (monitoring belum jalan), fallback ke API (slow)
-        if (!secrets || secrets.length === 0) {
-            console.log(`[getSecrets] Store kosong, fallback ke MikroTik API...`);
-            secrets = await runCommandForWorkspace(workspaceId, '/ppp/secret/print', [
-                '.proplist=.id,name,profile,remote-address,last-logged-out,disabled'
-            ], deviceId);
-
-            activeUsers = await runCommandForWorkspace(workspaceId, '/ppp/active/print', [
-                '.proplist=name,address,.id',
-                '?service=pppoe'
-            ], deviceId).catch((err) => {
-                console.warn(`[PPPoE Secrets] Error fetching active users:`, err.message);
-                return [];
-            });
+        if (deviceId) {
+            query += ' AND device_id = ?';
+            params.push(deviceId);
         }
 
-        // Filter berdasarkan disabled jika diperlukan
-        let filteredSecrets = secrets;
-        if (disabled === 'false') {
-            filteredSecrets = secrets.filter(s => s.disabled !== 'true');
-        } else if (disabled === 'true') {
-            filteredSecrets = secrets.filter(s => s.disabled === 'true');
+        if (disabled === 'true') {
+            query += ' AND disabled = 1';
+        } else if (disabled === 'false') {
+            query += ' AND disabled = 0';
         }
 
-        // Buat Map dari active users untuk lookup cepat (name -> address)
-        // Active users memiliki IP address yang sedang digunakan
-        const activeUserMap = new Map();
-        activeUsers.forEach(user => {
-            if (user.name && user.address) {
-                activeUserMap.set(user.name, user.address);
+        query += ' ORDER BY name ASC';
+
+        const [secretsWithStatus] = await pool.query(query, params);
+        
+        // Format boolean disabled and field mapping
+        const formattedSecrets = secretsWithStatus.map(s => {
+            const secret = { ...s };
+            secret.disabled = s.disabled === 1 ? 'true' : 'false';
+            secret.isActive = s.isActive === 1;
+            
+            // Replicate original behavior where active IP overrides remote-address if remote-address is empty
+            if (!secret['remote-address'] && secret.currentAddress) {
+                secret['remote-address'] = secret.currentAddress;
             }
-        });
-
-        // Buat Set dari nama user yang aktif untuk lookup cepat
-        const activeUserNames = new Set(activeUsers.map(user => user.name));
-
-        // Tambahkan informasi isActive ke setiap secret dan pastikan semua field ter-preserve
-        const secretsWithStatus = filteredSecrets.map(secret => {
-            // Build object dengan semua field dari secret
-            // Gunakan Object.assign untuk memastikan semua field ter-copy termasuk yang dengan tanda hubung
-            const secretData = Object.assign({}, secret);
-
-            // Untuk remote-address:
-            // 1. Jika secret memiliki remote-address yang di-set, gunakan itu
-            // 2. Jika user sedang aktif, gunakan IP dari active connection
-            // 3. Jika tidak ada, set null
-            let remoteAddress = secret['remote-address'] || null;
-
-            // Jika tidak ada remote-address di secret tapi user sedang aktif, ambil dari active connection
-            if (!remoteAddress && activeUserMap.has(secret.name)) {
-                remoteAddress = activeUserMap.get(secret.name);
-            }
-
-            // Set remote-address (selalu ada di response, meskipun null)
-            secretData['remote-address'] = remoteAddress;
-
-            // Tambahkan isActive
-            secretData.isActive = activeUserNames.has(secret.name);
-
-            return secretData;
+            
+            return secret;
         });
 
         const duration = Date.now() - startTime;
-        console.log(`[PPPoE Secrets] Berhasil dalam ${duration}ms - total secrets: ${secrets.length}, filtered: ${filteredSecrets.length}`);
+        console.log(`[PPPoE Secrets] Berhasil dalam ${duration}ms - total secrets: ${formattedSecrets.length}`);
 
-        res.json(secretsWithStatus);
+        res.json(formattedSecrets);
     } catch (error) {
         const duration = Date.now() - startTime;
         console.error(`[PPPoE Secrets] Error setelah ${duration}ms:`, error.message);
@@ -157,36 +140,23 @@ exports.getNextIp = async (req, res) => {
 
         const { ip_start, ip_end, gateway } = pools[0];
 
-        // OPTIMIZATION: Ambil data dari local store (instant)
         const deviceId = req.query.deviceId ? parseInt(req.query.deviceId) : null;
-        let allSecrets = mikrotikStore.getSecrets(workspace_id, deviceId);
-        let allActive = mikrotikStore.getActive(workspace_id, deviceId);
-
-        // Jika store kosong (monitoring belum jalan), fallback ke API (slow)
-        if ((!allSecrets || allSecrets.length === 0) && (!allActive || allActive.length === 0)) {
-            console.log(`[Next IP] Store kosong, fallback ke MikroTik API...`);
-            allSecrets = await runCommandForWorkspace(workspace_id, '/ppp/secret/print', [
-                '.proplist=.id,name,profile,remote-address,last-logged-out,disabled'
-            ], deviceId).catch(() => []);
-
-            allActive = await runCommandForWorkspace(workspace_id, '/ppp/active/print', [
-                '.proplist=name,address,.id',
-                '?service=pppoe'
-            ], deviceId).catch(() => []);
+        
+        let query = 'SELECT remote_address as `remote-address`, current_address as address FROM pppoe_secrets WHERE workspace_id = ?';
+        let params = [workspace_id];
+        if (deviceId) {
+            query += ' AND device_id = ?';
+            params.push(deviceId);
         }
-
-        allSecrets = allSecrets || [];
-        allActive = allActive || [];
-
-        // 1. IP dari semua PPPoE Secrets
-        allSecrets.forEach(s => {
-            if (s['remote-address']) activeUsedIpsSet.add(s['remote-address']);
+        
+        const [rows] = await pool.query(query, params);
+        
+        // Gabungkan IP dari secrets dan active connections
+        rows.forEach(r => {
+            if (r['remote-address']) activeUsedIpsSet.add(r['remote-address']);
+            if (r.address) activeUsedIpsSet.add(r.address);
         });
 
-        // 2. IP dari semua koneksi yang sedang ONLINE
-        allActive.forEach(a => {
-            if (a.address) activeUsedIpsSet.add(a.address);
-        });
 
         // --- CIDR AND RANGE LOGIC ---
         let startLong, endLong;
@@ -248,12 +218,18 @@ exports.addSecret = async (req, res) => {
 
     try {
         try {
-            console.log(`[Add Secret][${requestId}] Pengecekan proaktif via local store (instant)...`);
+            console.log(`[Add Secret][${requestId}] Pengecekan proaktif via database (instant)...`);
             const targetDeviceId = req.query.deviceId || req.body.deviceId || null;
-            const localSecrets = mikrotikStore.getSecrets(req.user.workspace_id, targetDeviceId);
-            const isExisting = localSecrets.some(s => s.name === name);
+            
+            let checkQuery = 'SELECT 1 FROM pppoe_secrets WHERE workspace_id = ? AND name = ?';
+            let checkParams = [req.user.workspace_id, name];
+            if (targetDeviceId) {
+                checkQuery += ' AND device_id = ?';
+                checkParams.push(targetDeviceId);
+            }
+            const [existing] = await pool.query(checkQuery, checkParams);
 
-            if (isExisting) {
+            if (existing.length > 0) {
                 console.log(`[Add Secret][${requestId}] Proactive Detect (Cache): Secret sudah ada. Menanggapi sukses.`);
                 return res.status(201).json({
                     message: `Secret untuk ${name} sudah siap di MikroTik.`,

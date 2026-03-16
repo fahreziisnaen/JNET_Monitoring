@@ -99,6 +99,32 @@ async function startDeviceMonitor(workspaceId, deviceId, broadcastCallback) {
             const hotspotActive = await safeWrite('/ip/hotspot/active/print', [], 5000).catch(() => []);
             mikrotikStore.setHotspotActive(workspaceId, deviceId, hotspotActive);
 
+            // 2c. Active interfaces (tiap 3 detik)
+            const allInterfaces = await safeWrite('/interface/print', [], 7000).catch(() => []);
+            const activeInterfaces = allInterfaces
+                .filter(iface => iface.running === 'true' || iface.running === true)
+                .map(iface => ({ name: iface.name, type: iface.type || 'unknown', running: iface.running }));
+
+            // 2d. Traffic (tiap 3 detik, hanya interface yang running dan bukan PPPoE)
+            const interfacesToMonitor = allInterfaces
+                .filter(iface => {
+                    const type = (iface.type || '').toLowerCase();
+                    const running = iface.running === 'true' || iface.running === true;
+                    return running && !type.includes('pppoe') && !['loopback', 'pptp-in', 'l2tp-in'].includes(type);
+                })
+                .map(iface => iface.name);
+
+            const trafficResults = await Promise.all(
+                interfacesToMonitor.map(name =>
+                    safeWrite('/interface/monitor-traffic', [`=interface=${name}`, '=once='], 3000)
+                        .then(r => r[0]).catch(() => null)
+                )
+            );
+            const traffic = {};
+            trafficResults.forEach(result => {
+                if (result && result.name) traffic[result.name] = result;
+            });
+
             // 3. Secrets (tiap 20 detik)
             if (now - state.lastSecretFetch >= SECRET_REFRESH_MS || state.cachedSecrets.length === 0) {
                 const secrets = await safeWrite('/ppp/secret/print', [
@@ -135,13 +161,56 @@ async function startDeviceMonitor(workspaceId, deviceId, broadcastCallback) {
                     return enrichedSecret;
                 });
 
+                // --- 4.5. Sinkronisasi Real-Time ke Database (MySQL) ---
+                if (enriched.length > 0) {
+                    const values = enriched.map(s => [
+                        workspaceId,
+                        deviceId,
+                        s.name,
+                        s.profile || '',
+                        s['remote-address'] || null,
+                        s.disabled === 'true' || s.disabled === true ? 1 : 0,
+                        s.isActive ? 1 : 0,
+                        s.uptime || null,
+                        s.currentAddress || null,
+                        s['last-logged-out'] || null,
+                        s.activeConnectionId || null
+                    ]);
+                    
+                    const query = `
+                        INSERT INTO pppoe_secrets 
+                        (workspace_id, device_id, name, profile, remote_address, disabled, is_active, uptime, current_address, last_logged_out, active_connection_id)
+                        VALUES ?
+                        ON DUPLICATE KEY UPDATE
+                        profile = VALUES(profile),
+                        remote_address = VALUES(remote_address),
+                        disabled = VALUES(disabled),
+                        is_active = VALUES(is_active),
+                        uptime = VALUES(uptime),
+                        current_address = VALUES(current_address),
+                        last_logged_out = VALUES(last_logged_out),
+                        active_connection_id = VALUES(active_connection_id)
+                    `;
+                    
+                    try {
+                        await pool.query(query, [values]);
+                        // Cleanup secrets yang sudah dihapus di router (yang tidak terupdate lebih dari 1 menit)
+                        await pool.query(
+                            `DELETE FROM pppoe_secrets WHERE workspace_id = ? AND device_id = ? AND updated_at < DATE_SUB(NOW(), INTERVAL 1 MINUTE)`, 
+                            [workspaceId, deviceId]
+                        );
+                    } catch (dbErr) {
+                        console.error(`[BGMonitor] DB Sync Error device ${deviceId}: ${dbErr.message}`);
+                    }
+                }
+
                 broadcastCallback(workspaceId, deviceId, {
                     type: 'batch-update',
                     payload: {
                         resource,
                         pppoeSecrets: enriched,
-                        activeInterfaces: [],
-                        traffic: {},
+                        activeInterfaces,
+                        traffic,
                         hotspotActive
                     }
                 });

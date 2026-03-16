@@ -143,17 +143,15 @@ exports.orphanCheck = async (req, res) => {
 
             const deviceId = parseInt(key);
             try {
-                const secrets = await runCommandForWorkspace(
-                    workspace_id,
-                    '/ppp/secret/print',
-                    [],
-                    deviceId
+                // Baca dari database real-time cache (pppoe_secrets)
+                const [secrets] = await pool.query(
+                    'SELECT name FROM pppoe_secrets WHERE workspace_id = ? AND device_id = ?',
+                    [workspace_id, deviceId]
                 );
 
-                // Safety guard: jika kosong, artinya device belum ready / store kosong
-                // Jangan tandai semua client sebagai orphan — skip saja
-                if (!secrets || secrets.length === 0) {
-                    console.warn(`[ORPHAN CHECK] Device ${deviceId} mengembalikan secrets kosong (skip, mungkin belum ready)`);
+                // Safety guard: jika kosong, skip (device belum ready / belum di-sync)
+                if (secrets.length === 0) {
+                    console.warn(`[ORPHAN CHECK] Device ${deviceId} secrets kosong (skip)`);
                     return;
                 }
 
@@ -183,8 +181,16 @@ exports.getUnlinkedPppoeSecrets = async (req, res) => {
     const { workspace_id } = req.user;
     const deviceId = req.query.deviceId ? parseInt(req.query.deviceId) : null;
     try {
-        // Get all PPPoE secrets from MikroTik
-        const allSecrets = await runCommandForWorkspace(workspace_id, '/ppp/secret/print', ['?disabled=no'], deviceId);
+        // Ambil secrets dari database (diisi oleh backgroundMonitor)
+        let query = 'SELECT name, profile, remote_address as `remote-address` FROM pppoe_secrets WHERE workspace_id = ? AND disabled = 0';
+        let params = [workspace_id];
+        
+        if (deviceId) {
+            query += ' AND device_id = ?';
+            params.push(deviceId);
+        }
+        
+        const [allSecrets] = await pool.query(query, params);
 
         // Get all existing clients
         const [existingClients] = await pool.query(

@@ -167,71 +167,42 @@ exports.getAggregatedSecrets = async (req, res) => {
             return res.status(400).json({ message: 'Valid workspaceIds array is required' });
         }
 
-        // Ambil informasi workspace dan nama mikrotik aktifnya
-        const [workspaces] = await pool.query(`
-            SELECT w.id, w.name, md.id as device_id, md.name as router_name 
-            FROM workspaces w
-            LEFT JOIN mikrotik_devices md ON md.id = w.active_device_id
-            WHERE w.id IN (?)
+        // Ambil data secrets langsung dari database real-time cache (pppoe_secrets)
+        const [secrets] = await pool.query(`
+            SELECT 
+                ps.name, 
+                ps.profile, 
+                ps.remote_address as 'remote-address',
+                ps.disabled,
+                ps.is_active as isActive,
+                ps.uptime,
+                ps.current_address as currentAddress,
+                ps.last_logged_out as 'last-logged-out',
+                ps.active_connection_id as activeConnectionId,
+                ps.workspace_id,
+                ps.device_id,
+                w.name as workspace_name,
+                md.name as router_name
+            FROM pppoe_secrets ps
+            JOIN workspaces w ON ps.workspace_id = w.id
+            JOIN mikrotik_devices md ON ps.device_id = md.id
+            WHERE ps.workspace_id IN (?)
         `, [validWorkspaceIds]);
 
-        let aggregatedSecrets = [];
-
-        // Loop setiap workspace yang diminta
-        for (const workspace of workspaces) {
-            const workspaceId = workspace.id;
-
-            // Ambil data secrets dan active users dari store realtime (memory) untuk workspace ini
-            const secrets = mikrotikStore.getSecrets(workspaceId, workspace.device_id);
-            const activeUsers = mikrotikStore.getActive(workspaceId, workspace.device_id);
-            const status = mikrotikStore.getDeviceStatus(workspaceId, workspace.device_id);
-
-            // Jika offline atau tidak ada data di store, kita kembalikan array kosong untuk workspace tersebut,
-            // atau tambahkan properti penanda
-            if (!secrets || secrets.length === 0) {
-                continue; // Skip workspace ini jika belum ada data secrets di memory
+        // Format boolean dan resolusi status router
+        const aggregatedSecrets = secrets.map(s => {
+            const secret = { ...s };
+            secret.disabled = s.disabled === 1 ? 'true' : 'false';
+            secret.isActive = s.isActive === 1;
+            
+            // Replicate original behavior fallback remote-address
+            if (!secret['remote-address'] && secret.currentAddress) {
+                secret['remote-address'] = secret.currentAddress;
             }
-
-            // Gabungkan secrets dengan data active seperti di server.js
-            const activeUserMap = new Map();
-            if (activeUsers) {
-                activeUsers.forEach(user => {
-                    if (user.name) {
-                        activeUserMap.set(user.name, {
-                            address: user.address || null,
-                            uptime: user.uptime || null,
-                            service: user.service || 'pppoe',
-                            '.id': user['.id'] || null
-                        });
-                    }
-                });
-            }
-
-            const enrichedSecrets = secrets.map(secret => {
-                const activeInfo = activeUserMap.get(secret.name);
-                const isActive = !!activeInfo;
-
-                const enriched = {
-                    ...secret,
-                    workspace_name: workspace.name,
-                    workspace_id: workspaceId,
-                    router_name: workspace.router_name || 'Unknown Router',
-                    mikrotik_status: status // Indikasi apakah mikrotiknya connect
-                };
-
-                enriched.isActive = isActive;
-                if (isActive && activeInfo.uptime) enriched.uptime = activeInfo.uptime;
-                if (isActive && activeInfo['.id']) enriched.activeConnectionId = activeInfo['.id'];
-                if (isActive && activeInfo.address) {
-                    enriched.currentAddress = activeInfo.address;
-                    if (!enriched['remote-address']) enriched['remote-address'] = activeInfo.address;
-                }
-
-                return enriched;
-            });
-
-            aggregatedSecrets = aggregatedSecrets.concat(enrichedSecrets);
-        }
+            
+            secret.mikrotik_status = mikrotikStore.getDeviceStatus(s.workspace_id, s.device_id) || 'disconnected';
+            return secret;
+        });
 
         res.json({
             secrets: aggregatedSecrets

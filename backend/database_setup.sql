@@ -35,6 +35,7 @@ DROP TABLE IF EXISTS `resource_logs`;
 DROP TABLE IF EXISTS `pppoe_usage_logs`;
 DROP TABLE IF EXISTS `downtime_events`;
 DROP TABLE IF EXISTS `pppoe_user_status`;
+DROP TABLE IF EXISTS `pppoe_secrets`;
 DROP TABLE IF EXISTS `workspace_invites`;
 DROP TABLE IF EXISTS `clients`;
 DROP TABLE IF EXISTS `odp_user_connections`;
@@ -191,6 +192,7 @@ CREATE TABLE `network_assets` (
 CREATE TABLE `clients` (
   `id` int NOT NULL AUTO_INCREMENT,
   `workspace_id` int NOT NULL,
+  `device_id` int DEFAULT NULL COMMENT 'Device MikroTik asal client ini',
   `pppoe_secret_name` varchar(100) NOT NULL,
   `client_name` varchar(100) DEFAULT NULL,
   `whatsapp_number` varchar(20) DEFAULT NULL,
@@ -203,6 +205,7 @@ CREATE TABLE `clients` (
   PRIMARY KEY (`id`),
   UNIQUE KEY `unique_pppoe_secret_per_workspace` (`workspace_id`, `pppoe_secret_name`),
   KEY `idx_workspace_id` (`workspace_id`),
+  KEY `idx_device_id` (`device_id`),
   KEY `idx_odp_asset_id` (`odp_asset_id`),
   CONSTRAINT `fk_clients_workspace` FOREIGN KEY (`workspace_id`) REFERENCES `workspaces` (`id`) ON DELETE CASCADE,
   CONSTRAINT `fk_clients_odp_asset` FOREIGN KEY (`odp_asset_id`) REFERENCES `network_assets` (`id`) ON DELETE SET NULL
@@ -248,6 +251,34 @@ CREATE TABLE `pppoe_user_status` (
   PRIMARY KEY (`workspace_id`, `device_id`, `pppoe_user`),
   CONSTRAINT `fk_pppoe_status_workspace` FOREIGN KEY (`workspace_id`) REFERENCES `workspaces` (`id`) ON DELETE CASCADE,
   CONSTRAINT `fk_pppoe_status_device` FOREIGN KEY (`device_id`) REFERENCES `mikrotik_devices` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- =====================================================
+-- PPPoE Secrets Cache Table
+-- =====================================================
+-- Cache real-time PPPoE secret data dari MikroTik ke DB
+-- Diisi oleh backgroundMonitor setiap 3 detik (active status)
+-- dan setiap 20 detik (full secrets refresh)
+-- Memungkinkan frontend baca dari DB tanpa langsung ke MikroTik
+
+CREATE TABLE `pppoe_secrets` (
+  `workspace_id` INT NOT NULL,
+  `device_id` INT NOT NULL,
+  `name` VARCHAR(100) NOT NULL,
+  `profile` VARCHAR(100) DEFAULT NULL,
+  `remote_address` VARCHAR(50) DEFAULT NULL,
+  `disabled` TINYINT(1) DEFAULT '0',
+  `is_active` TINYINT(1) DEFAULT '0',
+  `uptime` VARCHAR(50) DEFAULT NULL,
+  `current_address` VARCHAR(50) DEFAULT NULL,
+  `last_logged_out` VARCHAR(50) DEFAULT NULL,
+  `active_connection_id` VARCHAR(50) DEFAULT NULL COMMENT 'MikroTik .id dari PPP active connection untuk kick',
+  `updated_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`workspace_id`, `device_id`, `name`),
+  KEY `idx_device_id` (`device_id`),
+  KEY `idx_workspace_is_active` (`workspace_id`, `device_id`, `is_active`),
+  CONSTRAINT `fk_pppoe_secrets_workspace` FOREIGN KEY (`workspace_id`) REFERENCES `workspaces` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_pppoe_secrets_device` FOREIGN KEY (`device_id`) REFERENCES `mikrotik_devices` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE `workspace_invites` (
