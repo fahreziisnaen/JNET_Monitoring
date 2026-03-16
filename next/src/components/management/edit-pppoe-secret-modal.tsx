@@ -14,9 +14,10 @@ interface EditPppoeSecretModalProps {
   onSuccess: () => void;
   secretToEdit: any | null;
   nocWorkspaceId?: number; // Added to handle cross-workspace editing from NOC
+  deviceId?: number; // Added to handle cross-router editing
 }
 
-const EditPppoeSecretModal = ({ isOpen, onClose, onSuccess, secretToEdit, nocWorkspaceId }: EditPppoeSecretModalProps) => {
+const EditPppoeSecretModal = ({ isOpen, onClose, onSuccess, secretToEdit, nocWorkspaceId, deviceId }: EditPppoeSecretModalProps) => {
   const { pppoeSecrets } = useMikrotik() || { pppoeSecrets: [] };
   const [formData, setFormData] = useState({ name: '', password: '', profile: '' });
   const [profiles, setProfiles] = useState<string[]>([]);
@@ -54,9 +55,13 @@ const EditPppoeSecretModal = ({ isOpen, onClose, onSuccess, secretToEdit, nocWor
     // Jika cache tidak ada atau expired, fetch dari API
     setProfilesLoading(true);
     try {
-      // Append workspaceId query param if nocWorkspaceId is defined
-      const queryParams = nocWorkspaceId ? `?workspaceId=${nocWorkspaceId}` : '';
-      const res = await apiFetch(`${apiUrl}/api/pppoe/profiles${queryParams}`);
+      // Append workspaceId and deviceId query param if defined
+      const params = new URLSearchParams();
+      if (nocWorkspaceId) params.append('workspaceId', nocWorkspaceId.toString());
+      if (deviceId) params.append('deviceId', deviceId.toString());
+      const queryStr = params.toString() ? `?${params.toString()}` : '';
+      
+      const res = await apiFetch(`${apiUrl}/api/pppoe/profiles${queryStr}`);
       if (!res.ok) throw new Error('Gagal memuat profil');
       const data = await res.json();
       const sortedData = Array.from(new Set<string>((data as string[]).filter((p) => Boolean(p && p.trim())))).sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()));
@@ -99,10 +104,15 @@ const EditPppoeSecretModal = ({ isOpen, onClose, onSuccess, secretToEdit, nocWor
       // Cek apakah profile berubah
       const profileChanged = formData.profile !== secretToEdit.profile;
 
-      const queryParams = nocWorkspaceId ? `?workspaceId=${nocWorkspaceId}` : '';
+      const params = new URLSearchParams();
+      if (nocWorkspaceId) params.append('workspaceId', nocWorkspaceId.toString());
+      if (deviceId) params.append('deviceId', deviceId.toString());
+      const queryStr = params.toString() ? `?${params.toString()}` : '';
+
+      const targetId = encodeURIComponent(secretToEdit['.id'] || secretToEdit.name);
 
       // Update secret terlebih dahulu
-      const res = await apiFetch(`${apiUrl}/api/pppoe/secrets/${secretToEdit['.id']}${queryParams}`, {
+      const res = await apiFetch(`${apiUrl}/api/pppoe/secrets/${targetId}${queryStr}`, {
         method: 'PUT',
         body: JSON.stringify(formData)
       });
@@ -123,8 +133,8 @@ const EditPppoeSecretModal = ({ isOpen, onClose, onSuccess, secretToEdit, nocWor
 
         if (activeConnectionId) {
           try {
-            const encodedId = encodeURIComponent(activeConnectionId);
-            const kickRes = await apiFetch(`${apiUrl}/api/pppoe/active/${encodedId}/kick${queryParams}`, {
+            const encodedActiveId = encodeURIComponent(activeConnectionId);
+            const kickRes = await apiFetch(`${apiUrl}/api/pppoe/active/${encodedActiveId}/kick${queryStr}`, {
               method: 'POST'
             });
             if (!kickRes.ok) {
