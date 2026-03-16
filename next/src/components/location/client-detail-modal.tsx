@@ -118,6 +118,7 @@ const ClientDetailModal = ({
   const [error, setError] = useState<string | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [showFullImage, setShowFullImage] = useState(false);
+  const [deviceName, setDeviceName] = useState<string | null>(null);
   const apiUrl = process.env.NEXT_PUBLIC_API_BASE_URL;
 
   // Get PPPoE details from WebSocket data
@@ -186,7 +187,20 @@ const ClientDetailModal = ({
   useEffect(() => {
     if (client && isOpen) {
       setError(null);
+      setDeviceName(null);
       fetchClientData(true);
+
+      // Fetch device name
+      const deviceId = (client as any).device_id;
+      if (deviceId) {
+        apiFetch(`${apiUrl}/api/devices`)
+          .then(res => res.ok ? res.json() : [])
+          .then((devices: any[]) => {
+            const device = devices.find((d: any) => d.id === deviceId);
+            setDeviceName(device ? `${device.name} (${device.host})` : `Device #${deviceId}`);
+          })
+          .catch(() => {});
+      }
 
       const intervalId = setInterval(() => {
         fetchClientData(false);
@@ -200,7 +214,7 @@ const ClientDetailModal = ({
       setUsageData(null);
       setLoading(true);
     }
-  }, [client, isOpen, fetchClientData]);
+  }, [client, isOpen, fetchClientData, apiUrl]);
 
   // Handle ESC key to close modal or full image
   useEffect(() => {
@@ -376,6 +390,16 @@ const ClientDetailModal = ({
                           <span className="text-sm">
                             ODP:{' '}
                             <span className="font-semibold">{odpName}</span>
+                          </span>
+                        </div>
+                      )}
+
+                      {deviceName && (
+                        <div className="flex items-center gap-3">
+                          <Server size={16} className="text-muted-foreground" />
+                          <span className="text-sm">
+                            MikroTik:{' '}
+                            <span className="font-semibold">{deviceName}</span>
                           </span>
                         </div>
                       )}
