@@ -75,41 +75,23 @@ const ManagementPage = () => {
       return;
     }
 
-    // Gunakan data WebSocket untuk semua summary (sama seperti summary aktif)
+    // Gunakan data WebSocket untuk semua summary
     const secretsArray = Array.isArray(pppoeSecrets) ? pppoeSecrets : [];
+    const totalSecrets = secretsArray.length;
+    const activeCount = secretsArray.filter((secret: any) => secret.isActive === true).length;
+    const inactiveCount = Math.max(0, totalSecrets - activeCount);
 
-    // HANYA jika data benar-benar ada, baru kita update summary dan matikan loading
-    if (secretsArray.length > 0) {
-      const totalSecrets = secretsArray.length;
-      const activeCount = secretsArray.filter((secret: any) => secret.isActive === true).length;
-      const inactiveCount = Math.max(0, totalSecrets - activeCount);
-
-      // Update summary dari WebSocket data (real-time, sama seperti aktif)
-      setSummary(prev => {
-        // Hanya update jika ada perubahan
-        if (prev.total !== totalSecrets || prev.active !== activeCount || prev.inactive !== inactiveCount) {
-          console.log('[Management Page] Update summary dari WebSocket:', {
-            total: totalSecrets,
-            active: activeCount,
-            inactive: inactiveCount,
-            pppoeSecretsCount: secretsArray.length
-          });
-
-          return {
-            total: totalSecrets,
-            active: activeCount,
-            inactive: inactiveCount
-          };
-        }
-
-        return prev;
-      });
-
-      // Matikan loading selamanya jika kita sudah punya data awal
-      if (loading) {
-        console.log('[Management Page] First data received, disabling loading spinner forever.');
-        setLoading(false);
+    // Selalu update summary (termasuk saat data dikosongkan saat ganti device)
+    setSummary(prev => {
+      if (prev.total !== totalSecrets || prev.active !== activeCount || prev.inactive !== inactiveCount) {
+        return { total: totalSecrets, active: activeCount, inactive: inactiveCount };
       }
+      return prev;
+    });
+
+    // Matikan loading setelah ada response (data kosong pun dihitung)
+    if (loading) {
+      setLoading(false);
     }
   }, [pppoeSecrets, selectedDeviceId, loading]);
 
