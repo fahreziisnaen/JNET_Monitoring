@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from '@/components/motion';
-import { X, User, Loader2, MapPin, Unlink, Camera, Image as ImageIcon, Search, ChevronDown } from 'lucide-react';
+import { X, User, Loader2, MapPin, Unlink, Camera, Image as ImageIcon, Search, ChevronDown, Server } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { apiFetch } from '@/utils/api';
@@ -36,6 +36,9 @@ const EditClientModal = ({ isOpen, onClose, onSuccess, client, assets = [] }: Ed
   const odpDropdownRef = React.useRef<HTMLDivElement>(null);
   const apiUrl = process.env.NEXT_PUBLIC_API_BASE_URL;
 
+  // Device info
+  const [deviceName, setDeviceName] = useState<string | null>(null);
+
   // Filter assets untuk hanya ODP
   const odpAssets = assets.filter(a => a.type === 'ODP');
 
@@ -52,8 +55,21 @@ const EditClientModal = ({ isOpen, onClose, onSuccess, client, assets = [] }: Ed
       setIsChangingOdp(false);
       setOdpSearchQuery(client.odp_name || '');
       setError('');
+      setDeviceName(null);
+
+      // Fetch device name jika client punya device_id
+      const deviceId = (client as any).device_id;
+      if (deviceId) {
+        apiFetch(`${apiUrl}/api/devices`)
+          .then(res => res.ok ? res.json() : [])
+          .then((devices: any[]) => {
+            const device = devices.find((d: any) => d.id === deviceId);
+            setDeviceName(device ? `${device.name} (${device.host})` : `Device #${deviceId}`);
+          })
+          .catch(() => setDeviceName(`Device #${deviceId}`));
+      }
     }
-  }, [client, isOpen]);
+  }, [client, isOpen, apiUrl]);
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -220,6 +236,11 @@ const EditClientModal = ({ isOpen, onClose, onSuccess, client, assets = [] }: Ed
                   disabled
                   className="bg-secondary"
                 />
+                {deviceName && (
+                  <p className="text-xs text-muted-foreground mt-1 flex items-center gap-1">
+                    <Server size={11} /> MikroTik: <span className="font-medium">{deviceName}</span>
+                  </p>
+                )}
               </div>
 
               <div className="grid grid-cols-2 gap-4">
