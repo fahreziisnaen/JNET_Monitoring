@@ -10,17 +10,38 @@ export const useMikrotik = () => {
     return useContext(MikrotikContext);
 };
 
+interface DeviceData {
+    pppoeSecrets: any[];
+    resource: any;
+    activeInterfaces: Array<{ name: string; type: string; running: boolean }>;
+    traffic: any;
+    isConnected: boolean;
+}
+
+const DEFAULT_DEVICE_DATA: DeviceData = {
+    pppoeSecrets: [],
+    resource: null,
+    activeInterfaces: [],
+    traffic: {},
+    isConnected: false,
+};
+
 export const MikrotikProvider = ({ children }: { children: React.ReactNode }) => {
     const { user } = useAuth();
     const [selectedDeviceId, setSelectedDeviceId] = useState<number | null>(null);
-    const [resource, setResource] = useState(null);
-    const [pppoeSecrets, setPppoeSecrets] = useState<any[]>([]);
-    const [activeInterfaces, setActiveInterfaces] = useState<Array<{ name: string, type: string, running: boolean }>>([]);
-    const [traffic, setTraffic] = useState({});
-    const [isConnected, setIsConnected] = useState(false);
 
-    const ws = useRef<WebSocket | null>(null);
-    const intentionalClose = useRef(false); // Flag: true = tutup sengaja (ganti device), jangan reconnect
+    // Per-device data stored in ref to avoid excessive re-renders
+    const deviceDataRef = useRef<Map<number, DeviceData>>(new Map());
+    // Per-device WS pool
+    const wsPoolRef = useRef<Map<number, WebSocket>>(new Map());
+    // Per-device reconnect timeouts
+    const reconnectTimersRef = useRef<Map<number, NodeJS.Timeout>>(new Map());
+    // Per-device reconnect attempt counters
+    const reconnectAttemptsRef = useRef<Map<number, number>>(new Map());
+
+    // Tick counter: increment to trigger re-render when device data changes
+    const [tick, setTick] = useState(0);
+    const triggerRender = useCallback(() => setTick(t => t + 1), []);
 
     // Load selected device from localStorage
     useEffect(() => {
@@ -29,9 +50,7 @@ export const MikrotikProvider = ({ children }: { children: React.ReactNode }) =>
             if (saved) {
                 try {
                     const deviceId = parseInt(saved);
-                    if (!isNaN(deviceId)) {
-                        setSelectedDeviceId(deviceId);
-                    }
+                    if (!isNaN(deviceId)) setSelectedDeviceId(deviceId);
                 } catch (e) {
                     console.error('Failed to parse saved device ID:', e);
                 }
@@ -39,436 +58,227 @@ export const MikrotikProvider = ({ children }: { children: React.ReactNode }) =>
         }
     }, [user]);
 
-    useEffect(() => {
-        if (!user) {
-            if (ws.current && (ws.current.readyState === WebSocket.OPEN || ws.current.readyState === WebSocket.CONNECTING)) {
-                ws.current.close();
-                ws.current = null;
-            }
-            setIsConnected(false);
-            setResource(null);
-            setPppoeSecrets([]);
-            setActiveInterfaces([]);
-            setTraffic({});
+    // Connect a single device WebSocket
+    const connectDevice = useCallback((deviceId: number, workspaceId: number) => {
+        // Already connected or connecting?
+        const existing = wsPoolRef.current.get(deviceId);
+        if (existing && (existing.readyState === WebSocket.OPEN || existing.readyState === WebSocket.CONNECTING)) {
             return;
         }
 
-        // Fetch snapshot terlebih dahulu untuk instant load
-        const fetchSnapshot = async () => {
-            if (!selectedDeviceId) return; // Wait for device selection
+        const wsUrl = process.env.NEXT_PUBLIC_WS_BASE_URL;
+        if (!wsUrl) return;
 
-            try {
-                const apiUrl = process.env.NEXT_PUBLIC_API_BASE_URL;
-                const res = await apiFetch(`${apiUrl}/api/dashboard/snapshot?deviceId=${selectedDeviceId}`);
+        const token = getAuthToken();
+        if (!token) return;
 
-                if (res.ok) {
-                    const data = await res.json();
-                    // Set data dari snapshot jika ada
-                    if (data.resource) {
-                        setResource(data.resource);
-                    }
-                    if (data.pppoeSecrets && Array.isArray(data.pppoeSecrets)) {
-                        setPppoeSecrets(data.pppoeSecrets);
-                    } else if (data.pppoeActive && Array.isArray(data.pppoeActive)) {
-                        // Backward compatibility: jika masih ada pppoeActive dari snapshot, convert ke pppoeSecrets
-                        const convertedSecrets = data.pppoeActive.map((active: any) => ({
-                            name: active.name,
-                            profile: active.profile || '',
-                            'remote-address': active.address || null,
-                            disabled: 'false',
-                            isActive: true,
-                            uptime: active.uptime || null,
-                            currentAddress: active.address || null,
-                            activeConnectionId: active['.id'] || undefined // Include .id untuk kick
-                        }));
-                        setPppoeSecrets(convertedSecrets);
-                    }
-                    if (data.activeInterfaces && Array.isArray(data.activeInterfaces)) {
-                        setActiveInterfaces(data.activeInterfaces);
-                    }
-                    if (data.traffic && typeof data.traffic === 'object') {
-                        setTraffic(data.traffic);
-                    }
-                    if (data.deviceStatus === 'disconnected') {
-                        setIsConnected(false);
-                    } else if (data.deviceStatus === 'connected') {
-                        setIsConnected(true);
-                    }
-                } else {
-                    console.warn('[Snapshot] Response tidak OK:', res.status);
-                }
-            } catch (error) {
-                console.error('[Snapshot] Error fetching snapshot:', error);
-                // Continue dengan WebSocket connection meskipun snapshot gagal
-            }
-        };
-
-        fetchSnapshot();
-
-        let reconnectTimeout: NodeJS.Timeout | null = null;
-        let reconnectAttempts = 0;
-        const maxReconnectAttempts = 5;
-        const reconnectDelay = 3000; // 3 detik
-
-        const connectWebSocket = () => {
-            if (!selectedDeviceId) {
-                console.log('[WebSocket] Skip connect - selectedDeviceId belum tersedia');
-                return; // Wait for device selection
-            }
-
-            // Pastikan user sudah ada
-            if (!user) {
-                console.log('[WebSocket] Skip connect - user belum tersedia');
-                return;
-            }
-
-            // Cek apakah sudah ada koneksi yang sedang connecting atau open
-            if (ws.current) {
-                const currentState = ws.current.readyState;
-                if (currentState === WebSocket.CONNECTING) {
-                    console.log('[WebSocket] Koneksi sedang dalam proses, skip');
-                    return; // Jangan buat koneksi baru jika sedang connecting
-                }
-
-                if (currentState === WebSocket.OPEN) {
-                    // Check if device changed
-                    try {
-                        const currentUrl = ws.current.url;
-                        if (currentUrl) {
-                            const urlObj = new URL(currentUrl);
-                            const expectedDeviceId = urlObj.searchParams.get('deviceId');
-                            if (expectedDeviceId === selectedDeviceId.toString()) {
-                                console.log('[WebSocket] Sudah terhubung ke device yang sama, skip');
-                                return; // Same device, already connected
-                            } else {
-                                // Device changed, close and reconnect
-                                console.log('[WebSocket] Device berubah, menutup koneksi lama');
-                                if (ws.current && (ws.current.readyState === WebSocket.OPEN || ws.current.readyState === WebSocket.CONNECTING)) {
-                                    ws.current.close();
-                                    ws.current = null;
-                                }
-                            }
-                        }
-                    } catch (urlError) {
-                        // Jika URL tidak valid, close dan reconnect
-                        console.warn('[WebSocket] Error parsing URL, menutup koneksi:', urlError);
-                        if (ws.current) {
-                            ws.current.close();
-                            ws.current = null;
-                        }
-                    }
-                }
-            }
-
-            const wsUrl = process.env.NEXT_PUBLIC_WS_BASE_URL;
-            if (!wsUrl) {
-                console.error('[WebSocket] NEXT_PUBLIC_WS_BASE_URL tidak dikonfigurasi!');
-                return;
-            }
-
-            try {
-                // WebSocket tidak bisa mengirim Authorization header atau cookie dengan mudah
-                // Jadi kita kirim token via query parameter
-                // Gunakan helper function yang sudah ada untuk mendapatkan token dari localStorage atau cookie
-                const token = getAuthToken();
-                if (!token) {
-                    console.error('[WebSocket] Tidak ada token ditemukan di localStorage maupun cookie, tidak bisa connect');
-                    setIsConnected(false);
-                    return;
-                }
-
-                const wsUrlWithParams = `${wsUrl}?deviceId=${selectedDeviceId}&token=${encodeURIComponent(token)}`;
-                console.log('[WebSocket] Connecting dengan token dari localStorage/cookie, deviceId:', selectedDeviceId);
-
-                // Tambahkan small delay untuk memastikan tidak ada race condition
-                // Tapi jangan delay jika ini retry
-                const socket = new WebSocket(wsUrlWithParams);
-                ws.current = socket;
-
-                // Set connection timeout untuk mencegah hanging
-                const connectionTimeout = setTimeout(() => {
-                    if (socket.readyState === WebSocket.CONNECTING) {
-                        console.warn('[WebSocket] Connection timeout setelah 10 detik, menutup koneksi');
-                        socket.close();
-                    }
-                }, 10000);
-
-                socket.onopen = () => {
-                    clearTimeout(connectionTimeout);
-                    console.log("[WebSocket] Koneksi berhasil dibuat.");
-                    // JANGAN set isConnected=true di sini!
-                    // isConnected hanya boleh di-set oleh pesan 'connection-status' dari backend,
-                    // karena backend yang tahu apakah Mikrotik router benar-benar terhubung.
-                    reconnectAttempts = 0; // Reset counter setelah berhasil connect
-                };
-
-                socket.onclose = (event) => {
-                    clearTimeout(connectionTimeout);
-                    setIsConnected(false);
-                    ws.current = null;
-
-                    // Dispatch status event for other components (like ConnectionStatusToast)
-                    window.dispatchEvent(new CustomEvent('mikrotik-connection-status', {
-                        detail: {
-                            status: 'disconnected',
-                            message: event.reason || 'Koneksi ke server terputus.',
-                            code: event.code
-                        }
-                    }));
-
-                    // Log close reason jika ada
-                    if (event.code !== 1000) { // 1000 = normal closure
-                        console.warn(`[WebSocket] Koneksi ditutup dengan code ${event.code}, reason: ${event.reason || 'Tidak ada alasan'}`);
-                    } else {
-                        console.log('[WebSocket] Koneksi ditutup.');
-                    }
-
-                    // Jika ini adalah intentional close (ganti device), JANGAN reconnect
-                    if (intentionalClose.current) {
-                        console.log('[WebSocket] Intentional close (device changed), skip auto-reconnect');
-                        intentionalClose.current = false;
-                        return;
-                    }
-
-                    // Auto-reconnect jika masih ada user dan belum mencapai max attempts
-                    // Jangan reconnect jika close code adalah 1008 (Unauthorized) atau 1003 (Invalid data)
-                    if (user && reconnectAttempts < maxReconnectAttempts && event.code !== 1008 && event.code !== 1003) {
-                        reconnectAttempts++;
-                        console.log(`[WebSocket] Mencoba reconnect (${reconnectAttempts}/${maxReconnectAttempts}) dalam ${reconnectDelay / 1000} detik...`);
-                        reconnectTimeout = setTimeout(() => {
-                            connectWebSocket();
-                        }, reconnectDelay);
-                    } else if (reconnectAttempts >= maxReconnectAttempts) {
-                        console.error('[WebSocket] Gagal reconnect setelah beberapa kali percobaan.');
-                    } else if (event.code === 1008 || event.code === 1003) {
-                        console.error('[WebSocket] Koneksi ditolak oleh server (Unauthorized/Invalid), tidak akan reconnect.');
-                    }
-                };
-
-                socket.onerror = (error) => {
-                    clearTimeout(connectionTimeout);
-                    // Jangan log error jika socket sudah ditutup atau dalam proses closing
-                    if (socket.readyState === WebSocket.CLOSING || socket.readyState === WebSocket.CLOSED) {
-                        return;
-                    }
-                    console.warn('[WebSocket Error]:', error);
-                    setIsConnected(false);
-
-                    // Dispatch status event for other components
-                    window.dispatchEvent(new CustomEvent('mikrotik-connection-status', {
-                        detail: {
-                            status: 'disconnected',
-                            message: 'Terjadi kesalahan pada koneksi WebSocket.'
-                        }
-                    }));
-                };
-
-                socket.onmessage = (event) => {
-                    try {
-                        const message = JSON.parse(event.data);
-                        console.log("[WebSocket] Pesan diterima:", message.type, message.payload ? 'dengan payload' : 'tanpa payload');
-                        if (message.type === 'batch-update' && message.payload) {
-                            console.log("[WebSocket] Memproses batch-update:", {
-                                hasResource: !!message.payload.resource && Object.keys(message.payload.resource).length > 0,
-                                pppoeSecretsCount: message.payload.pppoeSecrets?.length || 0,
-                                activeCount: message.payload.pppoeSecrets?.filter((s: any) => s.isActive).length || 0,
-                                activeInterfacesCount: message.payload.activeInterfaces?.length || 0,
-                                trafficCount: Object.keys(message.payload.traffic || {}).length
-                            });
-                            setResource(message.payload.resource);
-                            setPppoeSecrets(message.payload.pppoeSecrets || []);
-                            setActiveInterfaces(message.payload.activeInterfaces || []);
-                            setTraffic(message.payload.traffic);
-                        } else if (message.type === 'pppoe-update' && message.payload) {
-                            // Bandingkan jumlah data untuk optimasi sederhana
-                            // Jika data sangat sering dikirim, kita bisa pakai deep equality check,
-                            // tapi untuk sekarang update state langsung sudah cukup responsif.
-                            if (JSON.stringify(message.payload.pppoeSecrets) !== JSON.stringify(pppoeSecrets)) {
-                                console.log("[WebSocket] Update pppoeSecrets instan diterima.");
-                                setPppoeSecrets(message.payload.pppoeSecrets || []);
-                            }
-                        } else if (message.type === 'downtime-notification' && message.payload) {
-                            // Forward downtime notification ke notification provider via custom event
-                            console.log("[WebSocket] Menerima downtime notification:", message.payload);
-                            window.dispatchEvent(new CustomEvent('downtime-notification', {
-                                detail: message.payload
-                            }));
-                        } else if (message.type === 'connection-status' && message.payload) {
-                            // Forward connection status to other components
-                            console.log("[WebSocket] Menerima connection status:", message.payload);
-                            window.dispatchEvent(new CustomEvent('mikrotik-connection-status', {
-                                detail: message.payload
-                            }));
-
-                            if (message.payload.status === 'connected') {
-                                setIsConnected(true);
-                                // If Mikrotik just reconnected, force a data refresh to unfreeze the UI immediately
-                                if (ws.current && ws.current.readyState === WebSocket.OPEN) {
-                                    console.log('[MikrotikProvider] Koneksi pulih, meminta data terbaru dari server...');
-                                    ws.current.send(JSON.stringify({ type: 'force-refresh', target: 'secrets' }));
-                                }
-                            } else if (message.payload.status === 'disconnected') {
-                                setIsConnected(false);
-                            }
-                        } else if (message.type === 'reconnect-notification' && message.payload) {
-                            // Forward reconnect notification ke notification provider via custom event
-                            console.log("[WebSocket] Menerima reconnect notification:", message.payload);
-                            window.dispatchEvent(new CustomEvent('reconnect-notification', {
-                                detail: message.payload
-                            }));
-                        } else {
-                            console.warn("[WebSocket] Pesan tidak dikenali atau tidak memiliki payload:", message);
-                        }
-                    } catch (e) {
-                        console.error("[WebSocket] Gagal parsing pesan:", e, "Raw data:", event.data);
-                    }
-                };
-            } catch (error) {
-                console.error('[WebSocket] Error saat membuat koneksi:', error);
-                setIsConnected(false);
-            }
-        };
-
-        // Connect jika belum ada koneksi
-        // Tambahkan small delay untuk memastikan state sudah ter-update
-        if (selectedDeviceId && user) {
-            // Cek apakah sudah ada koneksi yang valid KE DEVICE YANG SAMA
-            if (ws.current) {
-                const currentState = ws.current.readyState;
-                if (currentState === WebSocket.OPEN || currentState === WebSocket.CONNECTING) {
-                    // Cek apakah koneksi ini memang untuk device yang dipilih saat ini
-                    try {
-                        const currentUrl = ws.current.url;
-                        if (currentUrl) {
-                            const urlObj = new URL(currentUrl);
-                            const connectedDeviceId = urlObj.searchParams.get('deviceId');
-                            if (connectedDeviceId === selectedDeviceId.toString()) {
-                                // Sudah terhubung ke device yang benar, skip
-                                return;
-                            }
-                            // Terhubung ke device yang BERBEDA, close dan reconnect
-                            console.log('[WebSocket] useEffect: Koneksi ke device lain ditemukan, force close dan reconnect');
-                            ws.current.close();
-                            ws.current = null;
-                        }
-                    } catch (e) {
-                        if (ws.current) {
-                            ws.current.close();
-                            ws.current = null;
-                        }
-                    }
-                }
-            }
-
-            // Delay kecil untuk memastikan tidak ada race condition
-            const connectTimeout = setTimeout(() => {
-                if (selectedDeviceId && user && (!ws.current || ws.current.readyState === WebSocket.CLOSED)) {
-                    connectWebSocket();
-                }
-            }, 100); // 100ms delay
-
-            return () => {
-                clearTimeout(connectTimeout);
-            };
+        const wsUrlWithParams = `${wsUrl}?deviceId=${deviceId}&token=${encodeURIComponent(token)}`;
+        let socket: WebSocket;
+        try {
+            socket = new WebSocket(wsUrlWithParams);
+        } catch (e) {
+            console.error(`[WS Pool] Error creating socket for device ${deviceId}:`, e);
+            return;
         }
+        wsPoolRef.current.set(deviceId, socket);
+
+        // Connection timeout
+        const connTimeout = setTimeout(() => {
+            if (socket.readyState === WebSocket.CONNECTING) {
+                console.warn(`[WS Pool] Timeout connecting device ${deviceId}`);
+                socket.close();
+            }
+        }, 10000);
+
+        socket.onopen = () => {
+            clearTimeout(connTimeout);
+            reconnectAttemptsRef.current.set(deviceId, 0);
+            console.log(`[WS Pool] Device ${deviceId} connected`);
+        };
+
+        socket.onmessage = (event) => {
+            try {
+                const message = JSON.parse(event.data);
+                const prev = deviceDataRef.current.get(deviceId) || { ...DEFAULT_DEVICE_DATA };
+
+                if (message.type === 'batch-update' && message.payload) {
+                    deviceDataRef.current.set(deviceId, {
+                        pppoeSecrets: message.payload.pppoeSecrets || [],
+                        resource: message.payload.resource ?? prev.resource,
+                        activeInterfaces: message.payload.activeInterfaces || [],
+                        traffic: message.payload.traffic ?? {},
+                        isConnected: prev.isConnected,
+                    });
+                    triggerRender();
+                } else if (message.type === 'pppoe-update' && message.payload) {
+                    const newSecrets = message.payload.pppoeSecrets || [];
+                    if (JSON.stringify(newSecrets) !== JSON.stringify(prev.pppoeSecrets)) {
+                        deviceDataRef.current.set(deviceId, { ...prev, pppoeSecrets: newSecrets });
+                        triggerRender();
+                    }
+                } else if (message.type === 'connection-status' && message.payload) {
+                    const connected = message.payload.status === 'connected';
+                    deviceDataRef.current.set(deviceId, { ...prev, isConnected: connected });
+                    triggerRender();
+
+                    // Forward event for toast notifications (only for selected device)
+                    if (deviceId === selectedDeviceId) {
+                        window.dispatchEvent(new CustomEvent('mikrotik-connection-status', {
+                            detail: message.payload
+                        }));
+                    }
+
+                    // Force refresh on reconnect
+                    if (connected) {
+                        const ws = wsPoolRef.current.get(deviceId);
+                        if (ws && ws.readyState === WebSocket.OPEN) {
+                            ws.send(JSON.stringify({ type: 'force-refresh', target: 'secrets' }));
+                        }
+                    }
+                } else if (message.type === 'downtime-notification' && message.payload) {
+                    window.dispatchEvent(new CustomEvent('downtime-notification', { detail: message.payload }));
+                } else if (message.type === 'reconnect-notification' && message.payload) {
+                    window.dispatchEvent(new CustomEvent('reconnect-notification', { detail: message.payload }));
+                }
+            } catch (e) {
+                console.error(`[WS Pool] Parse error device ${deviceId}:`, e);
+            }
+        };
+
+        socket.onclose = (event) => {
+            clearTimeout(connTimeout);
+            const prev = deviceDataRef.current.get(deviceId) || { ...DEFAULT_DEVICE_DATA };
+            deviceDataRef.current.set(deviceId, { ...prev, isConnected: false });
+            wsPoolRef.current.delete(deviceId);
+            triggerRender();
+
+            // Forward disconnect for selected device
+            if (deviceId === selectedDeviceId) {
+                window.dispatchEvent(new CustomEvent('mikrotik-connection-status', {
+                    detail: { status: 'disconnected', message: event.reason || 'Koneksi terputus', code: event.code }
+                }));
+            }
+
+            // Auto reconnect (if not intentional close like logout)
+            const attempts = reconnectAttemptsRef.current.get(deviceId) || 0;
+            const maxAttempts = 5;
+            if (user && attempts < maxAttempts && event.code !== 1008 && event.code !== 1003 && event.code !== 1000) {
+                reconnectAttemptsRef.current.set(deviceId, attempts + 1);
+                const timer = setTimeout(() => {
+                    if (user) connectDevice(deviceId, workspaceId);
+                }, 3000);
+                reconnectTimersRef.current.set(deviceId, timer);
+            }
+        };
+
+        socket.onerror = () => {
+            clearTimeout(connTimeout);
+            if (socket.readyState === WebSocket.CLOSING || socket.readyState === WebSocket.CLOSED) return;
+            const prev = deviceDataRef.current.get(deviceId) || { ...DEFAULT_DEVICE_DATA };
+            deviceDataRef.current.set(deviceId, { ...prev, isConnected: false });
+            triggerRender();
+        };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [triggerRender, user]);
+
+    // On login: fetch devices and connect all
+    useEffect(() => {
+        if (!user?.workspace_id) {
+            // Cleanup on logout
+            wsPoolRef.current.forEach((ws) => {
+                if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) ws.close(1000, 'Logout');
+            });
+            wsPoolRef.current.clear();
+            deviceDataRef.current.clear();
+            reconnectTimersRef.current.forEach(t => clearTimeout(t));
+            reconnectTimersRef.current.clear();
+            reconnectAttemptsRef.current.clear();
+            setTick(0);
+            return;
+        }
+
+        const apiUrl = process.env.NEXT_PUBLIC_API_BASE_URL;
+        apiFetch(`${apiUrl}/api/devices`)
+            .then(res => res.ok ? res.json() : [])
+            .then((devices: any[]) => {
+                if (!Array.isArray(devices)) return;
+                devices.forEach((device: any) => {
+                    if (device.id) {
+                        // Load snapshot for instant display first
+                        apiFetch(`${apiUrl}/api/dashboard/snapshot?deviceId=${device.id}`)
+                            .then(res => res.ok ? res.json() : null)
+                            .then(data => {
+                                if (!data) return;
+                                const prev = deviceDataRef.current.get(device.id) || { ...DEFAULT_DEVICE_DATA };
+                                deviceDataRef.current.set(device.id, {
+                                    pppoeSecrets: data.pppoeSecrets || prev.pppoeSecrets,
+                                    resource: data.resource || prev.resource,
+                                    activeInterfaces: data.activeInterfaces || prev.activeInterfaces,
+                                    traffic: data.traffic || prev.traffic,
+                                    isConnected: data.deviceStatus === 'connected',
+                                });
+                                triggerRender();
+                            })
+                            .catch(() => {});
+
+                        // Connect WS
+                        connectDevice(device.id, user.workspace_id);
+                    }
+                });
+            })
+            .catch(err => console.error('[WS Pool] Error fetching devices:', err));
 
         return () => {
-            if (reconnectTimeout) {
-                clearTimeout(reconnectTimeout);
-            }
-            // Jangan close WebSocket di cleanup jika masih ada user dan deviceId
-            // Biarkan WebSocket tetap hidup selama user masih login
-            // Hanya close jika user logout atau deviceId dihapus
-            if (ws.current && (!user || !selectedDeviceId)) {
-                console.log('[WebSocket] Cleanup: Menutup WebSocket karena user atau deviceId tidak ada');
-                if (ws.current.readyState === WebSocket.OPEN || ws.current.readyState === WebSocket.CONNECTING) {
-                    ws.current.close();
-                }
-                ws.current = null;
-            }
+            // On unmount / user change: close all WS
+            wsPoolRef.current.forEach((ws) => {
+                if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) ws.close(1000, 'Unmount');
+            });
+            wsPoolRef.current.clear();
+            reconnectTimersRef.current.forEach(t => clearTimeout(t));
+            reconnectTimersRef.current.clear();
         };
-    }, [user, selectedDeviceId]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [user?.workspace_id]);
 
-    const handleDeviceChange = (deviceId: number | null) => {
-        console.log('[MikrotikProvider] handleDeviceChange dipanggil dengan deviceId:', deviceId, 'current deviceId:', selectedDeviceId);
-
-        // Jika deviceId sama, tidak perlu melakukan apapun
-        if (deviceId === selectedDeviceId) {
-            console.log('[MikrotikProvider] DeviceId sama, skip');
-            return;
-        }
-
-        // Force close WebSocket apapun kondisinya - jangan tunggu async
-        // Ini mencegah race condition di useEffect yang melihat WS masih CONNECTING
-        if (ws.current) {
-            console.log('[MikrotikProvider] Force closing WebSocket sebelum ganti device, state:', ws.current.readyState);
-            intentionalClose.current = true; // Tandai bahwa ini intentional close, skip auto-reconnect
-            try {
-                ws.current.close(1000, 'Device changed');
-            } catch (e) {
-                // Ignore error saat close
-            }
-            ws.current = null;
-        }
-
-        // Clear data
-        setResource(null);
-        setPppoeSecrets([]);
-        setActiveInterfaces([]);
-        setTraffic({});
-        setIsConnected(false);
-
-        // Set deviceId - ini akan trigger useEffect yang akan buat WS baru
+    // handleDeviceChange: ONLY update selectedDeviceId, no WS operations
+    const handleDeviceChange = useCallback((deviceId: number | null) => {
+        if (deviceId === selectedDeviceId) return;
         setSelectedDeviceId(deviceId);
-
         if (user?.workspace_id && deviceId) {
             localStorage.setItem(`selected-device-${user.workspace_id}`, deviceId.toString());
-
-            // Pre-fetch via REST untuk tampilkan data segera (dari mikrotikStore cache di backend)
-            // WS akan otomatis replace data ini saat stream pertama masuk
-            const apiUrl = process.env.NEXT_PUBLIC_API_BASE_URL;
-            fetch(`${apiUrl}/api/pppoe/secrets?deviceId=${deviceId}`, {
-                headers: {
-                    'Authorization': `Bearer ${localStorage.getItem('token') || ''}`,
-                    'credentials': 'include'
-                },
-                credentials: 'include'
-            })
-                .then(res => res.ok ? res.json() : [])
-                .then((secrets: any[]) => {
-                    if (Array.isArray(secrets) && secrets.length > 0) {
-                        // Hanya set jika WS belum kirim data (pppoeSecrets masih kosong)
-                        // Gunakan functional update agar tidak tumpuk state WS yang baru masuk
-                        setPppoeSecrets((prev: any[]) => prev.length === 0 ? secrets : prev);
-                        setIsConnected(true); // Tampilkan sebagai connected sementara
-                    }
-                })
-                .catch(() => { /* silent fail - WS akan handle */ });
         }
-    };
+    }, [selectedDeviceId, user?.workspace_id]);
 
-    // Helper: dapatkan pppoeActive dari pppoeSecrets yang isActive = true (untuk backward compatibility)
+    // Derive current device data for context
+    const currentData = useMemo(() => {
+        // eslint-disable-next-line @typescript-eslint/no-unused-expressions
+        tick; // depend on tick so useMemo re-runs when device data updates
+        if (selectedDeviceId === null) return { ...DEFAULT_DEVICE_DATA };
+        return deviceDataRef.current.get(selectedDeviceId) || { ...DEFAULT_DEVICE_DATA };
+    }, [selectedDeviceId, tick]);
+
     const pppoeActive = useMemo(() => {
-        return pppoeSecrets.filter((secret: any) => secret.isActive === true);
-    }, [pppoeSecrets]);
+        return currentData.pppoeSecrets.filter((s: any) => s.isActive === true);
+    }, [currentData.pppoeSecrets]);
 
     const forceRefresh = useCallback(() => {
-        if (ws.current && ws.current.readyState === WebSocket.OPEN) {
-            console.log('[MikrotikProvider] Mengirim perintah force-refresh ke server');
-            ws.current.send(JSON.stringify({ type: 'force-refresh', target: 'secrets' }));
+        if (!selectedDeviceId) return;
+        const ws = wsPoolRef.current.get(selectedDeviceId);
+        if (ws && ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({ type: 'force-refresh', target: 'secrets' }));
         }
-    }, []);
+    }, [selectedDeviceId]);
 
     const value = {
-        resource,
-        pppoeActive, // Backward compatibility: derived dari pppoeSecrets
-        pppoeSecrets,
-        activeInterfaces,
-        traffic,
-        isConnected,
+        resource: currentData.resource,
+        pppoeActive,
+        pppoeSecrets: currentData.pppoeSecrets,
+        activeInterfaces: currentData.activeInterfaces,
+        traffic: currentData.traffic,
+        isConnected: currentData.isConnected,
         selectedDeviceId,
         setSelectedDeviceId: handleDeviceChange,
-        forceRefresh
+        forceRefresh,
     };
 
     return <MikrotikContext.Provider value={value}>{children}</MikrotikContext.Provider>;
