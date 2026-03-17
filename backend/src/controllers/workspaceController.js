@@ -340,20 +340,9 @@ exports.switchWorkspace = async (req, res) => {
         // Update workspace_id pengguna di tabel users
         await pool.query('UPDATE users SET workspace_id = ? WHERE id = ?', [workspaceId, adminUserId]);
 
-        // Hapus sesi saat ini untuk perangkat ini
-        const forwarded = req.headers['x-forwarded-for'];
-        let rawIp = forwarded ? forwarded.split(',')[0].trim() : req.ip;
-        let normalizedIp = rawIp ? (rawIp.includes('::ffff:') ? rawIp.split('::ffff:')[1] : rawIp) : 'Unknown';
-        if (normalizedIp === '::1') normalizedIp = '127.0.0.1';
-        const userAgent = req.headers['user-agent'] || 'Unknown';
-
-        await pool.query(
-            'DELETE FROM user_sessions WHERE user_id = ? AND user_agent = ? AND ip_address = ?',
-            [adminUserId, userAgent, normalizedIp]
-        );
-
-        // Generate token baru
-        const tokenId = crypto.randomBytes(16).toString('hex');
+        // Gunakan jti (tokenId) yang sudah ada dari request saat ini
+        // JANGAN hapus sesi lama, agar request paralel tidak 401
+        const tokenId = req.user.jti;
 
         // Ambil data user yang update
         const [updatedUsers] = await pool.query('SELECT * FROM users WHERE id = ?', [adminUserId]);
@@ -372,9 +361,16 @@ exports.switchWorkspace = async (req, res) => {
 
         const token = jwt.sign(payload, process.env.JWT_SECRET || 'fallback_secret', { expiresIn: '7d' });
 
+        const forwarded = req.headers['x-forwarded-for'];
+        let rawIp = forwarded ? forwarded.split(',')[0].trim() : req.ip;
+        let normalizedIp = rawIp ? (rawIp.includes('::ffff:') ? rawIp.split('::ffff:')[1] : rawIp) : 'Unknown';
+        if (normalizedIp === '::1') normalizedIp = '127.0.0.1';
+        const userAgent = req.headers['user-agent'] || 'Unknown';
+
+        // Update last_seen dan metadata session (opsional, tapi bagus untuk audit)
         await pool.query(
-            'INSERT INTO user_sessions (user_id, token_id, user_agent, ip_address) VALUES (?, ?, ?, ?)',
-            [adminUserId, tokenId, userAgent, normalizedIp]
+            'UPDATE user_sessions SET last_seen = NOW(), ip_address = ?, user_agent = ? WHERE token_id = ? AND user_id = ?',
+            [normalizedIp, userAgent, tokenId, adminUserId]
         );
 
         const cookieOptions = {

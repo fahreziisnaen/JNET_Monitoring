@@ -73,25 +73,24 @@ async function startDeviceMonitor(workspaceId, deviceId, broadcastCallback) {
                 mikrotikStore.setHotspotActive(workspaceId, deviceId, hotspotActive);
             }
 
-            /*
             // 2c. Active interfaces (tiap 3 detik)
-            const allInterfaces = await safeWrite('/interface/print', [], 7000).catch(() => []);
+            const allInterfaces = await runCommandForWorkspace(workspaceId, '/interface/print', [], deviceId).catch(() => []);
             const activeInterfaces = allInterfaces
-                .filter(iface => iface.running === 'true' || iface.running === true)
+                .filter(iface => iface.running === 'true' || iface.running === true || iface.running === 'yes')
                 .map(iface => ({ name: iface.name, type: iface.type || 'unknown', running: iface.running }));
 
             // 2d. Traffic (tiap 3 detik)
             const interfacesToMonitor = allInterfaces
                 .filter(iface => {
                     const type = (iface.type || '').toLowerCase();
-                    const running = iface.running === 'true' || iface.running === true;
+                    const running = iface.running === 'true' || iface.running === true || iface.running === 'yes';
                     return running && !type.includes('pppoe') && !['loopback', 'pptp-in', 'l2tp-in'].includes(type);
                 })
                 .map(iface => iface.name);
 
             const trafficResults = await Promise.all(
                 interfacesToMonitor.map(name =>
-                    safeWrite('/interface/monitor-traffic', [`=interface=${name}`, '=once='], 3000)
+                    runCommandForWorkspace(workspaceId, '/interface/monitor-traffic', [`=interface=${name}`, '=once='], deviceId)
                         .then(r => r[0]).catch(() => null)
                 )
             );
@@ -105,7 +104,13 @@ async function startDeviceMonitor(workspaceId, deviceId, broadcastCallback) {
                 state.lastTrafficLog = now;
                 const trafficValues = [];
                 for (const [ifaceName, tf] of Object.entries(traffic)) {
-                    trafficValues.push([workspaceId, deviceId, ifaceName, tf['tx-bits-per-second'] || 0, tf['rx-bits-per-second'] || 0]);
+                    trafficValues.push([
+                        workspaceId, 
+                        deviceId, 
+                        ifaceName, 
+                        tf['tx-bits-per-second'] || 0, 
+                        tf['rx-bits-per-second'] || 0
+                    ]);
                 }
                 if (trafficValues.length > 0) {
                     try {
@@ -113,6 +118,7 @@ async function startDeviceMonitor(workspaceId, deviceId, broadcastCallback) {
                             'INSERT INTO interface_traffic_logs (workspace_id, device_id, interface_name, tx_bps, rx_bps) VALUES ?',
                             [trafficValues]
                         );
+                        // Cleanup data lama (7 hari)
                         await pool.query(
                             'DELETE FROM interface_traffic_logs WHERE workspace_id = ? AND device_id = ? AND timestamp < DATE_SUB(NOW(), INTERVAL 7 DAY)',
                             [workspaceId, deviceId]
@@ -122,9 +128,6 @@ async function startDeviceMonitor(workspaceId, deviceId, broadcastCallback) {
                     }
                 }
             }
-            */
-           const activeInterfaces = [];
-           const traffic = {};
 
             // 3. Secrets (tiap 2 menit, ASYNC non-blocking)
             if (!state.isFetchingSecrets && (now - state.lastSecretFetch >= SECRET_REFRESH_MS || state.cachedSecrets.length === 0)) {

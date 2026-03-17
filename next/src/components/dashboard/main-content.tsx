@@ -9,6 +9,7 @@ import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Loader2, Filter, GripVertical } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
+import { apiFetch } from '@/utils/api';
 import {
   DndContext,
   closestCenter,
@@ -74,11 +75,9 @@ const EtherChart = ({ trafficData, interfaceName, deviceId }: { trafficData: any
       
       const fetchHistory = async () => {
         try {
-          // Fetch dari database
-          const token = localStorage.getItem('token');
-          const res = await fetch(`http://${process.env.NEXT_PUBLIC_API_HOST || window.location.hostname}:9494/api/devices/${deviceId}/traffic-history?interface=${interfaceName}`, {
-            headers: { Authorization: `Bearer ${token}` }
-          });
+          // Fetch dari database menggunakan apiFetch (otomatis handle auth_token)
+          const apiUrl = process.env.NEXT_PUBLIC_API_BASE_URL;
+          const res = await apiFetch(`${apiUrl}/api/devices/${deviceId}/traffic-history?interface=${interfaceName}`);
           
           if (res.ok) {
             const data = await res.json();

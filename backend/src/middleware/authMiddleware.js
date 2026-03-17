@@ -1,5 +1,6 @@
 const jwt = require('jsonwebtoken');
 const pool = require('../config/database');
+const { isSuperAdmin } = require('../utils/authUtils');
 
 const protect = async (req, res, next) => {
     let token;
@@ -118,10 +119,7 @@ const protect = async (req, res, next) => {
                 }
 
                 // Tentukan apakah user adalah Super Admin
-                const superAdminIds = process.env.SUPER_ADMIN_IDS
-                    ? process.env.SUPER_ADMIN_IDS.split(',').map(id => parseInt(id.trim()))
-                    : [1];
-                dbUser.is_super_admin = superAdminIds.includes(dbUser.id);
+                dbUser.is_super_admin = isSuperAdmin(dbUser.id);
 
                 // Tentukan apakah user adalah owner dari workspace-nya
                 const [wsOwnerInfo] = await pool.query('SELECT owner_id FROM workspaces WHERE id = ?', [dbUser.workspace_id]);
@@ -194,13 +192,7 @@ const authorizeAdmin = (req, res, next) => {
 };
 
 const authorizeSuperAdmin = (req, res, next) => {
-    // Hardcoded Super Admin IDs (Owner)
-    // Ambil dari environment variable atau default ke ID 1
-    const superAdminIds = process.env.SUPER_ADMIN_IDS
-        ? process.env.SUPER_ADMIN_IDS.split(',').map(id => parseInt(id.trim()))
-        : [1];
-
-    if (req.user && superAdminIds.includes(req.user.id)) {
+    if (req.user && isSuperAdmin(req.user.id)) {
         next();
     } else {
         res.status(403).json({ message: 'Akses ditolak. Fitur ini hanya untuk Super Admin (Pemilik Server).' });
