@@ -110,7 +110,17 @@ const ClientDetailModal = ({
   overrideSecrets,
 }: ClientDetailModalProps) => {
   const { pppoeSecrets: mikrotikSecrets } = useMikrotik() || {};
-  const pppoeSecrets = overrideSecrets || mikrotikSecrets;
+  const pppoeSecrets = (overrideSecrets && overrideSecrets.length > 0) ? overrideSecrets : mikrotikSecrets;
+
+  useEffect(() => {
+    if (isOpen && client) {
+      console.log("[DEBUG] ClientDetailModal rendering for:", client.pppoe_secret_name, { 
+        hasOverride: !!overrideSecrets, 
+        overrideLen: overrideSecrets?.length, 
+        mikrotikLen: mikrotikSecrets?.length 
+      });
+    }
+  }, [isOpen, client, overrideSecrets, mikrotikSecrets]);
 
   const [slaData, setSlaData] = useState<SlaData | null>(null);
   const [usageData, setUsageData] = useState<UsageData | null>(null);

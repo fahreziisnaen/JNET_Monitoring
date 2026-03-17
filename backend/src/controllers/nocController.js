@@ -135,6 +135,7 @@ exports.getAggregatedMapData = async (req, res) => {
         const [clients] = await pool.query(`
             SELECT 
                 c.*,
+                c.device_id as device_id,
                 a.name as odp_name, 
                 a.owner_name as odp_owner_name, 
                 w.name as workspace_name,
