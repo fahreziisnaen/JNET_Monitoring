@@ -37,9 +37,20 @@ if (RouterOSAPI.RouterOSAPI) {
 const pool = require('./src/config/database');
 
 // Auto-migration: tambah kolom device_id ke tabel clients jika belum ada
-pool.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS device_id INT DEFAULT NULL`)
-    .then(() => console.log('[Migration] clients.device_id OK'))
-    .catch(err => console.error('[Migration] Error:', err.message));
+async function runMigrations() {
+    try {
+        const [columns] = await pool.query("SHOW COLUMNS FROM clients LIKE 'device_id'");
+        if (columns.length === 0) {
+            await pool.query("ALTER TABLE clients ADD COLUMN device_id INT DEFAULT NULL AFTER workspace_id");
+            console.log('[Migration] Column clients.device_id added');
+        } else {
+            console.log('[Migration] clients.device_id OK');
+        }
+    } catch (err) {
+        console.error('[Migration] Error:', err.message);
+    }
+}
+runMigrations();
 
 const { addConnection, removeConnection, getConnection } = require('./src/services/connectionManager');
 const { getOrCreateConnection } = require('./src/utils/apiConnection');

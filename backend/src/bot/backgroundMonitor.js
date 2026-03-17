@@ -15,7 +15,7 @@ const { getOrCreateConnection } = require('../utils/apiConnection');
 const mikrotikStore = require('../utils/mikrotikStore');
 
 const POLLING_INTERVAL_MS = 3000;    // polling active users setiap 3 detik
-const SECRET_REFRESH_MS = 20000;     // refresh secrets list setiap 20 detik
+const SECRET_REFRESH_MS = 120000;    // refresh secrets list setiap 2 menit (sebelumnya 20 detik)
 const INIT_STAGGER_MS = 800;         // jeda antar device saat startup
 
 // Track per-device polling state
@@ -93,12 +93,19 @@ async function startDeviceMonitor(workspaceId, deviceId, broadcastCallback) {
                 .catch(() => ({}));
 
             // 2. Active users (tiap 3 detik)
-            const pppoeActive = await safeWrite('/ppp/active/print', [], 7000).catch(() => []);
-            mikrotikStore.setActive(workspaceId, deviceId, pppoeActive);
+            const pppoeActive = await safeWrite('/ppp/active/print', [], 20000).catch(err => {
+                console.warn(`[BGMonitor] Timeout/Error fetching active users on device ${deviceId}: ${err.message}`);
+                return null;
+            });
+            if (pppoeActive !== null) {
+                mikrotikStore.setActive(workspaceId, deviceId, pppoeActive);
+            }
 
             // 2b. Hotspot active users (tiap 3 detik, graceful jika tidak ada hotspot)
             const hotspotActive = await safeWrite('/ip/hotspot/active/print', [], 5000).catch(() => []);
-            mikrotikStore.setHotspotActive(workspaceId, deviceId, hotspotActive);
+            if (hotspotActive.length > 0 || hotspotActive !== null) {
+                mikrotikStore.setHotspotActive(workspaceId, deviceId, hotspotActive);
+            }
 
             // 2c. Active interfaces (tiap 3 detik)
             const allInterfaces = await safeWrite('/interface/print', [], 7000).catch(() => []);
@@ -106,7 +113,7 @@ async function startDeviceMonitor(workspaceId, deviceId, broadcastCallback) {
                 .filter(iface => iface.running === 'true' || iface.running === true)
                 .map(iface => ({ name: iface.name, type: iface.type || 'unknown', running: iface.running }));
 
-            // 2d. Traffic (tiap 3 detik, hanya interface yang running dan bukan PPPoE)
+            // 2d. Traffic (tiap 3 detik)
             const interfacesToMonitor = allInterfaces
                 .filter(iface => {
                     const type = (iface.type || '').toLowerCase();
@@ -139,22 +146,21 @@ async function startDeviceMonitor(workspaceId, deviceId, broadcastCallback) {
                             'INSERT INTO interface_traffic_logs (workspace_id, device_id, interface_name, tx_bps, rx_bps) VALUES ?',
                             [trafficValues]
                         );
-                        // Auto-cleanup data lama (> 7 hari)
                         await pool.query(
                             'DELETE FROM interface_traffic_logs WHERE workspace_id = ? AND device_id = ? AND timestamp < DATE_SUB(NOW(), INTERVAL 7 DAY)',
                             [workspaceId, deviceId]
                         );
                     } catch (dbErr) {
-                        console.error(`[BGMonitor] Failed to log DB traffic history for device ${deviceId}: ${dbErr.message}`);
+                        console.error(`[BGMonitor] Failed to log DB traffic history: ${dbErr.message}`);
                     }
                 }
             }
 
-            // 3. Secrets (tiap 20 detik)
+            // 3. Secrets (tiap 2 menit)
             if (now - state.lastSecretFetch >= SECRET_REFRESH_MS || state.cachedSecrets.length === 0) {
                 const secrets = await safeWrite('/ppp/secret/print', [
                     '.proplist=.id,name,profile,remote-address,disabled'
-                ], 45000).catch(err => {
+                ], 90000).catch(err => {
                     console.warn(`[BGMonitor] Device ${deviceId} secrets fetch error: ${err.message}`);
                     return null;
                 });
@@ -166,101 +172,96 @@ async function startDeviceMonitor(workspaceId, deviceId, broadcastCallback) {
                 }
             }
 
-            // 4. Merge active info ke secrets → broadcast ke WS clients
-            if (broadcastCallback) {
-                const activeMap = new Map();
-                pppoeActive.forEach(u => {
-                    if (u.name) activeMap.set(u.name, { address: u.address, uptime: u.uptime, '.id': u['.id'] });
-                });
+            // 4. Merge active info ke secrets & Sync ke Database
+            const activeMap = new Map();
+            pppoeActive.forEach(u => {
+                if (u.name) activeMap.set(u.name, { address: u.address, uptime: u.uptime, '.id': u['.id'] });
+            });
 
-                const enriched = state.cachedSecrets.map(secret => {
-                    const activeInfo = activeMap.get(secret.name);
-                    const enrichedSecret = Object.assign({}, secret);
-                    enrichedSecret.isActive = !!activeInfo;
-                    if (activeInfo?.uptime) enrichedSecret.uptime = activeInfo.uptime;
-                    if (activeInfo?.['.id']) enrichedSecret.activeConnectionId = activeInfo['.id'];
-                    if (activeInfo?.address) {
-                        enrichedSecret.currentAddress = activeInfo.address;
-                        if (!enrichedSecret['remote-address']) enrichedSecret['remote-address'] = activeInfo.address;
-                    }
-                    return enrichedSecret;
-                });
+            const enriched = state.cachedSecrets.map(secret => {
+                const activeInfo = activeMap.get(secret.name);
+                const enrichedSecret = Object.assign({}, secret);
+                enrichedSecret.isActive = !!activeInfo;
+                if (activeInfo?.uptime) enrichedSecret.uptime = activeInfo.uptime;
+                if (activeInfo?.['.id']) enrichedSecret.activeConnectionId = activeInfo['.id'];
+                if (activeInfo?.address) {
+                    enrichedSecret.currentAddress = activeInfo.address;
+                    if (!enrichedSecret['remote-address']) enrichedSecret['remote-address'] = activeInfo.address;
+                }
+                return enrichedSecret;
+            });
 
-                // --- 4.5. Sinkronisasi Real-Time ke Database (MySQL) ---
-                if (enriched.length > 0) {
-                    const values = enriched.map(s => [
-                        workspaceId,
-                        deviceId,
-                        s.name,
-                        s.profile || '',
-                        s['remote-address'] || null,
+            // 4. Merge active info ke secrets & Sync ke Database
+            // HANYA jika pppoeActive sukses diambil (tidak null). Jika null (timeout), 
+            // kita SKIP sinkronisasi siklus ini agar tidak mereset data isActive di DB ke 0.
+            if (pppoeActive !== null && enriched.length > 0) {
+                // Debug log
+                const activeCount = enriched.filter(s => s.isActive).length;
+                console.log(`[BGMonitor Debug] Device ${deviceId} enriched: ${enriched.length}, active: ${activeCount}`);
+                
+                try {
+                    // Sync pppoe_secrets (untuk Client Creation & Detail)
+                    const secretsValues = enriched.map(s => [
+                        workspaceId, deviceId, s.name, s.profile || '', s['remote-address'] || null,
                         s.disabled === 'true' || s.disabled === true ? 1 : 0,
-                        s.isActive ? 1 : 0,
-                        s.uptime || null,
-                        s.currentAddress || null,
-                        s.activeConnectionId || null
+                        s.isActive ? 1 : 0, s.uptime || null, s.currentAddress || null, s.activeConnectionId || null
                     ]);
-                    
-                    const query = `
+
+                    const statusQuery = `
                         INSERT INTO pppoe_secrets 
                         (workspace_id, device_id, name, profile, remote_address, disabled, is_active, uptime, current_address, active_connection_id)
                         VALUES ?
                         ON DUPLICATE KEY UPDATE
-                        profile = VALUES(profile),
-                        remote_address = VALUES(remote_address),
-                        disabled = VALUES(disabled),
-                        is_active = VALUES(is_active),
-                        uptime = VALUES(uptime),
-                        current_address = VALUES(current_address),
-                        active_connection_id = VALUES(active_connection_id),
-                        updated_at = NOW()
+                        profile = VALUES(profile), remote_address = VALUES(remote_address), disabled = VALUES(disabled),
+                        is_active = VALUES(is_active), uptime = VALUES(uptime), current_address = VALUES(current_address),
+                        active_connection_id = VALUES(active_connection_id), updated_at = NOW()
                     `;
-                    
-                    try {
-                        await pool.query(query, [values]);
-                        // Cleanup secrets yang sudah dihapus di router (yang tidak terupdate lebih dari 1 menit)
-                        await pool.query(
-                            `DELETE FROM pppoe_secrets WHERE workspace_id = ? AND device_id = ? AND updated_at < DATE_SUB(NOW(), INTERVAL 1 MINUTE)`, 
-                            [workspaceId, deviceId]
-                        );
 
-                        // --- Sync pppoe_user_status agar isActive di peta NOC up-to-date ---
-                        const activeUsers = enriched.filter(s => s.isActive);
-                        const inactiveUsers = enriched.filter(s => !s.isActive);
+                    await pool.query(statusQuery, [secretsValues]);
 
-                        if (activeUsers.length > 0) {
-                            const activeValues = activeUsers.map(s => [workspaceId, deviceId, s.name]);
-                            await pool.query(
-                                `INSERT INTO pppoe_user_status (workspace_id, device_id, pppoe_user, is_active, last_seen_active)
-                                 VALUES ?
-                                 ON DUPLICATE KEY UPDATE is_active = TRUE, last_seen_active = NOW()`,
-                                [activeValues.map(v => [...v, true, new Date()])]
-                            );
-                        }
-                        if (inactiveUsers.length > 0) {
-                            for (const s of inactiveUsers) {
-                                await pool.query(
-                                    `INSERT INTO pppoe_user_status (workspace_id, device_id, pppoe_user, is_active)
-                                     VALUES (?, ?, ?, FALSE)
-                                     ON DUPLICATE KEY UPDATE is_active = FALSE`,
-                                    [workspaceId, deviceId, s.name]
-                                );
-                            }
-                        }
-                    } catch (dbErr) {
-                        console.error(`[BGMonitor] DB Sync Error device ${deviceId}: ${dbErr.message}`);
+                    // Cleanup data lama (60 menit)
+                    await pool.query(
+                        `DELETE FROM pppoe_secrets WHERE workspace_id = ? AND device_id = ? AND updated_at < DATE_SUB(NOW(), INTERVAL 60 MINUTE)`,
+                        [workspaceId, deviceId]
+                    );
+
+                    // Sync pppoe_user_status (untuk NOC Map)
+                    const activeUsers = enriched.filter(s => s.isActive);
+                    if (activeUsers.length > 0) {
+                        const activeStatusValues = activeUsers.map(u => [workspaceId, deviceId, u.name, true, new Date()]);
+                        await pool.query(`
+                            INSERT INTO pppoe_user_status (workspace_id, device_id, pppoe_user, is_active, last_seen_active)
+                            VALUES ?
+                            ON DUPLICATE KEY UPDATE is_active = TRUE, last_seen_active = NOW()
+                        `, [activeStatusValues]);
                     }
-                }
 
+                    // Set inactive users (graceful, avoid bulk deactivate errors)
+                    const inactiveNames = enriched.filter(s => !s.isActive).map(s => s.name);
+                    if (inactiveNames.length > 0) {
+                        // Bulk update is faster and safer
+                        await pool.query(`
+                            UPDATE pppoe_user_status 
+                            SET is_active = FALSE 
+                            WHERE workspace_id = ? AND device_id = ? AND pppoe_user IN (?)
+                        `, [workspaceId, deviceId, inactiveNames]);
+                    }
+
+                } catch (dbErr) {
+                    console.error(`[BGMonitor] DB Sync Error device ${deviceId}: ${dbErr.message}`);
+                }
+            }
+
+            // 5. Broadcast ke WS
+            if (broadcastCallback) {
                 broadcastCallback(workspaceId, deviceId, {
                     type: 'batch-update',
-                    payload: {
-                        resource,
-                        pppoeSecrets: enriched,
-                        activeInterfaces,
-                        traffic,
-                        hotspotActive
-                    }
+                    payload: { resource, pppoeSecrets: enriched, activeInterfaces, traffic, hotspotActive }
+                });
+
+                broadcastCallback(workspaceId, deviceId, {
+                    type: 'pppoe-secrets',
+                    payload: { secrets: enriched, deviceId, timestamp: Date.now() }
                 });
             }
 
@@ -275,10 +276,8 @@ async function startDeviceMonitor(workspaceId, deviceId, broadcastCallback) {
         }
     };
 
-    // Jalankan langsung setelah 1 detik, lalu setiap 3 detik
     const firstRun = setTimeout(() => runCycle(), 1000);
     const intervalId = setInterval(() => runCycle(), POLLING_INTERVAL_MS);
-
     state.intervalId = intervalId;
     state.firstRun = firstRun;
 }
@@ -294,46 +293,20 @@ function stopDeviceMonitor(workspaceId, deviceId) {
     }
 }
 
-/**
- * Entry point: dipanggil sekali saat server mulai.
- * Fetch semua workspace+device dari DB, lalu start monitor masing-masing.
- * @param {Function} broadcastCallback - function(workspaceId, deviceId, data) untuk push ke WS
- */
 async function startBackgroundMonitoring(broadcastCallback = null) {
-    console.log('[BGMonitor] Starting background monitoring for all workspaces...');
-
+    console.log('[BGMonitor] Starting background monitoring...');
     try {
-        // Ambil semua device dari semua workspace
-        const [devices] = await pool.query(`
-            SELECT d.id, d.workspace_id, d.name, d.host
-            FROM mikrotik_devices d
-            ORDER BY d.workspace_id, d.id
-        `);
-
-        if (devices.length === 0) {
-            console.log('[BGMonitor] No devices found, nothing to monitor.');
-            return;
-        }
-
-        console.log(`[BGMonitor] Found ${devices.length} device(s) to monitor.`);
-
-        // Stagger startup: 800ms antar device untuk hindari race condition
+        const [devices] = await pool.query(`SELECT id, workspace_id FROM mikrotik_devices`);
         devices.forEach((device, index) => {
             setTimeout(() => {
-                startDeviceMonitor(device.workspace_id, device.id, broadcastCallback).catch(err => {
-                    console.error(`[BGMonitor] Failed to start device ${device.id}: ${err.message}`);
-                });
+                startDeviceMonitor(device.workspace_id, device.id, broadcastCallback).catch(console.error);
             }, index * INIT_STAGGER_MS);
         });
-
     } catch (err) {
-        console.error('[BGMonitor] Failed to initialize:', err.message);
+        console.error('[BGMonitor] Init failed:', err.message);
     }
 }
 
-/**
- * Restart monitor untuk satu device (dipanggil saat device ditambah/diubah).
- */
 async function restartDeviceMonitor(workspaceId, deviceId, broadcastCallback = null) {
     stopDeviceMonitor(workspaceId, deviceId);
     await new Promise(r => setTimeout(r, 500));

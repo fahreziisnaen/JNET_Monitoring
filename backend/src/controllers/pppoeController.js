@@ -77,7 +77,6 @@ exports.getSecrets = async (req, res) => {
                 disabled, 
                 is_active as isActive, 
                 uptime, 
-                last_logged_out as 'last-logged-out',
                 active_connection_id as activeConnectionId
             FROM pppoe_secrets 
             WHERE workspace_id = ?

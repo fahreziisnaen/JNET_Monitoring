@@ -110,17 +110,7 @@ const ClientDetailModal = ({
   overrideSecrets,
 }: ClientDetailModalProps) => {
   const { pppoeSecrets: mikrotikSecrets } = useMikrotik() || {};
-  const pppoeSecrets = (overrideSecrets && overrideSecrets.length > 0) ? overrideSecrets : mikrotikSecrets;
-
-  useEffect(() => {
-    if (isOpen && client) {
-      console.log("[DEBUG] ClientDetailModal rendering for:", client.pppoe_secret_name, { 
-        hasOverride: !!overrideSecrets, 
-        overrideLen: overrideSecrets?.length, 
-        mikrotikLen: mikrotikSecrets?.length 
-      });
-    }
-  }, [isOpen, client, overrideSecrets, mikrotikSecrets]);
+  const pppoeSecrets = overrideSecrets || mikrotikSecrets;
 
   const [slaData, setSlaData] = useState<SlaData | null>(null);
   const [usageData, setUsageData] = useState<UsageData | null>(null);
@@ -163,11 +153,9 @@ const ClientDetailModal = ({
     }
 
     try {
-      // Pass workspaceId so backend uses the correct workspace context in NOC multi-workspace mode
-      const wsParam = (client as any).workspace_id ? `?workspaceId=${(client as any).workspace_id}` : '';
       const [slaRes, usageRes] = await Promise.all([
-        apiFetch(`${apiUrl}/api/pppoe/secrets/${encodeURIComponent(client.pppoe_secret_name)}/sla${wsParam}`).catch(() => null),
-        apiFetch(`${apiUrl}/api/pppoe/secrets/${encodeURIComponent(client.pppoe_secret_name)}/usage${wsParam}`).catch(() => null)
+        apiFetch(`${apiUrl}/api/pppoe/secrets/${client.pppoe_secret_name}/sla`).catch(() => null),
+        apiFetch(`${apiUrl}/api/pppoe/secrets/${client.pppoe_secret_name}/usage`).catch(() => null)
       ]);
 
       if (slaRes && slaRes.ok) {

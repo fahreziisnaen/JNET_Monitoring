@@ -1383,15 +1383,53 @@ async function syncMikrotikSecrets() {
 
                 // Gunakan safeWrite dengan timeout 60 detik (list secrets bisa besar)
                 const pppoeSecrets = await safeWrite(client, '/ppp/secret/print', [
-                    '.proplist=.id,name,profile,remote-address,last-logged-out,disabled'
+                    '.proplist=.id,name,profile,remote-address,disabled'
                 ], 60000);
 
                 if (Array.isArray(pppoeSecrets)) {
                     const deviceNames = group.devices.map(d => d.name).join(', ');
                     console.log(`[Secret Sync] ✅ Mendapat ${pppoeSecrets.length} secrets dari Mikrotik (${deviceNames})`);
+                    
                     for (const device of group.devices) {
+                        // 1. Update memory store (untuk legacy compatibility & speed)
                         mikrotikStore.setSecrets(device.workspace_id, device.device_id, pppoeSecrets);
                         mikrotikStore.setDeviceStatus(device.workspace_id, device.device_id, 'connected');
+
+                        // 2. Persist ke Database (untuk NOC & Client Creation)
+                        if (pppoeSecrets.length > 0) {
+                            const values = pppoeSecrets.map(s => [
+                                device.workspace_id,
+                                device.device_id,
+                                s.name,
+                                s.profile || '',
+                                s['remote-address'] || null,
+                                s.disabled === 'true' || s.disabled === true ? 1 : 0,
+                                0 // is_active default
+                            ]);
+
+                            const query = `
+                                INSERT INTO pppoe_secrets 
+                                (workspace_id, device_id, name, profile, remote_address, disabled, is_active)
+                                VALUES ?
+                                ON DUPLICATE KEY UPDATE
+                                profile = VALUES(profile),
+                                remote_address = VALUES(remote_address),
+                                disabled = VALUES(disabled),
+                                updated_at = NOW(),
+                                is_active = is_active
+                            `;
+
+                            try {
+                                await pool.query(query, [values]);
+                                // Cleanup old secrets (60 menit toleransi)
+                                await pool.query(
+                                    `DELETE FROM pppoe_secrets WHERE workspace_id = ? AND device_id = ? AND updated_at < DATE_SUB(NOW(), INTERVAL 60 MINUTE)`,
+                                    [device.workspace_id, device.device_id]
+                                );
+                            } catch (dbErr) {
+                                console.error(`[Secret Sync] DB Error device ${device.device_id}: ${dbErr.message}`);
+                            }
+                        }
                     }
                 }
             } catch (error) {

@@ -99,7 +99,6 @@ const LocationManager: React.FC<LocationManagerProps> = ({ isNocMode = false, no
       });
       if (res.ok) {
         const data = await res.json();
-        console.log('[DEBUG] Peta NOC fetchNocSecrets:', data.secrets?.length, 'secrets fetched');
         setNocSecrets(data.secrets || []);
       }
     } catch (err) {
