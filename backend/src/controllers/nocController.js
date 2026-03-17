@@ -198,7 +198,7 @@ exports.getAggregatedSecrets = async (req, res) => {
                 md.name as router_name
             FROM pppoe_secrets ps
             JOIN workspaces w ON ps.workspace_id = w.id
-            JOIN mikrotik_devices md ON ps.device_id = md.id
+            LEFT JOIN mikrotik_devices md ON ps.device_id = md.id
             WHERE ps.workspace_id IN (?)
         `, [validWorkspaceIds]);
 
