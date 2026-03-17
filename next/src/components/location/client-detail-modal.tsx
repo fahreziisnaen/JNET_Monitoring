@@ -153,9 +153,11 @@ const ClientDetailModal = ({
     }
 
     try {
+      // Pass workspaceId so backend uses the correct workspace context in NOC multi-workspace mode
+      const wsParam = (client as any).workspace_id ? `?workspaceId=${(client as any).workspace_id}` : '';
       const [slaRes, usageRes] = await Promise.all([
-        apiFetch(`${apiUrl}/api/pppoe/secrets/${client.pppoe_secret_name}/sla`).catch(() => null),
-        apiFetch(`${apiUrl}/api/pppoe/secrets/${client.pppoe_secret_name}/usage`).catch(() => null)
+        apiFetch(`${apiUrl}/api/pppoe/secrets/${encodeURIComponent(client.pppoe_secret_name)}/sla${wsParam}`).catch(() => null),
+        apiFetch(`${apiUrl}/api/pppoe/secrets/${encodeURIComponent(client.pppoe_secret_name)}/usage${wsParam}`).catch(() => null)
       ]);
 
       if (slaRes && slaRes.ok) {

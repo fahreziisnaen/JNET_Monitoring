@@ -342,8 +342,8 @@ const ClientList = ({ clients, loading, selectedClientId, onClientSelect, onClie
                                 ORPHAN
                               </span>
                             )
-                            : secretsReady && !existingSecretsSet.has(client.pppoe_secret_name) &&
-                              (!currentDeviceId || !(client as any).device_id || (client as any).device_id === currentDeviceId) && (
+                            : secretsReady && currentDeviceId && !existingSecretsSet.has(client.pppoe_secret_name) &&
+                              (!!(client as any).device_id && (client as any).device_id === currentDeviceId) && (
                               <span className="flex-shrink-0 px-1.5 py-0.5 rounded text-[10px] font-bold bg-destructive text-destructive-foreground">
                                 ORPHAN
                               </span>
