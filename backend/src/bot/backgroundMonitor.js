@@ -212,7 +212,8 @@ async function startDeviceMonitor(workspaceId, deviceId, broadcastCallback) {
                         is_active = VALUES(is_active),
                         uptime = VALUES(uptime),
                         current_address = VALUES(current_address),
-                        active_connection_id = VALUES(active_connection_id)
+                        active_connection_id = VALUES(active_connection_id),
+                        updated_at = NOW()
                     `;
                     
                     try {

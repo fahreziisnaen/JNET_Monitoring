@@ -131,33 +131,66 @@ exports.getAggregatedMapData = async (req, res) => {
             }
         }
 
-        // Ambil Clients dengan status aktif dari pppoe_user_status
-        const [clients] = await pool.query(`
-            SELECT 
-                c.*,
-                c.device_id as device_id,
-                a.name as odp_name, 
-                a.owner_name as odp_owner_name, 
-                w.name as workspace_name,
-                COALESCE(pus.is_active, 0) as isActive
-            FROM clients c
-            LEFT JOIN network_assets a ON c.odp_asset_id = a.id
-            JOIN workspaces w ON c.workspace_id = w.id
-            LEFT JOIN pppoe_user_status pus 
-                ON c.pppoe_secret_name = pus.pppoe_user 
-                AND pus.workspace_id = c.workspace_id
-            WHERE c.workspace_id IN (?)
-        `, [validWorkspaceIds]);
+        let targetClients = [];
+        try {
+            // Ambil Clients dengan status aktif dan device_id seperti di halaman Management (clientController)
+            const [clients] = await pool.query(`
+                SELECT c.id, c.workspace_id, c.pppoe_secret_name, c.client_name, c.whatsapp_number, c.latitude, c.longitude, 
+                        c.odp_asset_id, c.connection_path, c.photo_url, c.created_at, c.updated_at,
+                        c.device_id as stored_device_id,
+                        a.name as odp_name, 
+                        a.owner_name as odp_owner_name, 
+                        w.name as workspace_name,
+                        COALESCE(pus.device_id, c.device_id) as device_id,
+                        COALESCE(pus.is_active, FALSE) as isActive
+                FROM clients c
+                LEFT JOIN network_assets a ON c.odp_asset_id = a.id
+                JOIN workspaces w ON c.workspace_id = w.id
+                LEFT JOIN pppoe_user_status pus 
+                    ON c.pppoe_secret_name = pus.pppoe_user 
+                    AND pus.workspace_id = c.workspace_id
+                    AND (c.device_id IS NULL OR pus.device_id = c.device_id)
+                WHERE c.workspace_id IN (?)
+            `, [validWorkspaceIds]);
 
-        // Convert isActive dari TINYINT ke boolean
-        const clientsWithBoolean = clients.map(client => ({
-            ...client,
-            isActive: client.isActive === 1 || client.isActive === true
-        }));
+            targetClients = clients.map(client => {
+                const deviceStatus = client.device_id ? mikrotikStore.getDeviceStatus(client.workspace_id, client.device_id) : 'connected';
+                const isOfflineDevice = deviceStatus === 'disconnected';
+                return {
+                    ...client,
+                    isActive: (client.isActive === 1 || client.isActive === true) && !isOfflineDevice,
+                    isOffline: isOfflineDevice
+                };
+            });
+        } catch (queryErr) {
+            console.warn('[NOC Controller] DB schema mismatch for clients, using fallback query:', queryErr.message);
+            // Fallback (for DEV environment where device_id might not exist in clients table)
+            const [fallbackClients] = await pool.query(`
+                SELECT c.id, c.workspace_id, c.pppoe_secret_name, c.client_name, c.whatsapp_number, c.latitude, c.longitude, 
+                        c.odp_asset_id, c.connection_path, c.photo_url, c.created_at, c.updated_at,
+                        a.name as odp_name, 
+                        a.owner_name as odp_owner_name, 
+                        w.name as workspace_name,
+                        COALESCE(pus.is_active, FALSE) as isActive
+                FROM clients c
+                LEFT JOIN network_assets a ON c.odp_asset_id = a.id
+                JOIN workspaces w ON c.workspace_id = w.id
+                LEFT JOIN pppoe_user_status pus 
+                    ON c.pppoe_secret_name = pus.pppoe_user 
+                    AND pus.workspace_id = c.workspace_id
+                WHERE c.workspace_id IN (?)
+            `, [validWorkspaceIds]);
+
+            targetClients = fallbackClients.map(client => ({
+                ...client,
+                isActive: client.isActive === 1 || client.isActive === true,
+                isOffline: false
+            }));
+        }
 
         res.json({
             assets,
-            clients: clientsWithBoolean
+            clients: targetClients
         });
     } catch (error) {
         console.error('[NOC Controller] Error getting aggregated map data:', error);
