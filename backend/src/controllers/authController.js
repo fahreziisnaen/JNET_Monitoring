@@ -3,6 +3,7 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { sendWhatsAppMessage, isWhatsAppConnected } = require('../services/whatsappService');
 const crypto = require('crypto');
+const { isSuperAdmin } = require('../utils/authUtils');
 
 const generateOtp = () => Math.floor(100000 + Math.random() * 900000).toString();
 
@@ -68,10 +69,6 @@ exports.requestLoginOtp = async (req, res) => {
             };
             res.cookie('token', token, cookieOptions);
 
-            const superAdminIds = process.env.SUPER_ADMIN_IDS
-                ? process.env.SUPER_ADMIN_IDS.split(',').map(id => parseInt(id.trim()))
-                : [1];
-
             const profilePictureUrl = user.profile_picture_url || '/public/uploads/avatars/default.jpg';
             return res.status(200).json({
                 message: 'Login berhasil (OTP Bypass)!',
@@ -80,7 +77,7 @@ exports.requestLoginOtp = async (req, res) => {
                     id: user.id,
                     displayName: user.display_name,
                     profile_picture_url: profilePictureUrl,
-                    is_super_admin: superAdminIds.includes(user.id)
+                    is_super_admin: isSuperAdmin(user.id)
                 },
                 token: token
             });
@@ -158,10 +155,6 @@ exports.verifyLoginOtp = async (req, res) => {
         };
         res.cookie('token', token, cookieOptions);
 
-        const superAdminIds = process.env.SUPER_ADMIN_IDS
-            ? process.env.SUPER_ADMIN_IDS.split(',').map(id => parseInt(id.trim()))
-            : [1];
-
         const profilePictureUrl = user.profile_picture_url || '/public/uploads/avatars/default.jpg';
         res.status(200).json({
             message: 'Login berhasil!',
@@ -169,7 +162,7 @@ exports.verifyLoginOtp = async (req, res) => {
                 id: user.id,
                 displayName: user.display_name,
                 profile_picture_url: profilePictureUrl,
-                is_super_admin: superAdminIds.includes(user.id)
+                is_super_admin: isSuperAdmin(user.id)
             },
             token: token // Return token untuk fallback
         });
@@ -211,14 +204,10 @@ exports.getMe = (req, res) => {
         console.warn(`[GetMe] User ${req.user.id} tidak punya workspace_id, middleware seharusnya sudah handle ini.`);
     }
 
-    const superAdminIds = process.env.SUPER_ADMIN_IDS
-        ? process.env.SUPER_ADMIN_IDS.split(',').map(id => parseInt(id.trim()))
-        : [1];
-
     res.status(200).json({
         user: {
             ...req.user,
-            is_super_admin: superAdminIds.includes(req.user.id)
+            is_super_admin: isSuperAdmin(req.user.id)
         }
     });
 };

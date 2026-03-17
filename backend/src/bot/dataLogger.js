@@ -1,5 +1,5 @@
 const pool = require('../config/database');
-const { runCommandForWorkspace, getOrCreateConnection, getDeviceConnectionKey } = require('../utils/apiConnection');
+const { runCommandForWorkspace, getDeviceConnectionKey } = require('../utils/apiConnection');
 const { sendWhatsAppMessage, getWorkspaceWhatsAppTarget } = require('../services/whatsappService');
 const crypto = require('crypto');
 const mikrotikStore = require('../utils/mikrotikStore');
@@ -12,14 +12,7 @@ const mikrotikStore = require('../utils/mikrotikStore');
  * @param {Array} params - Command parameters
  * @param {number} timeoutMs - Timeout in milliseconds (default 15s)
  */
-function safeWrite(client, command, params = [], timeoutMs = 15000) {
-    return Promise.race([
-        client.write(command, params),
-        new Promise((_, reject) =>
-            setTimeout(() => reject(new Error(`Timeout ${timeoutMs}ms pada command: ${command}`)), timeoutMs)
-        )
-    ]);
-}
+// safeWrite removed in favor of runCommandForWorkspace
 
 /**
  * Format durasi dalam detik menjadi format "x hari x jam x menit x detik"
@@ -48,6 +41,12 @@ function formatDuration(totalSeconds) {
 const alarmState = new Map();
 const lastTrafficData = new Map();
 
+// Configuration constants from environment variables
+const CPU_COOLDOWN_MINUTES = parseInt(process.env.CPU_COOLDOWN_MINUTES) || 15;
+const OFFLINE_COOLDOWN_MINUTES = parseInt(process.env.OFFLINE_COOLDOWN_MINUTES) || 15;
+const TRAFFIC_LOG_INTERVAL_MS = parseInt(process.env.TRAFFIC_LOG_INTERVAL_MS) || 60000;
+const DASHBOARD_UPDATE_INTERVAL_MS = parseInt(process.env.DASHBOARD_UPDATE_INTERVAL_MS) || 15000;
+
 async function checkAlarms(workspaceId, device, broadcastCallback = null) {
     if (!alarmState.has(workspaceId)) {
         alarmState.set(workspaceId, { cpuCooldown: 0, offlineCooldown: 0, isOffline: false });
@@ -60,7 +59,7 @@ async function checkAlarms(workspaceId, device, broadcastCallback = null) {
     if (!whatsappTarget) return;
 
     try {
-        const [resource] = await runCommandForWorkspace(workspaceId, '/system/resource/print');
+        const [resource] = await runCommandForWorkspace(workspaceId, '/system/resource/print', [], device.id);
         if (state.isOffline) {
             // Transmit 'connected' broadcast to UI to dismiss failure Toast instantly
             if (broadcastCallback) {
@@ -93,7 +92,7 @@ async function checkAlarms(workspaceId, device, broadcastCallback = null) {
             if (cpuLoad > alarms[0].threshold_mbps) {
                 const message = `🚨 *ALARM CPU TINGGI* 🚨\n\nPerangkat *${device.name}* mengalami lonjakan CPU mencapai *${cpuLoad}%*. Segera periksa kondisi perangkat Anda!`;
                 await sendWhatsAppMessage(whatsappTarget, message);
-                state.cpuCooldown = now + 15 * 60 * 1000;
+                state.cpuCooldown = now + CPU_COOLDOWN_MINUTES * 60 * 1000;
             }
         }
     } catch (error) {
@@ -464,42 +463,25 @@ async function monitorSlaAndNotifications(broadcastCallback = null) {
             const groupLabel = `${firstDevice.name} (${firstDevice.host})`;
 
             try {
-                // Gunakan timeout lebih lama untuk cron jobs (10 menit)
-                // Karena cron job berjalan setiap 3 detik, koneksi akan selalu digunakan
-                // Jadi tidak perlu ditutup setelah 30 detik
-                const CRON_TIMEOUT = 10 * 60 * 1000; // 10 menit timeout untuk cron jobs
-                const client = await getOrCreateConnection(firstDevice.workspace_id, CRON_TIMEOUT, null, firstDevice.device_id);
-
-                // Cek apakah client terhubung
-                if (!client || !client.connected) {
-                    for (const device of group.devices) {
-                        await checkAlarms(device.workspace_id, { id: device.device_id, name: device.name, host: device.host }, broadcastCallback);
+                // Gunakan runCommandForWorkspace yang sudah memiliki mekanisme lock, deduplication, dan retry
+                // Ini akan berbagi koneksi (dan hasil query) dengan backgroundMonitor jika command-nya sama
+                let pppoeActive = [];
+                try {
+                    pppoeActive = await runCommandForWorkspace(firstDevice.workspace_id, '/ppp/active/print', [], firstDevice.device_id, true, { timeoutMs: 30000 });
+                    if (!Array.isArray(pppoeActive)) {
+                        pppoeActive = [];
                     }
-                    continue; // Skip jika tidak terhubung
+                } catch (err) {
+                    if (err.message?.includes('!empty') || err.message?.includes('unknown reply: !empty')) {
+                        pppoeActive = [];
+                    } else {
+                        throw err; // Lempar ke catch blok utama untuk ditangani checkAlarms
+                    }
                 }
 
                 // Jalankan checkAlarms saat terhubung untuk memeriksa status recovery (menghilangkan toast) dan beban CPU
                 for (const device of group.devices) {
                     await checkAlarms(device.workspace_id, { id: device.device_id, name: device.name, host: device.host }, broadcastCallback);
-                }
-
-                // Ambil PPPoE active users (polling sekali)
-                // Gunakan safeWrite dengan timeout 15 detik agar tidak hang jika MikroTik lambat
-                let pppoeActive = [];
-                try {
-                    pppoeActive = await safeWrite(client, '/ppp/active/print', [], 15000);
-                    if (!Array.isArray(pppoeActive)) {
-                        pppoeActive = [];
-                    }
-                } catch (err) {
-                    // Handle !empty reply - ini normal jika tidak ada user aktif
-                    if (err.message?.includes('!empty') || err.message?.includes('unknown reply: !empty')) {
-                        pppoeActive = [];
-                    } else {
-                        // Error lain (termasuk timeout), log dan skip group ini
-                        console.warn(`[SLA Monitor] Error/timeout mengambil PPPoE active untuk ${groupLabel}:`, err.message);
-                        continue;
-                    }
                 }
 
                 // Share hasil ke semua workspace yang menggunakan device ini
@@ -542,21 +524,17 @@ async function monitorSlaAndNotifications(broadcastCallback = null) {
     }
 }
 
-async function logPppoeUsage(workspaceId, client, deviceId) {
+async function logPppoeUsage(workspaceId, deviceId) {
     try {
         if (!deviceId) {
             console.warn(`[Usage Logger] Warning: deviceId is missing for workspace ${workspaceId}`);
             return;
         }
 
-        // Cek apakah client masih terhubung
-        if (!client || !client.connected) {
-            throw new Error('Client tidak terhubung');
-        }
-
         let allQueues;
         try {
-            allQueues = await client.write('/queue/simple/print');
+            // Gunakan runCommandForWorkspace untuk pooling dan deduplication
+            allQueues = await runCommandForWorkspace(workspaceId, '/queue/simple/print', [], deviceId, true, { timeoutMs: 30000 });
         } catch (err) {
             // Handle !empty reply - ini normal jika tidak ada queue
             if (err.message?.includes('!empty') || err.message?.includes('unknown reply: !empty')) {
@@ -658,23 +636,8 @@ async function logAllActiveWorkspaces() {
             // Label mudah dibaca untuk log (menggantikan MD5 hash groupKey)
             const groupLabel = `${firstDevice.name} (${firstDevice.host})`;
 
-            console.log(`[Data Logger] 📡 Processing ${groupLabel} (${group.devices.length} workspace)`);
-
-            // Ambil main_interface dari workspace pertama (biasanya sama untuk device yang sama)
-            const [workspaceConfig] = await pool.query('SELECT main_interface FROM workspaces WHERE id = ?', [firstDevice.workspace_id]);
-            const mainInterface = workspaceConfig[0]?.main_interface || null;
-
             try {
-                const CRON_TIMEOUT = 10 * 60 * 1000;
-                const client = await getOrCreateConnection(firstDevice.workspace_id, CRON_TIMEOUT, null, firstDevice.device_id);
-
-                // Cek apakah client terhubung
-                if (!client || !client.connected) {
-                    console.warn(`[Data Logger] ⚠️ Client tidak terhubung ke ${groupLabel}, skip`);
-                    continue; // Skip jika tidak terhubung
-                }
-
-                console.log(`[Data Logger] ✅ Terhubung ke ${groupLabel}`);
+                console.log(`[Data Logger] 📡 Processing ${groupLabel} (${group.devices.length} workspace)`);
 
                 // Polling sekali untuk device fisik ini
                 await Promise.all([
@@ -682,11 +645,10 @@ async function logAllActiveWorkspaces() {
                     (async () => {
                         try {
                             for (const device of group.devices) {
-                                await logPppoeUsage(device.workspace_id, client, device.device_id);
+                                await logPppoeUsage(device.workspace_id, device.id);
                             }
                         } catch (e) {
                             console.error(`[Data Logger] ❌ Error logging PPPoE usage untuk ${groupLabel}:`, e.message);
-                            console.error(`[Data Logger] Full error:`, e);
                         }
                     })(),
                     // Log all interfaces traffic - share ke semua workspace
@@ -694,11 +656,10 @@ async function logAllActiveWorkspaces() {
                         try {
                             for (const device of group.devices) {
                                 console.log(`[Data Logger] 📊 Memulai logAllInterfacesTraffic untuk workspace ${device.workspace_id}`);
-                                await logAllInterfacesTraffic(device.workspace_id, client);
+                                await logAllInterfacesTraffic(device.workspace_id, device.id);
                             }
                         } catch (e) {
                             console.error(`[Data Logger] ❌ Error logging traffic untuk ${groupLabel}:`, e.message);
-                            console.error(`[Data Logger] Full error:`, e);
                         }
                     })()
                 ]);
@@ -718,76 +679,21 @@ async function logAllActiveWorkspaces() {
     }
 }
 
-async function logMainInterfaceTraffic(workspaceId, client, workspaceConfig) {
-    if (!workspaceConfig.main_interface) return;
-
-    try {
-        // Cek apakah client masih terhubung
-        if (!client || !client.connected) {
-            throw new Error('Client tidak terhubung');
-        }
-
-        let interfaceData;
-        try {
-            const interfaces = await client.write('/interface/print', [`?name=${workspaceConfig.main_interface}`]);
-            interfaceData = interfaces[0];
-        } catch (err) {
-            // Handle !empty reply - interface mungkin tidak ditemukan
-            if (err.message?.includes('!empty') || err.message?.includes('unknown reply: !empty')) {
-                return; // Interface tidak ditemukan, skip
-            }
-            throw err;
-        }
-
-        if (!interfaceData) return;
-
-        const workspaceKey = `${workspaceId}-${interfaceData.name}`;
-        const lastData = lastTrafficData.get(workspaceKey);
-
-        const currentTx = parseInt(interfaceData['tx-byte'], 10) || 0;
-        const currentRx = parseInt(interfaceData['rx-byte'], 10) || 0;
-
-        let txUsage = 0;
-        let rxUsage = 0;
-
-        if (lastData) {
-            txUsage = (currentTx < lastData.tx) ? currentTx : currentTx - lastData.tx;
-            rxUsage = (currentRx < lastData.rx) ? currentRx : currentRx - lastData.rx;
-        }
-
-        // Simpan data sekarang ke memory untuk next iteration (untuk tracking, tidak disimpan ke database)
-        lastTrafficData.set(workspaceKey, { tx: currentTx, rx: currentRx });
-    } catch (error) {
-        // Jangan throw error untuk UNKNOWNREPLY atau error koneksi, hanya log
-        if (error.errno === 'UNKNOWNREPLY' || error.message?.includes('UNKNOWNREPLY') ||
-            error.message?.includes('not connected') || error.message?.includes('connection')) {
-            console.warn(`[Traffic Logger] Error koneksi untuk interface ${workspaceConfig.main_interface}, akan diabaikan:`, error.message || error);
-            return; // Jangan throw, biarkan proses lanjut
-        }
-        console.error(`[Traffic Logger] Gagal memonitor interface ${workspaceConfig.main_interface}:`, error.message);
-        // Jangan throw error untuk mencegah crash, hanya log
-    }
-}
+// DEAD CODE logMainInterfaceTraffic removed
 
 /**
  * Log traffic untuk semua interface yang aktif (running) dan bukan PPPoE
  * Ini memungkinkan report untuk menampilkan data semua interface, bukan hanya main_interface
  */
-async function logAllInterfacesTraffic(workspaceId, client) {
+async function logAllInterfacesTraffic(workspaceId, deviceId) {
     try {
         console.log(`[Traffic Logger] 🚀 Memulai logAllInterfacesTraffic untuk workspace ${workspaceId}`);
-
-        // Cek apakah client masih terhubung
-        if (!client || !client.connected) {
-            console.warn(`[Traffic Logger] ⚠️ Client tidak terhubung untuk workspace ${workspaceId}`);
-            throw new Error('Client tidak terhubung');
-        }
 
         // Ambil semua interface
         let allInterfaces;
         try {
             console.log(`[Traffic Logger] 📡 Mengambil interface list untuk workspace ${workspaceId}`);
-            allInterfaces = await client.write('/interface/print', [], 10000);
+            allInterfaces = await runCommandForWorkspace(workspaceId, '/interface/print', [], deviceId, true, { timeoutMs: 30000 });
             if (!Array.isArray(allInterfaces)) {
                 allInterfaces = [];
             }
@@ -823,33 +729,32 @@ async function logAllInterfacesTraffic(workspaceId, client) {
         let activeHotspot = 0;
 
         try {
-            // Ambil secara sequential untuk menghindari race condition
-            // Gunakan safeWrite agar tidak hang (parameter ke-3 pada client.write() diabaikan oleh library)
-            console.log(`[Traffic Logger] 📡 Mengambil PPPoE active (timeout 10s)...`);
+            // Ambil secara sequential via runCommandForWorkspace untuk menghindari race condition
+            console.log(`[Traffic Logger] 📡 Mengambil PPPoE active...`);
             try {
-                const pppoeResult = await safeWrite(client, '/ppp/active/print', [], 10000);
+                const pppoeResult = await runCommandForWorkspace(workspaceId, '/ppp/active/print', [], deviceId, true, { timeoutMs: 30000 });
                 activePppoe = Array.isArray(pppoeResult) ? pppoeResult.length : 0;
                 console.log(`[Traffic Logger] ✅ Active PPPoE users: ${activePppoe}`);
             } catch (pppoeErr) {
-                // Jika timeout atau error, set ke 0 dan lanjutkan
+                // Jangan throw jika hanya timeout/empty
                 if (pppoeErr.message?.includes('timeout') || pppoeErr.message?.includes('Timeout')) {
                     console.warn(`[Traffic Logger] ⚠️ Timeout mengambil PPPoE active, menggunakan 0`);
-                } else {
+                } else if (!pppoeErr.message?.includes('!empty')) {
                     console.warn(`[Traffic Logger] ⚠️ Error mengambil PPPoE active:`, pppoeErr.message);
                 }
                 activePppoe = 0;
             }
 
-            console.log(`[Traffic Logger] 📡 Mengambil Hotspot active (timeout 10s)...`);
+            console.log(`[Traffic Logger] 📡 Mengambil Hotspot active...`);
             try {
-                const hotspotResult = await safeWrite(client, '/ip/hotspot/active/print', [], 10000);
+                const hotspotResult = await runCommandForWorkspace(workspaceId, '/ip/hotspot/active/print', [], deviceId, true, { timeoutMs: 30000 });
                 activeHotspot = Array.isArray(hotspotResult) ? hotspotResult.length : 0;
                 console.log(`[Traffic Logger] ✅ Active Hotspot users: ${activeHotspot}`);
             } catch (hotspotErr) {
-                // Jika timeout atau error, set ke 0 dan lanjutkan
+                // Jangan throw jika hanya timeout/empty
                 if (hotspotErr.message?.includes('timeout') || hotspotErr.message?.includes('Timeout')) {
                     console.warn(`[Traffic Logger] ⚠️ Timeout mengambil Hotspot active, menggunakan 0`);
-                } else {
+                } else if (!hotspotErr.message?.includes('!empty')) {
                     console.warn(`[Traffic Logger] ⚠️ Error mengambil Hotspot active:`, hotspotErr.message);
                 }
                 activeHotspot = 0;
@@ -952,20 +857,6 @@ async function updateDashboardSnapshot(workspaceId, deviceId) {
     try {
         console.log(`[Dashboard Snapshot] 🚀 Memulai updateDashboardSnapshot untuk workspace ${workspaceId}, device ${deviceId}`);
 
-        // Gunakan timeout lebih lama untuk cron jobs (10 menit)
-        // Karena cron job berjalan setiap 3 detik, koneksi akan selalu digunakan
-        // Jadi tidak perlu ditutup setelah 30 detik
-        const CRON_TIMEOUT = 10 * 60 * 1000; // 10 menit timeout untuk cron jobs
-        const client = await getOrCreateConnection(workspaceId, CRON_TIMEOUT, null, deviceId);
-
-        // Cek apakah client terhubung
-        if (!client || !client.connected) {
-            console.warn(`[Dashboard Snapshot] ⚠️ Client tidak terhubung untuk workspace ${workspaceId}, device ${deviceId}`);
-            return; // Skip jika tidak terhubung
-        }
-
-        console.log(`[Dashboard Snapshot] ✅ Client terhubung untuk workspace ${workspaceId}, device ${deviceId}`);
-
         // Ambil data dari Mikrotik
         let resource = {};
         let pppoeActive = [];
@@ -974,8 +865,8 @@ async function updateDashboardSnapshot(workspaceId, deviceId) {
 
         try {
             // Ambil resource
-            const resourceResult = await client.write('/system/resource/print', [], 10000).catch(() => []);
-            resource = resourceResult && resourceResult[0] ? resourceResult[0] : {};
+            const [resourceResult] = await runCommandForWorkspace(workspaceId, '/system/resource/print', [], deviceId, true, { timeoutMs: 30000 });
+            resource = resourceResult || {};
 
             // Simpan resource log ke database untuk historical tracking
             if (resource && Object.keys(resource).length > 0) {
@@ -1003,7 +894,7 @@ async function updateDashboardSnapshot(workspaceId, deviceId) {
 
         try {
             // Ambil PPPoE active
-            pppoeActive = await client.write('/ppp/active/print', [], 10000).catch(() => []);
+            pppoeActive = await runCommandForWorkspace(workspaceId, '/ppp/active/print', [], deviceId, true, { timeoutMs: 30000 });
             if (!Array.isArray(pppoeActive)) {
                 pppoeActive = [];
             }
@@ -1017,21 +908,22 @@ async function updateDashboardSnapshot(workspaceId, deviceId) {
 
         try {
             // Ambil interfaces
-            interfaces = await client.write('/interface/print', [], 10000).catch(() => []);
+            interfaces = await runCommandForWorkspace(workspaceId, '/interface/print', [], deviceId, true, { timeoutMs: 30000 });
             if (!Array.isArray(interfaces)) {
                 interfaces = [];
             }
 
             // Filter hanya interface yang running dan bukan PPPoE
-            const runningInterfaces = interfaces.filter(i =>
-                i.running === true &&
-                !i.type?.toLowerCase().includes('pppoe')
-            );
+            const runningInterfaces = interfaces.filter(i => {
+                const isRunning = i.running === 'true' || i.running === true || i.running === 'yes';
+                const isPppoe = i.type?.toLowerCase().includes('pppoe');
+                return isRunning && !isPppoe;
+            });
 
             // Ambil traffic untuk interface yang running
             const trafficPromises = runningInterfaces.map(async (iface) => {
                 try {
-                    const result = await client.write('/interface/monitor-traffic', [`=numbers=${iface.name}`, '=once='], 10000);
+                    const result = await runCommandForWorkspace(workspaceId, '/interface/monitor-traffic', [`=numbers=${iface.name}`, '=once='], deviceId, true, { timeoutMs: 30000 });
                     return result && result[0] ? { name: iface.name, ...result[0] } : null;
                 } catch {
                     return null;
@@ -1130,224 +1022,17 @@ async function updateAllDashboardSnapshots() {
             // Label mudah dibaca untuk log (menggantikan MD5 hash groupKey)
             const groupLabel = `${firstDevice.name} (${firstDevice.host})`;
 
-            console.log(`[Dashboard Snapshot] 📡 Processing ${groupLabel} (${group.devices.length} workspace)`);
-
             try {
-                // Gunakan timeout lebih lama untuk cron jobs (10 menit)
-                // Karena cron job berjalan setiap 3 detik, koneksi akan selalu digunakan
-                // Jadi tidak perlu ditutup setelah 30 detik
-                const CRON_TIMEOUT = 10 * 60 * 1000; // 10 menit timeout untuk cron jobs
-                const client = await getOrCreateConnection(firstDevice.workspace_id, CRON_TIMEOUT, null, firstDevice.device_id);
-
-                // Cek apakah client terhubung
-                if (!client || !client.connected) {
-                    console.warn(`[Dashboard Snapshot] ⚠️ Client tidak terhubung ke ${groupLabel}, skip`);
-                    continue; // Skip jika tidak terhubung
-                }
-
-                console.log(`[Dashboard Snapshot] ✅ Terhubung ke ${groupLabel}`);
-
-                // Ambil data dari Mikrotik (polling sekali)
-                let resource = {};
-                let pppoeActive = [];
-                let interfaces = [];
-                let traffic = {};
-
-                try {
-                    // Ambil resource
-                    console.log(`[Dashboard Snapshot] 📡 Mengambil resource dari ${groupLabel}...`);
-                    const resourceResult = await client.write('/system/resource/print', [], 10000).catch((err) => {
-                        console.warn(`[Dashboard Snapshot] ⚠️ Error mengambil resource (catch):`, err.message);
-                        return [];
-                    });
-                    resource = resourceResult && resourceResult[0] ? resourceResult[0] : {};
-                    console.log(`[Dashboard Snapshot] ✅ Resource berhasil diambil dari ${groupLabel}, keys:`, Object.keys(resource).length);
-
-                    // Simpan resource log ke database untuk semua device di group ini
-                    if (resource && Object.keys(resource).length > 0) {
-                        const cpuLoad = parseInt(resource['cpu-load'], 10) || null;
-                        const memoryUsage = resource['free-memory'] ? parseInt(resource['free-memory'], 10) : null;
-                        const totalMemory = resource['total-memory'] ? parseInt(resource['total-memory'], 10) : null;
-                        const usedMemory = totalMemory && memoryUsage ? totalMemory - memoryUsage : null;
-
-                        console.log(`[Resource Logger] 💾 Menyimpan resource logs untuk ${group.devices.length} device(s)...`);
-                        // Log untuk setiap device di group (karena mereka share device fisik yang sama)
-                        for (const device of group.devices) {
-                            try {
-                                await pool.query(
-                                    'INSERT INTO resource_logs (workspace_id, device_id, cpu_load, memory_usage) VALUES (?, ?, ?, ?)',
-                                    [device.workspace_id, device.device_id, cpuLoad, usedMemory]
-                                );
-                                console.log(`[Resource Logger] ✅ Resource log tersimpan untuk workspace ${device.workspace_id}, device ${device.device_id}`);
-                            } catch (logError) {
-                                console.error(`[Resource Logger] ❌ Gagal menyimpan log untuk workspace ${device.workspace_id}, device ${device.device_id}:`, logError.message);
-                            }
-                        }
-                        console.log(`[Resource Logger] ✅ Selesai menyimpan resource logs`);
-                    }
-                } catch (err) {
-                    if (!err.message?.includes('!empty') && !err.message?.includes('unknown reply: !empty')) {
-                        console.error(`[Dashboard Snapshot] ❌ Error mengambil resource dari ${groupLabel}:`, err.message);
-                        console.error(`[Dashboard Snapshot] Full error:`, err);
-                    } else {
-                        console.log(`[Dashboard Snapshot] ℹ️ Resource empty (normal)`);
-                    }
-                }
-
-                try {
-                    // Ambil PPPoE active
-                    console.log(`[Dashboard Snapshot] 📡 Mengambil PPPoE active dari ${groupLabel}...`);
-                    pppoeActive = await client.write('/ppp/active/print', [], 10000).catch((err) => {
-                        console.warn(`[Dashboard Snapshot] ⚠️ Error mengambil PPPoE active (catch):`, err.message);
-                        return [];
-                    });
-                    if (!Array.isArray(pppoeActive)) {
-                        pppoeActive = [];
-                    }
-                    console.log(`[Dashboard Snapshot] ✅ PPPoE active berhasil diambil dari ${groupLabel}, count: ${pppoeActive.length}`);
-                } catch (err) {
-                    if (err.message?.includes('!empty') || err.message?.includes('unknown reply: !empty')) {
-                        console.log(`[Dashboard Snapshot] ℹ️ PPPoE active empty (normal)`);
-                        pppoeActive = [];
-                    } else {
-                        console.error(`[Dashboard Snapshot] ❌ Error mengambil PPPoE active dari ${groupLabel}:`, err.message);
-                        console.error(`[Dashboard Snapshot] Full error:`, err);
-                    }
-                }
-
-                try {
-                    // Ambil interfaces
-                    console.log(`[Dashboard Snapshot] 📡 Mengambil interface list dari ${groupLabel}`);
-                    interfaces = await client.write('/interface/print', [], 10000).catch(() => []);
-                    if (!Array.isArray(interfaces)) {
-                        interfaces = [];
-                    }
-                    console.log(`[Dashboard Snapshot] 📋 Ditemukan ${interfaces.length} total interfaces di ${groupLabel}`);
-
-                    // Filter hanya interface yang running dan bukan PPPoE
-                    // Gunakan logika yang sama dengan logAllInterfacesTraffic
-                    const runningInterfaces = interfaces.filter(i => {
-                        const running = i.running === 'true' || i.running === true || i.running === 'yes';
-                        const type = (i.type || '').toLowerCase();
-                        // Exclude PPPoE interfaces
-                        return running && !type.includes('pppoe');
-                    });
-
-                    console.log(`[Dashboard Snapshot] ✅ Found ${runningInterfaces.length} running interfaces di ${groupLabel}:`, runningInterfaces.map(i => i.name).join(', '));
-
-                    // Ambil traffic untuk interface yang running
-                    // Gunakan data dari /interface/print untuk dashboard snapshot
-                    console.log(`[Dashboard Snapshot] 📊 Mengambil traffic data untuk ${runningInterfaces.length} interfaces dari /interface/print...`);
-                    let validResults = [];
-
-                    // Gunakan data dari interfaces yang sudah diambil sebelumnya (dari /interface/print)
-                    // Ini lebih reliable daripada /interface/monitor-traffic yang sering timeout
-                    for (let index = 0; index < runningInterfaces.length; index++) {
-                        const iface = runningInterfaces[index];
-                        try {
-                            // Cari interface data dari interfaces array yang sudah diambil
-                            const interfaceData = interfaces.find(i => i.name === iface.name);
-
-                            if (interfaceData) {
-                                // Cari field yang benar dari /interface/print
-                                const allKeys = Object.keys(interfaceData);
-                                const txKey = allKeys.find(k => k.toLowerCase().includes('tx') && (k.toLowerCase().includes('byte') || k.toLowerCase().includes('bytes')));
-                                const rxKey = allKeys.find(k => k.toLowerCase().includes('rx') && (k.toLowerCase().includes('byte') || k.toLowerCase().includes('bytes')));
-
-                                const txBytes = txKey ? parseInt(interfaceData[txKey], 10) || 0 : 0;
-                                const rxBytes = rxKey ? parseInt(interfaceData[rxKey], 10) || 0 : 0;
-
-                                if (txKey && rxKey) {
-                                    validResults.push({
-                                        name: iface.name,
-                                        'tx-bytes': txBytes,
-                                        'rx-bytes': rxBytes
-                                    });
-                                    console.log(`[Dashboard Snapshot] ✅ [${index + 1}/${runningInterfaces.length}] Traffic data dari /interface/print untuk interface ${iface.name}: tx=${txBytes}, rx=${rxBytes}`);
-                                } else {
-                                    console.warn(`[Dashboard Snapshot] ⚠️ [${index + 1}/${runningInterfaces.length}] Interface ${iface.name} tidak memiliki tx/rx fields`);
-                                }
-                            } else {
-                                console.warn(`[Dashboard Snapshot] ⚠️ [${index + 1}/${runningInterfaces.length}] Interface ${iface.name} tidak ditemukan di interfaces array`);
-                            }
-                        } catch (err) {
-                            console.error(`[Dashboard Snapshot] ❌ [${index + 1}/${runningInterfaces.length}] Error memproses interface ${iface.name}:`, err.message);
-                            // Continue dengan interface berikutnya, jangan stop
-                        }
-                    }
-
-                    console.log(`[Dashboard Snapshot] ✅ Mendapat ${validResults.length}/${runningInterfaces.length} traffic results dari /interface/print`);
-
-                    traffic = {};
-
-                    // Build traffic object dari validResults
-                    validResults.forEach(t => {
-                        if (t && t.name) {
-                            // Cari field yang benar dari monitor-traffic
-                            const allKeys = Object.keys(t);
-                            const rxKey = allKeys.find(k => k.toLowerCase().includes('rx') && (k.toLowerCase().includes('byte') || k.toLowerCase().includes('bytes')));
-                            const txKey = allKeys.find(k => k.toLowerCase().includes('tx') && (k.toLowerCase().includes('byte') || k.toLowerCase().includes('bytes')));
-
-                            const rxBytes = rxKey ? parseInt(t[rxKey], 10) || 0 : 0;
-                            const txBytes = txKey ? parseInt(t[txKey], 10) || 0 : 0;
-
-                            traffic[t.name] = {
-                                tx: txBytes,
-                                rx: rxBytes
-                            };
-                        }
-                    });
-                } catch (err) {
-                    if (!err.message?.includes('!empty') && !err.message?.includes('unknown reply: !empty')) {
-                        console.error(`[Dashboard Snapshot] ❌ Error mengambil interfaces dari ${groupLabel}:`, err.message);
-                        console.error(`[Dashboard Snapshot] Full error:`, err);
-                    } else {
-                        console.log(`[Dashboard Snapshot] ℹ️ Interfaces empty (normal)`);
-                    }
-                }
-
-                // Share hasil ke semua workspace yang menggunakan device ini
-                console.log(`[Dashboard Snapshot] 💾 Menyimpan snapshot untuk ${group.devices.length} workspace(s) di ${groupLabel}...`);
+                console.log(`[Dashboard Snapshot] 📡 Processing group ${groupLabel}...`);
+                
+                // Trigger update snapshot untuk setiap device di group ini
+                // updateDashboardSnapshot sudah menggunakan runCommandForWorkspace yang robust
                 for (const device of group.devices) {
-                    try {
-                        // Simpan ke database (update atau insert)
-                        await pool.query(`
-                            INSERT INTO dashboard_snapshot (workspace_id, device_id, resource, traffic, pppoe_active, active_interfaces, updated_at)
-                            VALUES (?, ?, ?, ?, ?, ?, NOW())
-                            ON DUPLICATE KEY UPDATE
-                            resource = VALUES(resource),
-                            traffic = VALUES(traffic),
-                            pppoe_active = VALUES(pppoe_active),
-                            active_interfaces = VALUES(active_interfaces),
-                            updated_at = NOW()
-                        `, [
-                            device.workspace_id,
-                            device.device_id,
-                            JSON.stringify(resource),
-                            JSON.stringify(traffic),
-                            JSON.stringify(pppoeActive),
-                            JSON.stringify(interfaces)
-                        ]);
-                        console.log(`[Dashboard Snapshot] ✅ Snapshot tersimpan untuk workspace ${device.workspace_id}, device ${device.device_id}`);
-                    } catch (error) {
-                        console.error(`[Dashboard Snapshot] ❌ Gagal menyimpan snapshot untuk workspace ${device.workspace_id}, device ${device.device_id}:`, error.message);
-                        console.error(`[Dashboard Snapshot] Full error:`, error);
-                    }
+                    await updateDashboardSnapshot(device.workspace_id, device.id);
                 }
-                console.log(`[Dashboard Snapshot] ✅ Selesai memproses ${groupLabel}`);
 
             } catch (error) {
-                // Handle error dengan lebih baik, jangan crash aplikasi
-                if (error.errno === 'UNKNOWNREPLY' || error.message?.includes('UNKNOWNREPLY')) {
-                    if (error.message?.includes('!empty') || error.message?.includes('unknown reply: !empty')) {
-                        continue; // Skip, ini normal
-                    }
-                    console.warn(`[Dashboard Snapshot] Error UNKNOWNREPLY dari ${groupLabel}, diabaikan:`, error.message);
-                } else if (error.message?.includes('not connected') || error.message?.includes('connection')) {
-                    console.warn(`[Dashboard Snapshot] Error koneksi ke ${groupLabel}, diabaikan:`, error.message);
-                } else {
-                    console.error(`[Dashboard Snapshot] Gagal memproses ${groupLabel}:`, error.message || error);
-                }
+                console.error(`[Dashboard Snapshot] ❌ Gagal memproses group ${groupLabel}:`, error.message);
             }
         }
     } catch (error) {
@@ -1375,16 +1060,10 @@ async function syncMikrotikSecrets() {
             const groupLabel = `${firstDevice.name} (${firstDevice.host})`;
 
             try {
-                // Gunakan CRON_TIMEOUT (10 menit) agar konsisten dengan cron lain
-                // Sebelumnya 30 detik — terlalu singkat untuk router dengan banyak secrets
-                const CRON_TIMEOUT = 10 * 60 * 1000;
-                const client = await getOrCreateConnection(firstDevice.workspace_id, CRON_TIMEOUT, null, firstDevice.device_id);
-                if (!client || !client.connected) continue;
-
-                // Gunakan safeWrite dengan timeout 60 detik (list secrets bisa besar)
-                const pppoeSecrets = await safeWrite(client, '/ppp/secret/print', [
+                // Gunakan runCommandForWorkspace dengan proplist untuk efisiensi
+                const pppoeSecrets = await runCommandForWorkspace(firstDevice.workspace_id, '/ppp/secret/print', [
                     '.proplist=.id,name,profile,remote-address,disabled'
-                ], 60000);
+                ], firstDevice.device_id, true, { timeoutMs: TRAFFIC_LOG_INTERVAL_MS });
 
                 if (Array.isArray(pppoeSecrets)) {
                     const deviceNames = group.devices.map(d => d.name).join(', ');

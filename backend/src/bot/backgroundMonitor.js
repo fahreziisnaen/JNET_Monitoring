@@ -11,11 +11,11 @@
  */
 
 const pool = require('../config/database');
-const { getOrCreateConnection } = require('../utils/apiConnection');
+const { runCommandForWorkspace } = require('../utils/apiConnection');
 const mikrotikStore = require('../utils/mikrotikStore');
 
-const POLLING_INTERVAL_MS = 3000;    // polling active users setiap 3 detik
-const SECRET_REFRESH_MS = 120000;    // refresh secrets list setiap 2 menit (sebelumnya 20 detik)
+const POLLING_INTERVAL_MS = parseInt(process.env.POLLING_INTERVAL_MS) || 3000;    // polling active users setiap 3 detik
+const SECRET_REFRESH_MS = parseInt(process.env.SECRET_REFRESH_MS) || 120000;    // refresh secrets list setiap 2 menit (sebelumnya 20 detik)
 const INIT_STAGGER_MS = 800;         // jeda antar device saat startup
 
 // Track per-device polling state
@@ -25,88 +25,55 @@ const deviceMonitors = new Map(); // deviceKey -> { intervalId, lastSecretFetch,
  * Mulai monitoring untuk satu device.
  */
 async function startDeviceMonitor(workspaceId, deviceId, broadcastCallback) {
-    const key = `bg-${workspaceId}-${deviceId}`;
-    if (deviceMonitors.has(key)) return; // already running
-
+    const monitorKey = `bg-${workspaceId}-${deviceId}`;
+    if (deviceMonitors.has(monitorKey)) return; 
     console.log(`[BGMonitor] Starting monitor for workspace ${workspaceId}, device ${deviceId}`);
-
-    let client;
-    try {
-        client = await getOrCreateConnection(workspaceId, 24 * 60 * 60 * 1000, key, deviceId);
-    } catch (err) {
-        console.warn(`[BGMonitor] Cannot connect device ${deviceId}: ${err.message}`);
-        mikrotikStore.setDeviceStatus(workspaceId, deviceId, 'disconnected');
-        return;
-    }
 
     const state = {
         isRunning: false,
+        isFetchingSecrets: false,
         lastSecretFetch: 0,
         cachedSecrets: [],
         lastCycleTime: 0,
         lastTrafficLog: 0,
     };
-    deviceMonitors.set(key, state);
+    deviceMonitors.set(monitorKey, state);
 
-    // Mark as connected
+    // Initial status
     mikrotikStore.setDeviceStatus(workspaceId, deviceId, 'connected');
-    if (broadcastCallback) {
-        broadcastCallback(workspaceId, deviceId, {
-            type: 'connection-status',
-            payload: { status: 'connected', deviceId, message: 'Terhubung ke perangkat Mikrotik', timestamp: Date.now() }
-        });
-    }
-
-    const safeWrite = (command, params = [], timeoutMs = 10000) => Promise.race([
-        (async () => {
-            const result = await client.write(command, params);
-            return result;
-        })().catch(err => {
-            if (err.message?.includes('!empty')) return [];
-            throw err;
-        }),
-        new Promise((_, reject) => setTimeout(() => reject(new Error(`Timeout ${timeoutMs}ms: ${command}`)), timeoutMs))
-    ]);
 
     const runCycle = async () => {
         if (state.isRunning) return;
-        if (!client?.connected) {
-            console.warn(`[BGMonitor] Device ${deviceId} disconnected, stopping monitor`);
-            mikrotikStore.setDeviceStatus(workspaceId, deviceId, 'disconnected');
-            if (broadcastCallback) {
-                broadcastCallback(workspaceId, deviceId, {
-                    type: 'connection-status',
-                    payload: { status: 'disconnected', deviceId, message: 'Koneksi ke perangkat Mikrotik terputus', timestamp: Date.now() }
-                });
-            }
-            stopDeviceMonitor(workspaceId, deviceId);
-            return;
-        }
-
         state.isRunning = true;
         const now = Date.now();
+        const cycleId = Math.random().toString(36).substring(7);
 
         try {
-            // 1. Resource (tiap 3 detik)
-            const resource = await safeWrite('/system/resource/print', [], 5000)
+            // 1. Resource
+            const resource = await runCommandForWorkspace(workspaceId, '/system/resource/print', [], deviceId)
                 .then(r => r[0] || {})
                 .catch(() => ({}));
-
-            // 2. Active users (tiap 3 detik)
-            const pppoeActive = await safeWrite('/ppp/active/print', [], 20000).catch(err => {
-                console.warn(`[BGMonitor] Timeout/Error fetching active users on device ${deviceId}: ${err.message}`);
+            
+            // 2. Active users
+            const pppoeActive = await runCommandForWorkspace(workspaceId, '/ppp/active/print', [], deviceId).catch(err => {
+                console.warn(`[BGMonitor] Error fetching active users on device ${deviceId}: ${err.message}`);
                 return null;
             });
+
             if (pppoeActive !== null) {
                 mikrotikStore.setActive(workspaceId, deviceId, pppoeActive);
+                mikrotikStore.setDeviceStatus(workspaceId, deviceId, 'connected');
+            } else {
+                mikrotikStore.setDeviceStatus(workspaceId, deviceId, 'disconnected');
             }
 
-            // 2b. Hotspot active users (tiap 3 detik, graceful jika tidak ada hotspot)
-            const hotspotActive = await safeWrite('/ip/hotspot/active/print', [], 5000).catch(() => []);
-            if (hotspotActive.length > 0 || hotspotActive !== null) {
+            // 2b. Hotspot active users
+            const hotspotActive = await runCommandForWorkspace(workspaceId, '/ip/hotspot/active/print', [], deviceId).catch(() => []);
+            if (hotspotActive && hotspotActive.length > 0) {
                 mikrotikStore.setHotspotActive(workspaceId, deviceId, hotspotActive);
             }
 
+            /*
             // 2c. Active interfaces (tiap 3 detik)
             const allInterfaces = await safeWrite('/interface/print', [], 7000).catch(() => []);
             const activeInterfaces = allInterfaces
@@ -155,21 +122,29 @@ async function startDeviceMonitor(workspaceId, deviceId, broadcastCallback) {
                     }
                 }
             }
+            */
+           const activeInterfaces = [];
+           const traffic = {};
 
-            // 3. Secrets (tiap 2 menit)
-            if (now - state.lastSecretFetch >= SECRET_REFRESH_MS || state.cachedSecrets.length === 0) {
-                const secrets = await safeWrite('/ppp/secret/print', [
-                    '.proplist=.id,name,profile,remote-address,disabled'
-                ], 90000).catch(err => {
-                    console.warn(`[BGMonitor] Device ${deviceId} secrets fetch error: ${err.message}`);
-                    return null;
-                });
-
-                if (secrets !== null) {
-                    state.cachedSecrets = secrets;
-                    state.lastSecretFetch = now;
-                    mikrotikStore.setSecrets(workspaceId, deviceId, secrets);
-                }
+            // 3. Secrets (tiap 2 menit, ASYNC non-blocking)
+            if (!state.isFetchingSecrets && (now - state.lastSecretFetch >= SECRET_REFRESH_MS || state.cachedSecrets.length === 0)) {
+                state.isFetchingSecrets = true;
+                (async () => {
+                    try {
+                        // console.log(`[BGMonitor] Device ${deviceId} secrets sync START`);
+                        const secrets = await runCommandForWorkspace(workspaceId, '/ppp/secret/print', [], deviceId);
+                        if (secrets !== null && Array.isArray(secrets)) {
+                            state.cachedSecrets = secrets;
+                            state.lastSecretFetch = Date.now();
+                            mikrotikStore.setSecrets(workspaceId, deviceId, secrets);
+                            // console.log(`[BGMonitor] Device ${deviceId} secrets sync SUCCESS: ${secrets.length} records`);
+                        }
+                    } catch (err) {
+                        console.warn(`[BGMonitor] Secrets sync failure for device ${deviceId}: ${err.message}`);
+                    } finally {
+                        state.isFetchingSecrets = false;
+                    }
+                })();
             }
 
             // 4. Merge active info ke secrets & Sync ke Database
@@ -197,7 +172,7 @@ async function startDeviceMonitor(workspaceId, deviceId, broadcastCallback) {
             if (pppoeActive !== null && enriched.length > 0) {
                 // Debug log
                 const activeCount = enriched.filter(s => s.isActive).length;
-                console.log(`[BGMonitor Debug] Device ${deviceId} enriched: ${enriched.length}, active: ${activeCount}`);
+                // console.log(`[BGMonitor Debug] Device ${deviceId} enriched: ${enriched.length}, active: ${activeCount}`);
                 
                 try {
                     // Sync pppoe_secrets (untuk Client Creation & Detail)
@@ -217,7 +192,8 @@ async function startDeviceMonitor(workspaceId, deviceId, broadcastCallback) {
                         active_connection_id = VALUES(active_connection_id), updated_at = NOW()
                     `;
 
-                    await pool.query(statusQuery, [secretsValues]);
+                    const [secretsResult] = await pool.query(statusQuery, [secretsValues]);
+                    // console.error(`[BGMonitor Debug] Device ${deviceId} Sync Result: affectedRows=${secretsResult.affectedRows}, changedRows=${secretsResult.changedRows}, totalRows=${secretsValues.length}`);
 
                     // Cleanup data lama (60 menit)
                     await pool.query(
@@ -283,12 +259,12 @@ async function startDeviceMonitor(workspaceId, deviceId, broadcastCallback) {
 }
 
 function stopDeviceMonitor(workspaceId, deviceId) {
-    const key = `bg-${workspaceId}-${deviceId}`;
-    const state = deviceMonitors.get(key);
+    const monitorKey = `bg-${workspaceId}-${deviceId}`;
+    const state = deviceMonitors.get(monitorKey);
     if (state) {
         if (state.intervalId) clearInterval(state.intervalId);
         if (state.firstRun) clearTimeout(state.firstRun);
-        deviceMonitors.delete(key);
+        deviceMonitors.delete(monitorKey);
         console.log(`[BGMonitor] Stopped monitor for workspace ${workspaceId}, device ${deviceId}`);
     }
 }
@@ -310,7 +286,7 @@ async function startBackgroundMonitoring(broadcastCallback = null) {
 async function restartDeviceMonitor(workspaceId, deviceId, broadcastCallback = null) {
     stopDeviceMonitor(workspaceId, deviceId);
     await new Promise(r => setTimeout(r, 500));
-    await startDeviceMonitor(workspaceId, deviceId, broadcastCallback);
+    startDeviceMonitor(workspaceId, deviceId, broadcastCallback).catch(console.error);
 }
 
 module.exports = { startBackgroundMonitoring, restartDeviceMonitor, stopDeviceMonitor };

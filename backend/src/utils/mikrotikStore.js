@@ -59,6 +59,9 @@ module.exports = {
         return workspaceHotspotActive.get(`${workspaceId}_${deviceId}`) || [];
     },
 
+    getSecretsKeys: () => {
+        return Array.from(workspaceSecrets.keys());
+    },
     clear: (workspaceId, deviceId) => {
         const id = `${workspaceId}_${deviceId}`;
         workspaceSecrets.delete(id);

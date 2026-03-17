@@ -2,6 +2,7 @@ const pool = require('../config/database');
 const { runCommandForWorkspace } = require('../utils/apiConnection');
 const crypto = require('crypto');
 const jwt = require('jsonwebtoken');
+const { isSuperAdmin, getSuperAdminIds } = require('../utils/authUtils');
 
 exports.setActiveDevice = async (req, res) => {
     const workspaceId = req.user.workspace_id;
@@ -121,13 +122,9 @@ exports.getMembers = async (req, res) => {
              WHERE u.workspace_id = ?`,
             [workspaceId]
         );
-        const superAdminIds = process.env.SUPER_ADMIN_IDS
-            ? process.env.SUPER_ADMIN_IDS.split(',').map(id => parseInt(id.trim()))
-            : [1];
-
         const mappedMembers = members.map(m => ({
             ...m,
-            is_super_admin: superAdminIds.includes(m.id)
+            is_super_admin: isSuperAdmin(m.id)
         }));
 
         res.status(200).json(mappedMembers);
@@ -315,13 +312,9 @@ exports.getAllUsers = async (req, res) => {
              LEFT JOIN workspaces w ON u.workspace_id = w.id
              ORDER BY w.name ASC, u.display_name ASC`
         );
-        const superAdminIds = process.env.SUPER_ADMIN_IDS
-            ? process.env.SUPER_ADMIN_IDS.split(',').map(id => parseInt(id.trim()))
-            : [1];
-
         const mappedUsers = users.map(u => ({
             ...u,
-            is_super_admin: superAdminIds.includes(u.id)
+            is_super_admin: isSuperAdmin(u.id)
         }));
 
         res.status(200).json(mappedUsers);

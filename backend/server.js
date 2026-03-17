@@ -34,6 +34,7 @@ if (RouterOSAPI.RouterOSAPI) {
     RouterOSAPI = RouterOSAPI.RouterOSAPI;
 }
 
+// Triggering restart to re-init monitors: 2026-03-18 00:34
 const pool = require('./src/config/database');
 
 // Auto-migration: tambah kolom device_id ke tabel clients jika belum ada
@@ -85,10 +86,7 @@ app.use(helmet({ crossOriginResourcePolicy: { policy: "cross-origin" } }));
 // CORS configuration - allow specific origins or use environment variable
 const allowedOrigins = process.env.CORS_ORIGINS
     ? process.env.CORS_ORIGINS.split(',').map(origin => origin.trim())
-    : [
-        'http://localhost:3000',
-        'http://172.27.0.10:3000'
-    ];
+    : (process.env.NODE_ENV !== 'production' ? ['http://localhost:3000'] : []);
 
 const corsOptions = {
     origin: function (origin, callback) {
@@ -931,6 +929,27 @@ process.on('unhandledRejection', (reason, promise) => {
     console.error('[Unhandled Rejection] Unhandled promise rejection:', reason);
 });
 
+app.get('/api/debug/store', (req, res) => {
+    const mikrotikStore = require('./src/utils/mikrotikStore');
+    const storeKeys = mikrotikStore.getSecretsKeys ? mikrotikStore.getSecretsKeys() : [];
+    
+    const results = {};
+    storeKeys.forEach(key => {
+        const parts = key.split('_');
+        results[key] = {
+            active: mikrotikStore.getActive(parts[0], parts[1]).length,
+            secrets: mikrotikStore.getSecrets(parts[0], parts[1]).length,
+            status: mikrotikStore.getDeviceStatus(parts[0], parts[1])
+        };
+    });
+
+    res.json({
+        time: new Date().toISOString(),
+        keys: storeKeys,
+        data: results
+    });
+});
+
 // Global error handler
 app.use((err, req, res, next) => {
     console.error('[Global Error Handler]:', err);
@@ -949,21 +968,23 @@ server.listen(PORT, '0.0.0.0', () => {
 
     // SLA & Notifikasi monitoring - setiap 3 detik (untuk update SLA dan notifikasi)
     // Berjalan terus menerus, tidak bergantung pada user login
-    cron.schedule('*/3 * * * * *', () => {
+    cron.schedule(process.env.SLA_MONITOR_CRON || '*/3 * * * * *', () => {
         monitorSlaAndNotifications(broadcastToWorkspace);
     });
 
+    /*
     // Sinkronisasi Secrets untuk NOC (setiap 1 menit) agar data real-time tersedia tanpa login
     cron.schedule('0 * * * * *', () => {
         syncMikrotikSecrets();
     });
+    */
 
     // Dashboard snapshot - DISABLED as per user request to save storage
     // cron.schedule('*/3 * * * * *', updateAllDashboardSnapshots);
 
     // Downtime notifications - setiap 30 detik (cek downtime > 2 menit dan kirim notifikasi)
     // Berjalan terus menerus, tidak bergantung pada user login
-    cron.schedule('*/30 * * * * *', () => {
+    cron.schedule(process.env.DOWNTIME_NOTIFY_CRON || '*/30 * * * * *', () => {
         sendDowntimeNotifications(broadcastToWorkspace);
     });
 
@@ -975,7 +996,7 @@ server.listen(PORT, '0.0.0.0', () => {
     */
 
     // Database cleanup - setiap hari jam 02:00 (menghapus log lama untuk menghemat storage dan memory)
-    cron.schedule('0 2 * * *', async () => {
+    cron.schedule(process.env.DB_CLEANUP_CRON || '0 2 * * *', async () => {
         try {
             console.log('[Cleanup] Memulai cleanup data lama...');
 
