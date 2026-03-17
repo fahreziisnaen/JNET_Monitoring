@@ -27,7 +27,15 @@ const deviceMonitors = new Map(); // deviceKey -> { intervalId, lastSecretFetch,
 async function startDeviceMonitor(workspaceId, deviceId, broadcastCallback) {
     const monitorKey = `bg-${workspaceId}-${deviceId}`;
     if (deviceMonitors.has(monitorKey)) return; 
-    console.log(`[BGMonitor] Starting monitor for workspace ${workspaceId}, device ${deviceId}`);
+
+    // Ambil keterangan untuk log yang lebih ramah
+    const [info] = await pool.query(
+        'SELECT d.name as device_name, w.name as workspace_name FROM mikrotik_devices d JOIN workspaces w ON d.workspace_id = w.id WHERE d.id = ?',
+        [deviceId]
+    );
+    const label = info[0] ? `'${info[0].device_name}' (Workspace: ${info[0].workspace_name})` : `ID:${deviceId}`;
+
+    console.log(`[Pemantauan] Memulai pemantauan latar belakang untuk ${label}`);
 
     const state = {
         isRunning: false,
@@ -56,7 +64,7 @@ async function startDeviceMonitor(workspaceId, deviceId, broadcastCallback) {
             
             // 2. Active users
             const pppoeActive = await runCommandForWorkspace(workspaceId, '/ppp/active/print', [], deviceId).catch(err => {
-                console.warn(`[BGMonitor] Error fetching active users on device ${deviceId}: ${err.message}`);
+                console.warn(`[Pemantauan] Gagal mengambil daftar user aktif di ${label || deviceId}: ${err.message}`);
                 return null;
             });
 
@@ -124,7 +132,7 @@ async function startDeviceMonitor(workspaceId, deviceId, broadcastCallback) {
                             [workspaceId, deviceId]
                         );
                     } catch (dbErr) {
-                        console.error(`[BGMonitor] Failed to log DB traffic history: ${dbErr.message}`);
+                        console.error(`[Pencatatan] Gagal menyimpan riwayat trafik ke database: ${dbErr.message}`);
                     }
                 }
             }
@@ -143,7 +151,7 @@ async function startDeviceMonitor(workspaceId, deviceId, broadcastCallback) {
                             // console.log(`[BGMonitor] Device ${deviceId} secrets sync SUCCESS: ${secrets.length} records`);
                         }
                     } catch (err) {
-                        console.warn(`[BGMonitor] Secrets sync failure for device ${deviceId}: ${err.message}`);
+                        console.warn(`[Singkronisasi] Gagal memperbarui daftar secret untuk ${label || deviceId}: ${err.message}`);
                     } finally {
                         state.isFetchingSecrets = false;
                     }
@@ -227,7 +235,7 @@ async function startDeviceMonitor(workspaceId, deviceId, broadcastCallback) {
                     }
 
                 } catch (dbErr) {
-                    console.error(`[BGMonitor] DB Sync Error device ${deviceId}: ${dbErr.message}`);
+                    console.error(`[Pencatatan] Gagal sinkronisasi data user ke database (${label || deviceId}): ${dbErr.message}`);
                 }
             }
 
@@ -245,7 +253,7 @@ async function startDeviceMonitor(workspaceId, deviceId, broadcastCallback) {
             }
 
         } catch (err) {
-            console.error(`[BGMonitor] Device ${deviceId} cycle error: ${err.message}`);
+            console.error(`[Pemantauan] Terjadi gangguan pada siklus ${label || deviceId}: ${err.message}`);
             if (err.message?.includes('not connected') || err.message?.includes('connection closed')) {
                 mikrotikStore.setDeviceStatus(workspaceId, deviceId, 'disconnected');
                 stopDeviceMonitor(workspaceId, deviceId);
@@ -268,12 +276,12 @@ function stopDeviceMonitor(workspaceId, deviceId) {
         if (state.intervalId) clearInterval(state.intervalId);
         if (state.firstRun) clearTimeout(state.firstRun);
         deviceMonitors.delete(monitorKey);
-        console.log(`[BGMonitor] Stopped monitor for workspace ${workspaceId}, device ${deviceId}`);
+        console.log(`[Pemantauan] Menghentikan pemantauan untuk workspace ${workspaceId}, perangkat ${deviceId}`);
     }
 }
 
 async function startBackgroundMonitoring(broadcastCallback = null) {
-    console.log('[BGMonitor] Starting background monitoring...');
+    console.log('[Sistem] Memulai layanan pemantauan latar belakang...');
     try {
         const [devices] = await pool.query(`SELECT id, workspace_id FROM mikrotik_devices`);
         devices.forEach((device, index) => {

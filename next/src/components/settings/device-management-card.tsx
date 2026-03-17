@@ -12,7 +12,7 @@ import { apiFetch } from '@/utils/api';
 
 const DeviceManagementCard = () => {
     const { user } = useAuth();
-    const { isConnected } = useMikrotik() || {};
+    const { allDevicesStatus } = useMikrotik() || {};
     const isAdmin = user?.role === 'admin';
     const [devices, setDevices] = useState<Device[]>([]);
     const [activeDeviceId, setActiveDeviceId] = useState<number | null>(null);
@@ -109,7 +109,10 @@ const DeviceManagementCard = () => {
         <>
             <Card>
                 <CardHeader className="flex flex-row items-center justify-between">
-                    <CardTitle>Manajemen Perangkat</CardTitle>
+                    <div>
+                        <CardTitle>Manajemen Perangkat</CardTitle>
+                        <p className="text-xs text-muted-foreground mt-1">Semua perangkat dipantau secara otomatis di latar belakang.</p>
+                    </div>
                     {isAdmin && (
                         <Button onClick={handleAddClick}>
                             <Plus size={16} className="mr-2" />
@@ -121,28 +124,40 @@ const DeviceManagementCard = () => {
                     {loading ? (
                         <div className="flex justify-center p-4"><Loader2 className="animate-spin" /></div>
                     ) : devices.length > 0 ? (
-                        devices.map(device => (
-                            <div key={device.id} className="flex items-center gap-4 p-3 bg-secondary rounded-lg">
-                                <Server className="text-muted-foreground" />
-                                <div className="flex-grow">
-                                    <p className="font-semibold">{device.name}</p>
-                                    <p className="text-xs text-muted-foreground">{device.user}@{device.host}:{device.port}</p>
-                                </div>
-                                {device.id === activeDeviceId ? (
-                                    <span className={`flex items-center gap-1 text-xs font-bold px-2 py-1 rounded-full ${isConnected ? 'text-green-500 bg-green-500/10' : 'text-destructive bg-destructive/10'}`}>
-                                        <CheckCircle size={14} /> {isConnected ? 'Online' : 'Terputus'}
-                                    </span>
-                                ) : (
-                                    <Button onClick={() => { if (device.id) { handleSetActive(device.id) } }} disabled={isActionLoading || !device.id || !isAdmin} variant="outline" className="text-xs h-auto py-1 px-2">Jadikan Aktif</Button>
-                                )}
-                                {isAdmin && (
-                                    <div className="flex gap-1">
-                                        <button onClick={() => handleEditClick(device)} className="p-2 rounded-md hover:bg-muted" title="Edit"><Edit size={16} /></button>
-                                        <button onClick={() => handleDeleteClick(device)} className="p-2 rounded-md hover:bg-destructive/10 text-muted-foreground hover:text-destructive" title="Hapus"><Trash2 size={16} /></button>
+                        devices.map(device => {
+                            const deviceStatus = allDevicesStatus?.[device.id!] || { isConnected: false };
+                            const isOnline = deviceStatus.isConnected;
+                            const isPrimary = device.id === activeDeviceId;
+
+                            return (
+                                <div key={device.id} className={`flex items-center gap-4 p-3 rounded-lg border ${isPrimary ? 'bg-primary/5 border-primary/20' : 'bg-secondary/50 border-transparent'}`}>
+                                    <Server className={`${isPrimary ? 'text-primary' : 'text-muted-foreground'}`} />
+                                    <div className="flex-grow">
+                                        <div className="flex items-center gap-2">
+                                            <p className="font-semibold">{device.name}</p>
+                                            {isPrimary && (
+                                                <span className="text-[10px] bg-primary text-primary-foreground px-1.5 py-0.5 rounded uppercase font-bold tracking-wider">Dashboard Utama</span>
+                                            )}
+                                        </div>
+                                        <p className="text-xs text-muted-foreground">{device.user}@{device.host}:{device.port}</p>
                                     </div>
-                                )}
-                            </div>
-                        ))
+                                    
+                                    <div className="flex items-center gap-3">
+                                        <span className={`flex items-center gap-1 text-[11px] font-bold px-2 py-1 rounded-full ${isOnline ? 'text-green-500 bg-green-500/10' : 'text-destructive bg-destructive/10'}`}>
+                                            <div className={`w-1.5 h-1.5 rounded-full ${isOnline ? 'bg-green-500 animate-pulse' : 'bg-destructive'}`} />
+                                            {isOnline ? 'Online' : 'Terputus'}
+                                        </span>
+
+                                        {isAdmin && (
+                                            <div className="flex gap-1">
+                                                <button onClick={() => handleEditClick(device)} className="p-2 rounded-md hover:bg-muted" title="Edit"><Edit size={14} /></button>
+                                                <button onClick={() => handleDeleteClick(device)} className="p-2 rounded-md hover:bg-destructive/10 text-muted-foreground hover:text-destructive" title="Hapus"><Trash2 size={14} /></button>
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            );
+                        })
                     ) : (
                         <div className="text-center py-6">
                             <p className="text-muted-foreground mb-4">Belum ada perangkat, nih.</p>

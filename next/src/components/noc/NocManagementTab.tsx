@@ -27,6 +27,7 @@ interface PppoeSecret {
     workspace_name: string;
     workspace_id: number;
     router_name?: string;
+    mikrotik_status?: 'connected' | 'disconnected' | 'connecting';
 }
 
 interface NocManagementTabProps {
@@ -153,7 +154,8 @@ const NocManagementTab: React.FC<NocManagementTabProps> = ({ workspaceIds }) => 
     };
 
     const filteredSecrets = useMemo(() => {
-        let filtered = secrets;
+        // Filter out secrets from offline routers to prevent confusion
+        let filtered = secrets.filter(s => s.mikrotik_status === 'connected');
 
         if (activeFilter === 'active') {
             filtered = filtered.filter(secret => secret.isActive && secret.disabled === 'false');
@@ -214,13 +216,26 @@ const NocManagementTab: React.FC<NocManagementTabProps> = ({ workspaceIds }) => 
     }, [secrets, activeFilter, searchQuery, sortColumn, sortDirection]);
 
     const summary = useMemo(() => {
-        const total = secrets.length;
-        const active = secrets.filter(s => s.isActive && s.disabled === 'false').length;
+        const onlineSecrets = secrets.filter(s => s.mikrotik_status === 'connected');
+        const total = onlineSecrets.length;
+        const active = onlineSecrets.filter(s => s.isActive && s.disabled === 'false').length;
         return {
             total,
             active,
             inactive: Math.max(0, total - active)
         };
+    }, [secrets]);
+
+    const offlineRouters = useMemo(() => {
+        const uniqueRouters = new Map();
+        secrets.forEach(s => {
+            if (!uniqueRouters.has(s.router_name || s.workspace_name)) {
+                uniqueRouters.set(s.router_name || s.workspace_name, s.mikrotik_status);
+            }
+        });
+        return Array.from(uniqueRouters.entries())
+            .filter(([_, status]) => status !== 'connected')
+            .map(([name]) => name);
     }, [secrets]);
 
     const handleAction = async (action: 'enable' | 'disable' | 'kick', secret: PppoeSecret) => {
@@ -327,6 +342,17 @@ const NocManagementTab: React.FC<NocManagementTabProps> = ({ workspaceIds }) => 
                 {renderSummaryCard("Aktif", summary.active, <UserCheck />, "bg-gradient-to-br from-green-500 to-green-700", 'active')}
                 {renderSummaryCard("Tidak Aktif", summary.inactive, <UserX />, "bg-gradient-to-br from-red-500 to-red-700", 'inactive')}
             </div>
+
+            {offlineRouters.length > 0 && (
+                <div className="bg-destructive/10 border border-destructive/20 rounded-lg p-3 flex items-center gap-3 text-destructive animate-in fade-in slide-in-from-top-4">
+                    <ZapOff size={18} className="shrink-0" />
+                    <div className="text-sm">
+                        <span className="font-bold">Beberapa router sedang offline: </span>
+                        {offlineRouters.join(', ')}. 
+                        Data dari router ini disembunyikan untuk akurasi.
+                    </div>
+                </div>
+            )}
 
             <Card>
                 <CardHeader>

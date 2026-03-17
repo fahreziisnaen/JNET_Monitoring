@@ -261,11 +261,17 @@ export const MikrotikProvider = ({ children }: { children: React.ReactNode }) =>
     }, [selectedDeviceId, user?.workspace_id]);
 
     // Derive current device data for context
-    const currentData = useMemo(() => {
+    const { currentData, allDevicesStatus } = useMemo(() => {
         // eslint-disable-next-line @typescript-eslint/no-unused-expressions
         tick; // depend on tick so useMemo re-runs when device data updates
-        if (selectedDeviceId === null) return { ...DEFAULT_DEVICE_DATA };
-        return deviceDataRef.current.get(selectedDeviceId) || { ...DEFAULT_DEVICE_DATA };
+        const current = selectedDeviceId === null ? { ...DEFAULT_DEVICE_DATA } : (deviceDataRef.current.get(selectedDeviceId) || { ...DEFAULT_DEVICE_DATA });
+        
+        const allStatus: Record<number, { isConnected: boolean }> = {};
+        deviceDataRef.current.forEach((data, id) => {
+            allStatus[id] = { isConnected: data.isConnected };
+        });
+
+        return { currentData: current, allDevicesStatus: allStatus };
     }, [selectedDeviceId, tick]);
 
     const pppoeActive = useMemo(() => {
@@ -291,6 +297,7 @@ export const MikrotikProvider = ({ children }: { children: React.ReactNode }) =>
         selectedDeviceId,
         setSelectedDeviceId: handleDeviceChange,
         forceRefresh,
+        allDevicesStatus,
     };
 
     return <MikrotikContext.Provider value={value}>{children}</MikrotikContext.Provider>;

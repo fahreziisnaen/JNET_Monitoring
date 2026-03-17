@@ -8,10 +8,12 @@ let isConnected = false;
 let qrString = null;
 
 async function startWhatsApp() {
-    console.log('[WhatsApp] Memulai koneksi...');
+    console.log('[WhatsApp] Memulai koneksi ke WhatsApp...');
     const { state, saveCreds } = await useMultiFileAuthState('whatsapp_auth_info');
     const { version, isLatest } = await fetchLatestBaileysVersion();
-    console.log(`[WhatsApp] Menggunakan versi WA v${version.join('.')} (isLatest: ${isLatest})`);
+    if (process.env.DEBUG_API === 'true') {
+        console.log(`[WhatsApp] Menggunakan Baileys v${version.join('.')} (Versi Terbaru: ${isLatest ? 'Ya' : 'Tidak'})`);
+    }
 
     sock = makeWASocket({
         version,

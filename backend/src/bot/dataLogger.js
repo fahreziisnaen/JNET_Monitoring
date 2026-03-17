@@ -63,7 +63,7 @@ async function checkAlarms(workspaceId, device, broadcastCallback = null) {
         if (state.isOffline) {
             // Transmit 'connected' broadcast to UI to dismiss failure Toast instantly
             if (broadcastCallback) {
-                console.log(`[Alarms] Broadcasting DEVICE_ONLINE to workspace ${workspaceId} via WebSocket`);
+                console.log(`[Notifikasi] Mengabarkan status PERANGKAT ONLINE ke workspace ${workspaceId}`);
                 broadcastCallback(workspaceId, device.id, {
                     type: 'connection-status',
                     payload: {
@@ -103,7 +103,7 @@ async function checkAlarms(workspaceId, device, broadcastCallback = null) {
 
             // Broadcast ke UI setiap kali transisi ke offline
             if (broadcastCallback) {
-                console.log(`[Alarms] Broadcasting DEVICE_OFFLINE to workspace ${workspaceId} via WebSocket`);
+                console.log(`[Notifikasi] Mengabarkan status PERANGKAT OFFLINE ke workspace ${workspaceId}`);
                 broadcastCallback(workspaceId, device.id, {
                     type: 'connection-status',
                     payload: {
@@ -131,7 +131,7 @@ async function checkAlarms(workspaceId, device, broadcastCallback = null) {
 
 async function processSlaEvents(workspaceId, currentActiveUsers, deviceId, broadcastCallback = null) {
     if (!deviceId) {
-        console.warn(`[SLA] Warning: deviceId is missing for workspace ${workspaceId}`);
+        console.warn(`[Status SLA] Peringatan: ID perangkat tidak ditemukan untuk workspace ${workspaceId}`);
         return;
     }
 
@@ -263,7 +263,7 @@ async function processSlaEvents(workspaceId, currentActiveUsers, deviceId, broad
                         }
                     });
                 } catch (wsError) {
-                    console.error(`[SLA Events] Error broadcasting reconnect ke WebSocket untuk workspace ${workspaceId}:`, wsError.message);
+                    console.error(`[Status SLA] Gagal broadcast status pulih ke WebSocket (Workspace ${workspaceId}):`, wsError.message);
                 }
             }
         } catch (notifError) {
@@ -385,14 +385,14 @@ async function sendDowntimeNotifications(broadcastCallback = null) {
                     );
                 }
 
-                console.log(`[Downtime Notification] Mengirim notifikasi disconnect untuk ${group.events.length} user di workspace ${workspaceId}`);
+                console.log(`[Notifikasi] Mengirim kabar gangguan untuk ${group.events.length} user di workspace ${workspaceId}`);
             } catch (error) {
                 console.error(`[Downtime Notification] Error mengirim notifikasi untuk workspace ${workspaceId}:`, error.message);
                 // Jangan mark sebagai sent jika gagal kirim, biar bisa dicoba lagi
             }
         }
     } catch (error) {
-        console.error('[Downtime Notification] Error fatal:', error);
+        console.error('[Notifikasi] Terjadi kesalahan fatal:', error);
     }
 }
 
@@ -504,15 +504,15 @@ async function monitorSlaAndNotifications(broadcastCallback = null) {
                     if (error.message?.includes('!empty') || error.message?.includes('unknown reply: !empty')) {
                         continue; // Skip, ini normal
                     }
-                    console.warn(`[SLA Monitor] Error UNKNOWNREPLY untuk ${groupLabel}, akan diabaikan:`, error.message);
+                    console.warn(`[Status SLA] Gangguan UNKNOWNREPLY untuk ${groupLabel}, diabaikan:`, error.message);
                 } else if (error.message?.includes('not connected') || error.message?.includes('connection') || error.message?.toLowerCase().includes('time') || error.message?.includes('ECONNREFUSED')) {
                     // Error koneksi, catat SLA alarm untuk setiap workspace yang menggunakan device ini
-                    console.warn(`[SLA Monitor] Error koneksi ke ${groupLabel}, memanggil checkAlarms:`, error.message);
+                    console.warn(`[Status SLA] Gangguan koneksi ke ${groupLabel}, memproses alarm:`, error.message);
                     for (const device of group.devices) {
                         await checkAlarms(device.workspace_id, { id: device.device_id, name: device.name, host: device.host }, broadcastCallback);
                     }
                 } else {
-                    console.error(`[SLA Monitor] Gagal memproses ${groupLabel}:`, error.message || error);
+                    console.error(`[Status SLA] Gagal memproses ${groupLabel}:`, error.message || error);
                 }
                 // Jangan throw error untuk mencegah crash seluruh aplikasi
             }
@@ -527,7 +527,7 @@ async function monitorSlaAndNotifications(broadcastCallback = null) {
 async function logPppoeUsage(workspaceId, deviceId) {
     try {
         if (!deviceId) {
-            console.warn(`[Usage Logger] Warning: deviceId is missing for workspace ${workspaceId}`);
+            console.warn(`[Pencatatan] Peringatan: ID perangkat tidak ditemukan untuk workspace ${workspaceId}`);
             return;
         }
 
@@ -603,10 +603,10 @@ async function logPppoeUsage(workspaceId, deviceId) {
         // Jangan throw error untuk UNKNOWNREPLY atau error koneksi, hanya log
         if (error.errno === 'UNKNOWNREPLY' || error.message?.includes('UNKNOWNREPLY') ||
             error.message?.includes('not connected') || error.message?.includes('connection')) {
-            console.warn(`[Usage Logger] Error koneksi untuk workspace ${workspaceId}, akan diabaikan:`, error.message || error);
+            console.warn(`[Pencatatan] Gangguan koneksi saat mencatat pemakaian (Workspace ${workspaceId}), diabaikan:`, error.message || error);
             return; // Jangan throw, biarkan proses lanjut
         }
-        console.error(`[Usage Logger] Gagal mencatat pemakaian untuk workspace ${workspaceId}:`, error.message);
+        console.error(`[Pencatatan] Gagal mencatat pemakaian untuk workspace ${workspaceId}:`, error.message);
         // Jangan throw error untuk mencegah crash, hanya log
     }
 }
@@ -621,11 +621,15 @@ async function logAllActiveWorkspaces() {
         const deviceGroups = await groupDevicesByCredentials();
 
         if (deviceGroups.size === 0) {
-            console.log(`[Data Logger] ⚠️ Tidak ada device yang terdaftar untuk logging`);
+            if (process.env.DEBUG_API === 'true') {
+                console.log(`[Pencatatan] ⚠️ Tidak ada perangkat yang terdaftar untuk pencatatan data`);
+            }
             return;
         }
 
-        console.log(`[Data Logger] 🔄 Memulai logging untuk ${deviceGroups.size} device group(s)`);
+        if (process.env.DEBUG_API === 'true') {
+            console.log(`[Pencatatan] 🔄 Memulai siklus pencatatan data untuk ${deviceGroups.size} kelompok perangkat`);
+        }
 
         // Polling sekali per device fisik
         for (const [groupKey, group] of deviceGroups) {
@@ -637,7 +641,9 @@ async function logAllActiveWorkspaces() {
             const groupLabel = `${firstDevice.name} (${firstDevice.host})`;
 
             try {
-                console.log(`[Data Logger] 📡 Processing ${groupLabel} (${group.devices.length} workspace)`);
+                if (process.env.DEBUG_API === 'true') {
+                    console.log(`[Pencatatan] 📡 Memproses ${groupLabel} (${group.devices.length} workspace)`);
+                }
 
                 // Polling sekali untuk device fisik ini
                 await Promise.all([
@@ -655,7 +661,9 @@ async function logAllActiveWorkspaces() {
                     (async () => {
                         try {
                             for (const device of group.devices) {
-                                console.log(`[Data Logger] 📊 Memulai logAllInterfacesTraffic untuk workspace ${device.workspace_id}`);
+                                if (process.env.DEBUG_API === 'true') {
+                                    console.log(`[Data Logger] 📊 Memulai logAllInterfacesTraffic untuk workspace ${device.workspace_id}`);
+                                }
                                 await logAllInterfacesTraffic(device.workspace_id, device.id);
                             }
                         } catch (e) {
@@ -667,9 +675,9 @@ async function logAllActiveWorkspaces() {
             } catch (e) {
                 // Handle error dengan lebih baik, jangan crash aplikasi
                 if (e.errno === 'UNKNOWNREPLY' || e.message?.includes('UNKNOWNREPLY')) {
-                    console.warn(`[Data Logger] Error UNKNOWNREPLY untuk ${groupLabel}, diabaikan:`, e.message);
+                    console.warn(`[Pencatatan] Gangguan UNKNOWNREPLY untuk ${groupLabel}, diabaikan:`, e.message);
                 } else {
-                    console.error(`[Data Logger] Gagal memproses ${groupLabel}:`, e.message || e);
+                    console.error(`[Pencatatan] Gagal memproses data untuk ${groupLabel}:`, e.message || e);
                 }
                 // Jangan throw error untuk mencegah crash seluruh aplikasi
             }
@@ -687,20 +695,28 @@ async function logAllActiveWorkspaces() {
  */
 async function logAllInterfacesTraffic(workspaceId, deviceId) {
     try {
-        console.log(`[Traffic Logger] 🚀 Memulai logAllInterfacesTraffic untuk workspace ${workspaceId}`);
+        if (process.env.DEBUG_API === 'true') {
+            console.log(`[Traffic Logger] 🚀 Memulai logAllInterfacesTraffic untuk workspace ${workspaceId}`);
+        }
 
         // Ambil semua interface
         let allInterfaces;
         try {
-            console.log(`[Traffic Logger] 📡 Mengambil interface list untuk workspace ${workspaceId}`);
+            if (process.env.DEBUG_API === 'true') {
+                console.log(`[Traffic Logger] 📡 Mengambil interface list untuk workspace ${workspaceId}`);
+            }
             allInterfaces = await runCommandForWorkspace(workspaceId, '/interface/print', [], deviceId, true, { timeoutMs: 30000 });
             if (!Array.isArray(allInterfaces)) {
                 allInterfaces = [];
             }
-            console.log(`[Traffic Logger] 📋 Ditemukan ${allInterfaces.length} total interfaces untuk workspace ${workspaceId}`);
+            if (process.env.DEBUG_API === 'true') {
+                console.log(`[Pencatatan] 📋 Ditemukan ${allInterfaces.length} interface untuk workspace ${workspaceId}`);
+            }
         } catch (err) {
             if (err.message?.includes('!empty') || err.message?.includes('unknown reply: !empty')) {
-                console.warn(`[Traffic Logger] ⚠️ Tidak ada interface untuk workspace ${workspaceId}`);
+                if (process.env.DEBUG_API === 'true') {
+                    console.warn(`[Traffic Logger] ⚠️ Tidak ada interface untuk workspace ${workspaceId}`);
+                }
                 return; // Tidak ada interface, skip
             }
             console.error(`[Traffic Logger] ❌ Error mengambil interface untuk workspace ${workspaceId}:`, err.message);
@@ -716,15 +732,21 @@ async function logAllInterfacesTraffic(workspaceId, deviceId) {
         });
 
         if (runningInterfaces.length === 0) {
-            console.log(`[Traffic Logger] Tidak ada interface yang running untuk workspace ${workspaceId}`);
+            if (process.env.DEBUG_API === 'true') {
+                console.log(`[Traffic Logger] Tidak ada interface yang running untuk workspace ${workspaceId}`);
+            }
             return;
         }
 
-        console.log(`[Traffic Logger] Found ${runningInterfaces.length} running interfaces untuk workspace ${workspaceId}:`, runningInterfaces.map(i => i.name).join(', '));
+        if (process.env.DEBUG_API === 'true') {
+            console.log(`[Traffic Logger] Found ${runningInterfaces.length} running interfaces untuk workspace ${workspaceId}:`, runningInterfaces.map(i => i.name).join(', '));
+        }
 
         // Ambil active users sekali untuk semua interface
         // Gunakan sequential dengan timeout lebih panjang untuk menghindari hang/race condition
-        console.log(`[Traffic Logger] 📊 Mengambil active users untuk workspace ${workspaceId}...`);
+        if (process.env.DEBUG_API === 'true') {
+            console.log(`[Traffic Logger] 📊 Mengambil active users untuk workspace ${workspaceId}...`);
+        }
         let activePppoe = 0;
         let activeHotspot = 0;
 
@@ -769,8 +791,10 @@ async function logAllInterfacesTraffic(workspaceId, deviceId) {
             activeHotspot = 0;
         }
 
-        console.log(`[Traffic Logger] 📊 Total active users: PPPoE=${activePppoe}, Hotspot=${activeHotspot}`);
-        console.log(`[Traffic Logger] 🔄 Memulai proses logging untuk ${runningInterfaces.length} interfaces...`);
+            console.log(`[Pencatatan] 📊 User Aktif: PPPoE=${activePppoe}, Hotspot=${activeHotspot}`);
+            if (process.env.DEBUG_API === 'true') {
+                console.log(`[Pencatatan] 🔄 Memulai logging untuk ${runningInterfaces.length} interface...`);
+            }
 
         // Log traffic untuk setiap interface
         const logPromises = runningInterfaces.map(async (interfaceData) => {
@@ -830,7 +854,9 @@ async function logAllInterfacesTraffic(workspaceId, deviceId) {
         console.log(`[Traffic Logger] ⏳ Menunggu semua log promises selesai (${logPromises.length} promises)...`);
         try {
             await Promise.all(logPromises);
-            console.log(`[Traffic Logger] ✅ Semua log promises selesai untuk workspace ${workspaceId}`);
+            if (process.env.DEBUG_API === 'true') {
+                console.log(`[Pencatatan] ✅ Semua data trafik berhasil direkam untuk workspace ${workspaceId}`);
+            }
         } catch (promiseError) {
             console.error(`[Traffic Logger] ❌ Error dalam Promise.all(logPromises):`, promiseError.message);
             console.error(`[Traffic Logger] Full Promise.all error:`, promiseError);
@@ -855,7 +881,9 @@ async function logAllInterfacesTraffic(workspaceId, deviceId) {
  */
 async function updateDashboardSnapshot(workspaceId, deviceId) {
     try {
-        console.log(`[Dashboard Snapshot] 🚀 Memulai updateDashboardSnapshot untuk workspace ${workspaceId}, device ${deviceId}`);
+        if (process.env.DEBUG_API === 'true') {
+            console.log(`[Status Dashboard] 🚀 Memperbarui snapshot untuk workspace ${workspaceId}, perangkat ${deviceId}`);
+        }
 
         // Ambil data dari Mikrotik
         let resource = {};
@@ -994,14 +1022,18 @@ let isUpdatingSnapshots = false;
 async function updateAllDashboardSnapshots() {
     // Prevent multiple execution bersamaan
     if (isUpdatingSnapshots) {
-        console.log(`[Dashboard Snapshot] ⏭️ Update sudah berjalan, skip execution ini`);
+        if (process.env.DEBUG_API === 'true') {
+            console.log(`[Status Dashboard] ⏭️ Pembaruan sudah berjalan, melewati siklus ini`);
+        }
         return;
     }
 
     isUpdatingSnapshots = true;
 
     try {
-        console.log(`[Dashboard Snapshot] 🔄 Memulai updateAllDashboardSnapshots`);
+        if (process.env.DEBUG_API === 'true') {
+            console.log(`[Status Dashboard] 🔄 Memulai sinkronisasi snapshot dashboard`);
+        }
 
         // Group devices berdasarkan credentials
         const deviceGroups = await groupDevicesByCredentials();
@@ -1023,8 +1055,9 @@ async function updateAllDashboardSnapshots() {
             const groupLabel = `${firstDevice.name} (${firstDevice.host})`;
 
             try {
-                console.log(`[Dashboard Snapshot] 📡 Processing group ${groupLabel}...`);
-                
+                if (process.env.DEBUG_API === 'true') {
+                    console.log(`[Status Dashboard] 📡 Memproses kelompok ${groupLabel}...`);
+                }
                 // Trigger update snapshot untuk setiap device di group ini
                 // updateDashboardSnapshot sudah menggunakan runCommandForWorkspace yang robust
                 for (const device of group.devices) {
@@ -1050,7 +1083,9 @@ async function updateAllDashboardSnapshots() {
  */
 async function syncMikrotikSecrets() {
     try {
-        console.log(`[Secret Sync] 🔄 Memulai sinkronisasi background PPPoE secrets...`);
+        if (process.env.DEBUG_API === 'true') {
+            console.log(`[Singkronisasi] 🔄 Sinkronisasi data user (PPPoE secrets) sedang berjalan...`);
+        }
         const deviceGroups = await groupDevicesByCredentials();
 
         for (const [groupKey, group] of deviceGroups) {
@@ -1067,7 +1102,9 @@ async function syncMikrotikSecrets() {
 
                 if (Array.isArray(pppoeSecrets)) {
                     const deviceNames = group.devices.map(d => d.name).join(', ');
-                    console.log(`[Secret Sync] ✅ Mendapat ${pppoeSecrets.length} secrets dari Mikrotik (${deviceNames})`);
+                    if (process.env.DEBUG_API === 'true') {
+                        console.log(`[Singkronisasi] ✅ Mendapat ${pppoeSecrets.length} user dari Mikrotik (${deviceNames})`);
+                    }
                     
                     for (const device of group.devices) {
                         // 1. Update memory store (untuk legacy compatibility & speed)
@@ -1112,10 +1149,10 @@ async function syncMikrotikSecrets() {
                     }
                 }
             } catch (error) {
-                console.error(`[Secret Sync] ❌ Gagal sync secrets dari ${groupLabel}:`, error.message);
+                console.error(`[Singkronisasi] ❌ Gagal sinkron user dari ${groupLabel}:`, error.message);
             }
         }
-        console.log(`[Secret Sync] ✅ Sinkronisasi selesai`);
+        console.log(`[Singkronisasi] ✅ Sinkronisasi data user selesai`);
     } catch (error) {
         console.error("[Secret Sync] ❌ Error fatal:", error);
     }

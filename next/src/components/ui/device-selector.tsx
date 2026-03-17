@@ -98,6 +98,23 @@ export const DeviceSelector: React.FC<DeviceSelectorProps> = ({
     );
   }
 
+  const handleSelect = async (deviceId: number) => {
+    onDeviceChange(deviceId);
+    
+    // Jika admin, simpan pilihan ini ke DB sebagai default untuk workspace
+    if (user?.role === 'admin') {
+      try {
+        const apiUrl = process.env.NEXT_PUBLIC_API_BASE_URL;
+        await apiFetch(`${apiUrl}/api/workspaces/set-active-device`, {
+          method: 'POST',
+          body: JSON.stringify({ deviceId })
+        });
+      } catch (error) {
+        console.error('[DeviceSelector] Gagal update pilihan utama di workspace:', error);
+      }
+    }
+  };
+
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -111,7 +128,7 @@ export const DeviceSelector: React.FC<DeviceSelectorProps> = ({
         {devices.map((device) => (
           <DropdownMenuItem
             key={device.id}
-            onClick={() => onDeviceChange(device.id)}
+            onClick={() => handleSelect(device.id)}
             className={selectedDeviceId === device.id ? 'bg-accent' : ''}
           >
             <div className="flex flex-col">

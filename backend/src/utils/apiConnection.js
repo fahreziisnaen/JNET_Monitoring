@@ -112,10 +112,10 @@ async function getOrCreateConnection(workspaceId, timeout, customKey = null, dev
                 // Timeout menunggu lock, cek apakah koneksi sudah ada
                 const existingConnection = getConnection(connectionKey);
                 if (existingConnection && existingConnection.client && existingConnection.client.connected) {
-                    console.log(`[Connection] Timeout menunggu lock, koneksi ke ${deviceLabel} sudah ada — menggunakan yang ada`);
+                    console.log(`[Koneksi] Timeout menunggu antrean, koneksi ke ${deviceLabel} sudah tersedia — menggunakan yang sudah ada`);
                     resolve(existingConnection.client);
                 } else {
-                    console.warn(`[Connection] Timeout menunggu lock untuk ${deviceLabel}, akan membuat koneksi baru`);
+                    console.warn(`[Koneksi] Timeout menunggu antrean untuk ${deviceLabel}, akan mencoba membuat koneksi baru`);
                     // Clear lock yang hang
                     clearConnectionLock(connectionKey);
                     // Fall through ke STEP 3 dengan membuat koneksi baru
@@ -221,13 +221,13 @@ async function getOrCreateConnection(workspaceId, timeout, customKey = null, dev
                 }
             });
 
-            console.log(`[Connection] Membuat koneksi baru ke ${deviceLabel}...`);
+            console.log(`[Koneksi] Membangun koneksi baru ke ${deviceLabel}...`);
             await client.connect();
             // Pastikan timeout tidak null atau 0 - gunakan default jika tidak ada
             const effectiveTimeout = (timeout && timeout > 0) ? timeout : DEFAULT_IDLE_TIMEOUT;
             // Simpan label di connection object agar connectionManager bisa tampilkan nama device
             addConnection(connectionKey, { client, label: deviceLabel }, effectiveTimeout);
-            console.log(`[Connection] Koneksi ke ${deviceLabel} berhasil dibuat`);
+            console.log(`[Koneksi] Berhasil terhubung ke ${deviceLabel}`);
             return client;
         } catch (error) {
             console.error(`[RouterOS API] Gagal membuat koneksi ke ${deviceLabel}:`, error.message);
@@ -349,7 +349,9 @@ async function runCommandForWorkspace(workspaceId, command, params = [], deviceI
     const maxRetries = options.noRetry ? 0 : 2;
 
     // PHASE 1: Mendapatkan koneksi yang valid (Boleh retry)
-    console.log(`[API-ROBUST] [PHASE 1] Memulai akuisisi koneksi untuk workspace ${workspaceId}...`);
+    if (process.env.DEBUG_API === 'true') {
+        console.log(`[API-ROBUST] [PHASE 1] Memulai akuisisi koneksi untuk workspace ${workspaceId}...`);
+    }
     while (retryCount <= maxRetries) {
         try {
             client = await getOrCreateConnection(workspaceId, DEFAULT_IDLE_TIMEOUT, null, deviceId);
@@ -361,7 +363,7 @@ async function runCommandForWorkspace(workspaceId, command, params = [], deviceI
             if (retryCount > maxRetries) throw new Error('Gagal mendapatkan koneksi setelah beberapa percobaan');
             await new Promise(res => setTimeout(res, 500));
         } catch (error) {
-            console.error(`[API Connection Error] Gagal mendapatkan koneksi (attempt ${retryCount + 1}):`, error.message);
+            console.error(`[Akses API] Gagal mendapatkan koneksi (percobaan ${retryCount + 1}):`, error.message);
             removeConnection(deviceConnectionKey);
             retryCount++;
             if (retryCount > maxRetries) throw error;
@@ -385,15 +387,21 @@ async function runCommandForWorkspace(workspaceId, command, params = [], deviceI
     // CRITICAL: Reset retryCount untuk fase eksekusi perintah
     let executionRetryCount = 0;
 
-    console.log(`[API-ROBUST] [PHASE 2] Memulai eksekusi command "${command}"...`);
+    if (process.env.DEBUG_API === 'true') {
+        console.log(`[API-ROBUST] [PHASE 2] Memulai eksekusi command "${command}"...`);
+    }
     const executeAndCleanup = (async () => {
         try {
             while (executionRetryCount <= maxRetries) {
                 const startTime = Date.now();
                 try {
-                    console.log(`[API Command] [START] "${command}" pada Mikrotik (${deviceName}) (Timeout: ${timeoutMs}ms)`);
+                    if (process.env.DEBUG_API === 'true') {
+                        console.log(`[API Command] [START] "${command}" pada Mikrotik (${deviceName}) (Timeout: ${timeoutMs}ms)`);
+                    }
                     const result = await writeWithTimeout(client, command, params, timeoutMs);
-                    console.log(`[API Command] [SUCCESS] "${command}" selesai dalam ${Date.now() - startTime}ms`);
+                    if (process.env.DEBUG_API === 'true') {
+                        console.log(`[API Command] [SUCCESS] "${command}" selesai dalam ${Date.now() - startTime}ms`);
+                    }
                     return result;
                 } catch (error) {
                     const duration = Date.now() - startTime;
@@ -402,7 +410,7 @@ async function runCommandForWorkspace(workspaceId, command, params = [], deviceI
                     // Hanya hapus koneksi jika ini perintah mutasi (unsafe) atau retry sudah habis
                     // Ini untuk mencegah monitoring rutin membunuh koneksi yang sedang dipakai perintah /add atau /remove
                     if (!isSafe || executionRetryCount >= maxRetries) {
-                        console.log(`[API-ROBUST] Membersihkan koneksi untuk Mikrotik (${deviceName}) karena error/timeout.`);
+                        console.log(`[Akses API] Membersihkan koneksi untuk Mikrotik (${deviceName}) karena terjadi gangguan atau timeout.`);
                         removeConnection(deviceConnectionKey);
                     }
 

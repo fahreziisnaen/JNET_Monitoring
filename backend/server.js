@@ -43,9 +43,9 @@ async function runMigrations() {
         const [columns] = await pool.query("SHOW COLUMNS FROM clients LIKE 'device_id'");
         if (columns.length === 0) {
             await pool.query("ALTER TABLE clients ADD COLUMN device_id INT DEFAULT NULL AFTER workspace_id");
-            console.log('[Migration] Column clients.device_id added');
+            console.log('[Migrasi] Kolom clients.device_id berhasil ditambahkan');
         } else {
-            console.log('[Migration] clients.device_id OK');
+            console.log('[Migrasi] Struktur tabel clients: OK');
         }
     } catch (err) {
         console.error('[Migration] Error:', err.message);
@@ -173,7 +173,7 @@ function stopWorkspaceMonitoring(connectionKey, reason = 'Koneksi terputus') {
             const workspaceId = parts[1];
             const deviceId = parts[2] ? parseInt(parts[2]) : null;
 
-            console.log(`[WebSocket] Stopping monitoring for workspace ${workspaceId}, device ${deviceId}. Reason: ${reason}`);
+            console.log(`[WebSocket] Menghentikan pemantauan untuk workspace ${workspaceId}, perangkat ${deviceId}. Alasan: ${reason}`);
 
             try {
                 broadcastToWorkspace(workspaceId, deviceId, {
@@ -1039,12 +1039,12 @@ server.listen(PORT, '0.0.0.0', () => {
         timezone: "Asia/Jakarta"
     });
 
-    console.log('[Cron Jobs] Background logging: DISABLED');
-    console.log('[Cron Jobs] SLA & Notifikasi monitoring: setiap 3 detik');
-    console.log('[Cron Jobs] Dashboard snapshot: DISABLED');
-    console.log('[Cron Jobs] Downtime notifications: setiap 30 detik');
-    console.log('[Cron Jobs] Daily reports: setiap hari jam 00:00');
-    console.log('[Cron Jobs] Database cleanup: setiap hari jam 02:00');
+    console.log('[Tugas Rutin] Pencatatan latar belakang: DIMATIKAN');
+    console.log('[Tugas Rutin] Pemantauan SLA & Notifikasi: setiap 3 detik');
+    console.log('[Tugas Rutin] Snapshot dashboard: DIMATIKAN');
+    console.log('[Tugas Rutin] Notifikasi gangguan: setiap 30 detik');
+    console.log('[Tugas Rutin] Laporan harian: setiap hari jam 00:00');
+    console.log('[Tugas Rutin] Pembersihan database: setiap hari jam 02:00');
 });
 
 startWhatsApp().catch(err => {
@@ -1055,7 +1055,7 @@ startWhatsApp().catch(err => {
 // Ini memastikan mikrotikStore selalu diupdate tanpa bergantung pada WS connections
 setTimeout(() => {
     startBackgroundMonitoring(broadcastToWorkspace).catch(err => {
-        console.error('[BGMonitor] Failed to start:', err.message);
+        console.error('[Pemantauan] Gagal memulai layanan latar belakang:', err.message);
     });
 }, 3000); // Tunggu 3 detik setelah server ready
-console.log('[BGMonitor] Background monitoring will start in 3 seconds...');
+console.log('[Pemantauan] Layanan pemantauan latar belakang akan dimulai dalam 3 detik...');
