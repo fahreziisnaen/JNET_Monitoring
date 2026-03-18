@@ -111,10 +111,20 @@ async function checkAlarms(workspaceId, device, broadcastCallback = null) {
 
 async function monitorSlaAndNotifications(broadcastCallback = null) {
     try {
-        // Ambil semua device dari semua workspace untuk dimonitoring alaramnya
-        const [devices] = await pool.query('SELECT * FROM mikrotik_devices');
-        for (const device of devices) {
-            await checkAlarms(device.workspace_id, device, broadcastCallback);
+        // Group devices by physical credentials to avoid redundant polling
+        const groups = await groupDevicesByCredentials();
+        
+        for (const [groupKey, group] of groups) {
+            if (group.devices.length === 0) continue;
+            
+            // Perwakilan untuk polling physical
+            const rep = group.devices[0];
+            
+            // Lakukan alarm check untuk setiap instance dalam group
+            for (const inst of group.devices) {
+                // inst di sini adalah { workspace_id, id, host, name }
+                await checkAlarms(inst.workspace_id, inst, broadcastCallback);
+            }
         }
     } catch (error) {
         console.error('[Bot Service] Error in monitorSlaAndNotifications:', error);

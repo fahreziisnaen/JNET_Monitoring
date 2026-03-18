@@ -25,7 +25,7 @@ const cron = require('node-cron');
 const { startWhatsApp } = require('./src/services/whatsappService');
 const { generateAndSendDailyReports } = require('./src/bot/reportGenerator');
 const { monitorSlaAndNotifications, sendDowntimeNotifications } = require('./src/bot/dataLogger');
-const { startBackgroundMonitoring } = require('./src/bot/backgroundMonitor');
+const { startBackgroundMonitoring, refreshSecretsNow } = require('./src/bot/backgroundMonitor');
 const { setupPppoeListeners } = require('./src/utils/mikrotikListener');
 const mikrotikStore = require('./src/utils/mikrotikStore');
 
@@ -348,240 +348,17 @@ async function startWorkspaceMonitoring(workspaceId, connectionKey, deviceId = n
             console.error(`[RealTime] Error menyiapkan listener database untuk workspace ${workspaceId}:`, error.message);
         }
 
-        const runMonitoringCycle = async (isForced = false) => {
-            // ... (keeping flag checks)
+        // Set interval untuk sync snapshot dashboard (setiap 30 detik)
+        // Kita tidak lagi memanggil MikroTik API di sini karena backgroundMonitor sudah melakukan polling global.
+        const intervalId = setInterval(async () => {
             if (isRunning) return;
-            const now = Date.now();
-            if (now - lastCycleTime < 2000 && !isForced) return;
-
             isRunning = true;
-            lastCycleTime = now;
-            if (!client?.connected) {
-                return stopWorkspaceMonitoring(connectionKey, 'Koneksi ke perangkat Mikrotik terputus (Client not connected)');
-            }
             try {
-                // ... (keeping safeWrite)
-                const safeWrite = async (command, params = [], timeoutMs = 10000) => {
-                    let timeoutId;
-                    const timeoutPromise = new Promise((_, reject) => {
-                        timeoutId = setTimeout(() => reject(new Error(`Timeout setelah ${timeoutMs}ms untuk command ${command}`)), timeoutMs);
-                    });
-
-                    try {
-                        const result = await Promise.race([
-                            client.write(command, params),
-                            timeoutPromise
-                        ]);
-                        clearTimeout(timeoutId);
-                        return result;
-                    } catch (err) {
-                        clearTimeout(timeoutId);
-                        if (err.message?.includes('!empty') || err.message?.includes('unknown reply: !empty')) return [];
-                        throw err;
-                    }
-                };
-
-                // 1. Resource: TETAP (Setiap 3 detik)
-                const resourceResults = await safeWrite('/system/resource/print', [], 5000);
-                const resource = resourceResults[0];
-                if (!resource) throw new Error("Data resource MikroTik tidak tersedia");
-
-                // 2. Active Users: TETAP (Setiap 3 detik)
-                const pppoeActive = await safeWrite('/ppp/active/print', [], 7000);
-
-                // 3. Secrets: Ambil dari Global Store (diperbarui real-time oleh backgroundMonitor)
-                // Ini menghilangkan blokade socket lama karena proses fetch secret yang memakan waktu (heavy query) 
-                // tidak lagi dilakukan di siklus monitoring WebSocket secara mandiri.
-                const pppoeSecrets = mikrotikStore.getSecrets(workspaceId, deviceId) || [];
-                cachedSecrets = pppoeSecrets;
-
-                // Sync data active ke store (setiap 3 detik)
-                mikrotikStore.setActive(workspaceId, deviceId, pppoeActive);
-
-                // Merge pppoeActive ke pppoeSecrets: tambahkan info aktif (isActive, uptime, currentAddress)
-                // Buat Map untuk lookup cepat dari pppoeActive
-                const activeUserMap = new Map();
-                pppoeActive.forEach(user => {
-                    if (user.name) {
-                        activeUserMap.set(user.name, {
-                            address: user.address || null,
-                            uptime: user.uptime || null,
-                            service: user.service || 'pppoe',
-                            '.id': user['.id'] || null
-                        });
-                    }
-                });
-
-                // Enrich pppoeSecrets dengan data dari pppoeActive
-                const enrichedSecrets = pppoeSecrets.map(secret => {
-                    const activeInfo = activeUserMap.get(secret.name);
-                    const isActive = !!activeInfo;
-
-                    // Build enriched secret object
-                    const enriched = Object.assign({}, secret);
-
-                    // Tambahkan deviceId agar frontend tahu dari mana asal secret ini
-                    enriched.deviceId = deviceId;
-
-                    // Tambahkan field isActive
-                    enriched.isActive = isActive;
-
-                    // Tambahkan uptime jika aktif
-                    if (isActive && activeInfo.uptime) {
-                        enriched.uptime = activeInfo.uptime;
-                    }
-
-                    // Tambahkan .id dari active connection untuk keperluan kick
-                    if (isActive && activeInfo['.id']) {
-                        enriched.activeConnectionId = activeInfo['.id'];
-                    }
-
-                    // Untuk remote-address: prioritas 1) dari active connection, 2) dari secret, 3) null
-                    if (isActive && activeInfo.address) {
-                        enriched.currentAddress = activeInfo.address;
-                        // Jika secret tidak punya remote-address, gunakan dari active connection
-                        if (!enriched['remote-address']) {
-                            enriched['remote-address'] = activeInfo.address;
-                        }
-                    }
-
-                    return enriched;
-                });
-
-                // Catatan: processSlaEvents TIDAK dipanggil di sini untuk menghindari duplikasi notifikasi
-                // processSlaEvents sudah dijalankan oleh cron job monitorSlaAndNotifications setiap 3 detik
-                // yang berjalan terus menerus tanpa bergantung pada user login
-
-                const allInterfaces = await safeWrite('/interface/print', [], 10000);
-
-                // Filter interface yang aktif (running) untuk ditampilkan di frontend
-                const activeInterfacesList = allInterfaces
-                    .filter(iface => {
-                        const running = iface.running === 'true' || iface.running === true || iface.running === 'yes';
-                        return running;
-                    })
-                    .map(iface => ({
-                        name: iface.name,
-                        type: iface.type || 'unknown',
-                        running: iface.running
-                    }));
-
-                // Filter interface yang akan di-monitor traffic-nya
-                // Exclude interface yang tidak bisa di-monitor traffic-nya dan PPPoE
-                const interfacesToMonitor = allInterfaces
-                    .filter(iface => {
-                        const type = (iface.type || '').toLowerCase();
-                        const running = iface.running === 'true' || iface.running === true || iface.running === 'yes';
-
-                        // Exclude interface yang tidak bisa di-monitor traffic-nya dan PPPoE
-                        const excludeTypes = ['loopback', 'pppoe-in', 'pppoe-out', 'pptp-in', 'l2tp-in'];
-
-                        // Exclude semua interface yang mengandung 'pppoe' di type-nya
-                        if (type.includes('pppoe')) return false;
-
-                        // Include jika running dan tidak di exclude list
-                        return running && !excludeTypes.includes(type);
-                    })
-                    .map(iface => iface.name);
-
-                // Ambil traffic data dengan timeout lebih pendek (3 detik per interface)
-                const trafficPromises = interfacesToMonitor.map(name =>
-                    safeWrite('/interface/monitor-traffic', [`=interface=${name}`, '=once='], 3000)
-                        .then(r => r[0])
-                        .catch(err => {
-                            return null;
-                        })
-                );
-
-                const trafficResults = await Promise.all(trafficPromises);
-                const trafficUpdateBatch = {};
-                trafficResults.forEach(result => {
-                    if (result && result.name) {
-                        trafficUpdateBatch[result.name] = result;
-                    }
-                });
-
-                // Pastikan resource selalu ada, meskipun kosong
-                const finalResource = resource && Object.keys(resource).length > 0 ? resource : {};
-
-                const batchPayload = {
-                    resource: finalResource,
-                    pppoeSecrets: enrichedSecrets || [], // Secrets yang sudah di-enrich dengan info aktif (isActive, uptime, currentAddress)
-                    activeInterfaces: activeInterfacesList || [], // Kirim list interface aktif
-                    traffic: trafficUpdateBatch
-                };
-                if (Object.keys(finalResource).length > 0) {
-                    broadcastToWorkspace(workspaceId, deviceId, { type: 'batch-update', payload: batchPayload });
-                }
-
-                // SINKRONISASI DATABASE (SNAPSHOT PERSISTENSI):
-                // Simpan kumpulan data terakhir ke database agar layar tidak kosong saat Load awal / Refresh F5
-                // HANYA update jika resource berhasil diambil (menghindari snapshot kosong saat flapping)
-                if (resource && Object.keys(resource).length > 0) {
-                    try {
-                        await pool.query(
-                            `INSERT INTO dashboard_snapshot 
-                                (workspace_id, device_id, resource, pppoe_active, traffic, active_interfaces, updated_at) 
-                             VALUES (?, ?, ?, ?, ?, ?, NOW()) 
-                             ON DUPLICATE KEY UPDATE 
-                                resource = VALUES(resource), 
-                                pppoe_active = VALUES(pppoe_active), 
-                                traffic = VALUES(traffic), 
-                                active_interfaces = VALUES(active_interfaces), 
-                                updated_at = NOW()`,
-                            [
-                                workspaceId, 
-                                deviceId, 
-                                JSON.stringify(batchPayload.resource), 
-                                JSON.stringify(batchPayload.pppoeSecrets), // Kolom db bernama pppoe_active menampung secrets berdasar API
-                                JSON.stringify(batchPayload.traffic), 
-                                JSON.stringify(batchPayload.activeInterfaces)
-                            ]
-                        );
-                    } catch (dbError) {
-                        console.error(`[Snapshot Sync] Gagal sinkronisasi data ke dashboard_snapshot untuk perangkat ${deviceId}:`, dbError.message);
-                    }
-                }
-
-            } catch (cycleError) {
-                // Handle error khusus untuk UNKNOWNREPLY
-                if (cycleError.errno === 'UNKNOWNREPLY' || cycleError.message?.includes('UNKNOWNREPLY')) {
-                    // Jangan stop monitoring untuk !empty, hanya untuk error lain
-                    if (cycleError.message?.includes('!empty')) {
-                        // Jangan hapus layar frontend, cukup skip iterasi ini
-                        return; // Lanjutkan monitoring tanpa mereplace dengan emptyPayload
-                    }
-                    stopWorkspaceMonitoring(connectionKey, `Gagal mendapatkan respon dari perangkat: ${cycleError.message}`);
-                    return;
-                }
-                
-                // Jika error timeout atau error intermiten, jangan kirim data kosong (emptyPayload)
-                // karena akan mereset tampilan UI ke wujud blank. Cukup lewati siklus ini.
-                console.warn(`[Monitoring] Siklus terlewati untuk workspace ${workspaceId} device ${deviceId} akibat: ${cycleError.message}`);
-                
-                // Hanya stop jika error fatal (koneksi diputus murni)
-                if (cycleError.message?.includes('not connected') || cycleError.message?.includes('connection closed')) {
-                    stopWorkspaceMonitoring(connectionKey, `Connection error detected: ${cycleError.message}`);
-                    mikrotikStore.setDeviceStatus(workspaceId, deviceId, 'disconnected');
-                }
+                // Snapshot sync is handled by backgroundMonitor now
             } finally {
-                isRunning = false; // Reset flag setelah cycle selesai
-            }
-        };
-
-        // Set interval untuk monitoring cycle setiap 3 detik
-        // Jalankan sekali langsung untuk immediate data
-        setTimeout(() => {
-            runMonitoringCycle().catch(err => {
                 isRunning = false;
-            });
-        }, 1000); // Tunggu 1 detik sebelum mulai
-
-        const intervalId = setInterval(() => {
-            runMonitoringCycle().catch(err => {
-                isRunning = false; // Reset flag jika error
-            });
-        }, 3000); // Interval 3 detik
+            }
+        }, 30000); 
 
         const connection = getConnection(connectionKey);
         if (connection) {
@@ -589,11 +366,7 @@ async function startWorkspaceMonitoring(workspaceId, connectionKey, deviceId = n
             connection.listenerCleanup = listenerCleanup; // Simpan untuk dibersihkan nanti
             connection.forceSecretRefresh = () => {
                 console.log(`[WebSocket] Force refresh trigger untuk workspace ${workspaceId}`);
-                lastSecretFetchTime = 0;
-                cachedSecrets = [];
-                if (!isRunning) {
-                    runMonitoringCycle(true).catch(e => console.error(e));
-                }
+                refreshSecretsNow(workspaceId, deviceId).catch(console.error);
             };
         }
 
