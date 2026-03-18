@@ -75,11 +75,16 @@ async function startDeviceMonitor(workspaceId, deviceId, broadcastCallback) {
                 mikrotikStore.setDeviceStatus(workspaceId, deviceId, 'disconnected');
             }
 
-            // 2b. Hotspot active users
-            const hotspotActive = await runCommandForWorkspace(workspaceId, '/ip/hotspot/active/print', [], deviceId).catch(() => []);
-            if (hotspotActive && hotspotActive.length > 0) {
-                mikrotikStore.setHotspotActive(workspaceId, deviceId, hotspotActive);
-            }
+            // 2b. Hotspot active users - Fire-and-forget (non-blocking total)
+            // Menggunakan socket terpisah, tidak menunggu hasilnya agar siklus utama tidak terblokir
+            const hotspotKey = `workspace_${workspaceId}_device_${deviceId}_hotspot`;
+            runCommandForWorkspace(workspaceId, '/ip/hotspot/active/print', [], deviceId, { customKey: hotspotKey })
+                .then(hotspotActive => {
+                    if (hotspotActive && hotspotActive.length > 0) {
+                        mikrotikStore.setHotspotActive(workspaceId, deviceId, hotspotActive);
+                    }
+                })
+                .catch(() => {}); // Abaikan error hotspot - jangan crash siklus utama
 
             // 2c. Active interfaces (tiap 3 detik)
             const allInterfaces = await runCommandForWorkspace(workspaceId, '/interface/print', [], deviceId).catch(() => []);
@@ -141,11 +146,22 @@ async function startDeviceMonitor(workspaceId, deviceId, broadcastCallback) {
             if (!state.isFetchingSecrets && (now - state.lastSecretFetch >= SECRET_REFRESH_MS || state.cachedSecrets.length === 0)) {
                 state.isFetchingSecrets = true;
                 (async () => {
+                    // Gunakan koneksi fisik/socket terpisah (custom connection key) 
+                    // agar proses load secret yang panjang tidak memblokir query traffic/cpu yang ringan.
+                    const heavyConnectionKey = `${workspaceId}-${deviceId}`;
+                    if (!heavyConnectionKey) return;
+                    
                     try {
                         if (process.env.DEBUG_API === 'true') {
-                            console.log(`[Singkronisasi] Memulai pembaruan data user untuk perangkat ${deviceId}`);
+                            console.log(`[Singkronisasi] Memulai pembaruan data user untuk perangkat ${deviceId} (via Heavy Socket)`);
                         }
-                        const secrets = await runCommandForWorkspace(workspaceId, '/ppp/secret/print', [], deviceId);
+                        
+                        // Eksekusi print secret dengan customKey "heavy-..."
+                        const secrets = await runCommandForWorkspace(workspaceId, '/ppp/secret/print', [], deviceId, {
+                            customKey: `heavy-${heavyConnectionKey}`,
+                            timeout: 120000 // Beri waktu toleransi ekstra panjang untuk heavy payload
+                        });
+                        
                         if (secrets !== null && Array.isArray(secrets)) {
                             state.cachedSecrets = secrets;
                             state.lastSecretFetch = Date.now();
@@ -163,8 +179,9 @@ async function startDeviceMonitor(workspaceId, deviceId, broadcastCallback) {
             }
 
             // 4. Merge active info ke secrets & Sync ke Database
+            const safeActive = Array.isArray(pppoeActive) ? pppoeActive : [];
             const activeMap = new Map();
-            pppoeActive.forEach(u => {
+            safeActive.forEach(u => {
                 if (u.name) activeMap.set(u.name, { address: u.address, uptime: u.uptime, '.id': u['.id'] });
             });
 
@@ -247,7 +264,7 @@ async function startDeviceMonitor(workspaceId, deviceId, broadcastCallback) {
             if (broadcastCallback) {
                 broadcastCallback(workspaceId, deviceId, {
                     type: 'batch-update',
-                    payload: { resource, pppoeSecrets: enriched, activeInterfaces, traffic, hotspotActive }
+                    payload: { resource, pppoeSecrets: enriched, activeInterfaces, traffic, hotspotActive: mikrotikStore.getHotspotActive(workspaceId, deviceId) }
                 });
 
                 broadcastCallback(workspaceId, deviceId, {

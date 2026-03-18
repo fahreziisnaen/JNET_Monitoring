@@ -184,7 +184,8 @@ async function getOrCreateConnection(workspaceId, timeout, customKey = null, dev
                 host: device.host,
                 user: device.user,
                 port: device.port,
-                keepalive: true
+                keepalive: true,
+                timeout: 30000 // IMPORTANT: Naikkan login/auth timeout dari default 10s ke 30s
             };
             if (device.password) {
                 connectionOptions.password = device.password;
@@ -343,7 +344,7 @@ async function runCommandForWorkspace(workspaceId, command, params = [], deviceI
     const [deviceRows] = await pool.query('SELECT name FROM mikrotik_devices WHERE id = ?', [deviceId]);
     const deviceName = deviceRows[0]?.name || `Device-${deviceId}`;
 
-    const deviceConnectionKey = await getDeviceConnectionKey(deviceId, workspaceId);
+    const deviceConnectionKey = options.customKey || await getDeviceConnectionKey(deviceId, workspaceId);
     let client = null;
     let retryCount = 0;
     const maxRetries = options.noRetry ? 0 : 2;
@@ -354,7 +355,7 @@ async function runCommandForWorkspace(workspaceId, command, params = [], deviceI
     }
     while (retryCount <= maxRetries) {
         try {
-            client = await getOrCreateConnection(workspaceId, DEFAULT_IDLE_TIMEOUT, null, deviceId);
+            client = await getOrCreateConnection(workspaceId, DEFAULT_IDLE_TIMEOUT, deviceConnectionKey, deviceId);
             if (client && client.connected) break;
 
             console.warn(`[API Connection] Koneksi tidak valid (attempt ${retryCount + 1}), mencoba reconnect...`);
@@ -373,8 +374,8 @@ async function runCommandForWorkspace(workspaceId, command, params = [], deviceI
 
     // PHASE 2: Eksekusi Command
     const isSafe = isSafeToRetry(command);
-    // Gunakan timeout lebih panjang untuk mutasi (60s), query tetap 30s
-    const timeoutMs = options.timeout || (isSafe ? 30000 : 60000);
+    // Gunakan timeout lebih panjang untuk mutasi (60s), query tetap 45s (sebelumnya 30s)
+    const timeoutMs = options.timeout || (isSafe ? 45000 : 60000);
     // deduplication key: connection + command + params
     const commandKey = `${deviceConnectionKey}:${command}:${JSON.stringify(params)}`;
 
@@ -405,6 +406,19 @@ async function runCommandForWorkspace(workspaceId, command, params = [], deviceI
                     return result;
                 } catch (error) {
                     const duration = Date.now() - startTime;
+                    
+                    // Cek apakah error sebenarnya hanya membalas data kosong (!empty)
+                    const isEmptyReply = error.message?.includes('!empty') || 
+                                         error.message?.includes('unknown reply: !empty') ||
+                                         (error.errno === 'UNKNOWNREPLY' && error.message?.includes('!empty'));
+
+                    if (isEmptyReply) {
+                        if (process.env.DEBUG_API === 'true') {
+                            console.log(`[API Command] [SUCCESS-EMPTY] "${command}" selesai dalam ${duration}ms dengan hasil kosong`);
+                        }
+                        return []; // Kembalikan array kosong, langsung selesai tanpa mengulang
+                    }
+
                     console.warn(`[API-ROBUST] [ERROR] "${command}" gagal setelah ${duration}ms: ${error.message}`);
 
                     // Hanya hapus koneksi jika ini perintah mutasi (unsafe) atau retry sudah habis

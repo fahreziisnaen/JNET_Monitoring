@@ -18,7 +18,7 @@ interface EditClientModalProps {
   nocWorkspaceId?: number;
 }
 
-const EditClientModal = ({ isOpen, onClose, onSuccess, client, assets = [] }: EditClientModalProps) => {
+const EditClientModal = ({ isOpen, onClose, onSuccess, client, assets = [], nocWorkspaceId }: EditClientModalProps) => {
   const [clientName, setClientName] = useState('');
   const [whatsappNumber, setWhatsappNumber] = useState('');
   const [latitude, setLatitude] = useState('');
@@ -60,7 +60,8 @@ const EditClientModal = ({ isOpen, onClose, onSuccess, client, assets = [] }: Ed
       // Fetch device name jika client punya device_id
       const deviceId = (client as any).device_id;
       if (deviceId) {
-        apiFetch(`${apiUrl}/api/devices`)
+        const targetWorkspaceId = nocWorkspaceId || "";
+        apiFetch(`${apiUrl}/api/devices?workspaceId=${targetWorkspaceId}`)
           .then(res => res.ok ? res.json() : [])
           .then((devices: any[]) => {
             const device = devices.find((d: any) => d.id === deviceId);
@@ -145,7 +146,8 @@ const EditClientModal = ({ isOpen, onClose, onSuccess, client, assets = [] }: Ed
     }
 
     try {
-      const res = await apiFetch(`${apiUrl}/api/clients/${client.id}`, {
+      const targetWorkspaceId = nocWorkspaceId || "";
+      const res = await apiFetch(`${apiUrl}/api/clients/${client.id}?workspaceId=${targetWorkspaceId}`, {
         method: 'PUT',
         body: formDataToSubmit
       });

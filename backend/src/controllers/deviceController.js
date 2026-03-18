@@ -1,12 +1,19 @@
 const pool = require('../config/database');
 
 exports.listDevices = async (req, res) => {
-    const workspaceId = req.user.workspace_id;
+    let workspaceId = req.user.workspace_id;
+    
+    // Dukungan override workspaceId untuk NOC
+    if (req.query.workspaceId && req.user.role === 'admin') {
+        workspaceId = parseInt(req.query.workspaceId);
+    }
+
     if (!workspaceId) return res.json([]);
     try {
         const [devices] = await pool.query('SELECT id, name, host, user, port FROM mikrotik_devices WHERE workspace_id = ?', [workspaceId]);
         res.status(200).json(devices);
     } catch (error) {
+        console.error('[Device Controller] Error listDevices:', error);
         res.status(500).json({ message: 'Gagal mengambil daftar perangkat.' });
     }
 };

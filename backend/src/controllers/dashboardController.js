@@ -16,7 +16,7 @@ exports.getSnapshot = async (req, res) => {
                 return res.json({
                     resource: null,
                     traffic: {},
-                    pppoeActive: [],
+                    pppoeSecrets: [],
                     activeInterfaces: []
                 });
             }
@@ -33,7 +33,7 @@ exports.getSnapshot = async (req, res) => {
             return res.json({
                 resource: null,
                 traffic: {},
-                pppoeActive: [],
+                pppoeSecrets: [],
                 activeInterfaces: []
             });
         }
@@ -73,7 +73,7 @@ exports.getSnapshot = async (req, res) => {
         res.json({
             resource,
             traffic,
-            pppoeActive,
+            pppoeSecrets: pppoeActive,
             activeInterfaces,
             updatedAt: snapshot.updated_at
         });
@@ -83,7 +83,7 @@ exports.getSnapshot = async (req, res) => {
             message: 'Gagal mengambil snapshot',
             resource: null,
             traffic: {},
-            pppoeActive: [],
+            pppoeSecrets: [],
             activeInterfaces: []
         });
     }

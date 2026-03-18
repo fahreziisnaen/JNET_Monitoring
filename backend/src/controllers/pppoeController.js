@@ -35,7 +35,13 @@ const resolveSecretId = async (workspace_id, identifier, deviceId) => {
 exports.getSummary = async (req, res) => {
     const startTime = Date.now();
     try {
-        const workspaceId = req.user.workspace_id;
+        let workspaceId = req.user.workspace_id;
+        
+        // Support override for NOC
+        if (req.query.workspaceId && req.user.role === 'admin') {
+            workspaceId = parseInt(req.query.workspaceId);
+        }
+
         const deviceId = req.query.deviceId ? parseInt(req.query.deviceId) : null;
 
         let query = 'SELECT COUNT(*) as total, SUM(is_active = 1) as active FROM pppoe_secrets WHERE workspace_id = ?';
@@ -64,7 +70,13 @@ exports.getSummary = async (req, res) => {
 exports.getSecrets = async (req, res) => {
     const startTime = Date.now();
     try {
-        const workspaceId = req.user.workspace_id;
+        let workspaceId = req.user.workspace_id;
+        
+        // Support override for NOC
+        if (req.query.workspaceId && req.user.role === 'admin') {
+            workspaceId = parseInt(req.query.workspaceId);
+        }
+
         const deviceId = req.query.deviceId ? parseInt(req.query.deviceId) : null;
         const disabled = req.query.disabled;
 
@@ -125,8 +137,11 @@ exports.getSecrets = async (req, res) => {
 
 exports.getNextIp = async (req, res) => {
     const { profile } = req.query;
-    const { workspace_id } = req.user;
-    var activeUsedIpsSet = new Set(); // Gunakan var dan nama unik untuk hindari scope issues
+    let workspace_id = req.user.workspace_id;
+    if (req.query.workspaceId && req.user.role === 'admin') {
+        workspace_id = parseInt(req.query.workspaceId);
+    }
+    var activeUsedIpsSet = new Set();
 
     if (!profile) {
         return res.status(400).json({ message: 'Profil tidak boleh kosong.' });
@@ -214,6 +229,13 @@ exports.getNextIp = async (req, res) => {
 };
 
 exports.addSecret = async (req, res) => {
+    let workspaceId = req.user.workspace_id;
+
+    // Support override for NOC
+    if (req.query.workspaceId && req.user.role === 'admin') {
+        workspaceId = parseInt(req.query.workspaceId);
+    }
+
     const { name, password, profile, service = 'pppoe', localAddress, remoteAddress } = req.body;
     if (!name || !password || !profile) {
         return res.status(400).json({ message: 'Nama, password, dan profile wajib diisi.' });
@@ -228,7 +250,7 @@ exports.addSecret = async (req, res) => {
             const targetDeviceId = req.query.deviceId || req.body.deviceId || null;
             
             let checkQuery = 'SELECT 1 FROM pppoe_secrets WHERE workspace_id = ? AND name = ?';
-            let checkParams = [req.user.workspace_id, name];
+            let checkParams = [workspaceId, name];
             if (targetDeviceId) {
                 checkQuery += ' AND device_id = ?';
                 checkParams.push(targetDeviceId);
@@ -261,7 +283,7 @@ exports.addSecret = async (req, res) => {
         if (isIpAddress(remoteAddress)) params.push(`=remote-address=${remoteAddress}`);
 
         console.log(`[Add Secret][${requestId}] Mengirim command /add ke MikroTik...`);
-        await runCommandForWorkspace(req.user.workspace_id, '/ppp/secret/add', params);
+        await runCommandForWorkspace(workspaceId, '/ppp/secret/add', params, targetDeviceId);
         console.log(`[Add Secret][${requestId}] Berhasil membuat secret.`);
         res.status(201).json({ message: `Secret untuk ${name} berhasil dibuat.` });
     } catch (error) {
@@ -282,10 +304,10 @@ exports.addSecret = async (req, res) => {
 
         try {
             // Fast Verification Flight: No retry, 10s timeout
-            const checkSecret = await runCommandForWorkspace(req.user.workspace_id, '/ppp/secret/print', [
+            const checkSecret = await runCommandForWorkspace(workspaceId, '/ppp/secret/print', [
                 '.proplist=.id,name',
                 `?name=${name}`
-            ], null, { noRetry: true, timeout: 10000 });
+            ], targetDeviceId, { noRetry: true, timeout: 10000 });
 
             if (checkSecret && checkSecret.length > 0) {
                 console.log(`[Add Secret] Fast Verification success for "${name}": Secret exists.`);
@@ -305,34 +327,81 @@ exports.addSecret = async (req, res) => {
 
 exports.getProfiles = async (req, res) => {
     try {
-        const profiles = await runCommandForWorkspace(req.user.workspace_id, '/ppp/profile/print', ['.proplist=name']);
-        // Extract profile names dan urutkan secara ascending
-        const profileNames = profiles.map(p => p.name).sort((a, b) => {
-            // Case-insensitive sorting
-            return a.toLowerCase().localeCompare(b.toLowerCase());
-        });
+        // Dukung workspaceId override dari query param untuk pemanggilan cross-workspace (dari halaman NOC)
+        const targetWorkspaceId = req.query.workspaceId ? parseInt(req.query.workspaceId) : req.user.workspace_id;
+        // Ambil deviceId dari query param agar profile diambil dari device yang benar
+        const deviceId = req.query.deviceId ? parseInt(req.query.deviceId) : null;
+
+        let profileNames = [];
+
+        // Coba ambil dari router dengan timeout pendek (10 detik)
+        try {
+            const profiles = await runCommandForWorkspace(
+                targetWorkspaceId, 
+                '/ppp/profile/print', 
+                ['.proplist=name'], 
+                deviceId,
+                { timeout: 10000, noRetry: true } // Timeout pendek, tanpa retry
+            );
+            profileNames = profiles.map(p => p.name).filter(Boolean);
+        } catch (routerError) {
+            // Jika router tidak bisa diakses, fallback ke daftar profile unik dari database
+            console.warn(`[Profiles] Gagal dari router (${routerError.message}), fallback ke database...`);
+            try {
+                let dbQuery = 'SELECT DISTINCT profile FROM pppoe_secrets WHERE workspace_id = ? AND profile IS NOT NULL AND profile != ""';
+                let dbParams = [targetWorkspaceId];
+                if (deviceId) {
+                    dbQuery += ' AND device_id = ?';
+                    dbParams.push(deviceId);
+                }
+                const [rows] = await pool.query(dbQuery, dbParams);
+                profileNames = rows.map(r => r.profile).filter(Boolean);
+            } catch (dbError) {
+                console.error(`[Profiles] Fallback database juga gagal:`, dbError.message);
+                profileNames = []; // Return kosong, bukan 500
+            }
+        }
+
+        // Sort dan return
+        profileNames = [...new Set(profileNames)].sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()));
         res.json(profileNames);
     } catch (error) {
-        res.status(500).json({ message: error.message });
+        // Jangan pernah crash 500 untuk endpoint ini
+        console.error('[Profiles] Unexpected error:', error.message);
+        res.json([]); // Return array kosong daripada 500
     }
 };
 
 exports.setSecretStatus = async (req, res) => {
     const { id } = req.params;
     const { disabled } = req.body;
+    let workspaceId = req.user.workspace_id;
     const deviceId = req.query.deviceId ? parseInt(req.query.deviceId) : null;
+
+    // Support override for NOC
+    if (req.query.workspaceId && req.user.role === 'admin') {
+        workspaceId = parseInt(req.query.workspaceId);
+    }
+
     try {
-        const realId = await resolveSecretId(req.user.workspace_id, id, deviceId);
-        await runCommandForWorkspace(req.user.workspace_id, '/ppp/secret/set', [`=.id=${realId}`, `=disabled=${disabled}`], deviceId);
+        const realId = await resolveSecretId(workspaceId, id, deviceId);
+        await runCommandForWorkspace(workspaceId, '/ppp/secret/set', [`=.id=${realId}`, `=disabled=${disabled}`], deviceId);
         res.status(200).json({ message: `Secret berhasil di-${disabled === 'true' ? 'disable' : 'enable'}.` });
     } catch (error) { res.status(500).json({ message: error.message }); }
 };
 
 exports.kickActiveUser = async (req, res) => {
     const { id } = req.params;
+    let workspaceId = req.user.workspace_id;
     const deviceId = req.query.deviceId ? parseInt(req.query.deviceId) : null;
+
+    // Support override for NOC
+    if (req.query.workspaceId && req.user.role === 'admin') {
+        workspaceId = parseInt(req.query.workspaceId);
+    }
+
     try {
-        await runCommandForWorkspace(req.user.workspace_id, '/ppp/active/remove', [`=.id=${id}`], deviceId);
+        await runCommandForWorkspace(workspaceId, '/ppp/active/remove', [`=.id=${id}`], deviceId);
         res.status(200).json({ message: 'Koneksi pengguna berhasil diputuskan.' });
     } catch (error) { res.status(500).json({ message: error.message }); }
 };
@@ -395,14 +464,20 @@ exports.getSlaDetails = async (req, res) => {
 
 exports.updateSecret = async (req, res) => {
     const { id } = req.params;
-    const { name, password, profile } = req.body;
-    const workspace_id = req.user.workspace_id;
+    const { name, password, profile, deviceId: bodyDeviceId } = req.body;
+    let workspace_id = req.user.workspace_id;
+    const deviceId = req.query.deviceId || bodyDeviceId || null;
+
+    // Support override for NOC
+    if (req.query.workspaceId && req.user.role === 'admin') {
+        workspace_id = parseInt(req.query.workspaceId);
+    }
     if (!profile) {
         return res.status(400).json({ message: 'Profil wajib diisi.' });
     }
     try {
         // Resolve .id and oldName
-        const oldSecretData = await runCommandForWorkspace(workspace_id, '/ppp/secret/print', [id.startsWith('*') ? `?=.id=${id}` : `?name=${id}`]);
+        const oldSecretData = await runCommandForWorkspace(workspace_id, '/ppp/secret/print', [id.startsWith('*') ? `?=.id=${id}` : `?name=${id}`], deviceId);
         let oldName = null;
         let realId = id;
         if (oldSecretData && oldSecretData.length > 0) {
@@ -443,7 +518,13 @@ exports.updateSecret = async (req, res) => {
 
 exports.deleteSecret = async (req, res) => {
     const { id } = req.params;
-    const workspace_id = req.user.workspace_id;
+    let workspace_id = req.user.workspace_id;
+    
+    // Support override for NOC
+    if (req.query.workspaceId && req.user.role === 'admin') {
+        workspace_id = parseInt(req.query.workspaceId);
+    }
+
     const deviceId = req.query.deviceId ? parseInt(req.query.deviceId) : null;
     try {
         console.log(`[Delete Secret] Request hapus secret ID: ${id} untuk workspace: ${workspace_id}, device: ${deviceId}`);

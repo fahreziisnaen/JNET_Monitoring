@@ -14,6 +14,9 @@ import { toast } from 'sonner';
 import { apiFetch } from '@/utils/api';
 import ConfirmModal from '@/components/ui/confirm-modal';
 import EditPppoeSecretModal from '../management/edit-pppoe-secret-modal';
+import AddPppoeSecretModal from '../management/add-pppoe-secret-modal';
+import { Plus } from 'lucide-react';
+import NocWorkspaceSelectorModal from './NocWorkspaceSelectorModal';
 
 interface PppoeSecret {
     '.id': string;
@@ -31,10 +34,11 @@ interface PppoeSecret {
 }
 
 interface NocManagementTabProps {
-    workspaceIds: number[];
+    workspaces: { id: number, name: string }[];
 }
 
-const NocManagementTab: React.FC<NocManagementTabProps> = ({ workspaceIds }) => {
+const NocManagementTab: React.FC<NocManagementTabProps> = ({ workspaces }) => {
+    const workspaceIds = workspaces.map(w => w.id);
     const { token } = useAuth();
     const [secrets, setSecrets] = useState<PppoeSecret[]>([]);
     const [loading, setLoading] = useState(false);
@@ -49,6 +53,9 @@ const NocManagementTab: React.FC<NocManagementTabProps> = ({ workspaceIds }) => 
     const [secretToEdit, setSecretToEdit] = useState<PppoeSecret | null>(null);
     const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
     const [secretToDelete, setSecretToDelete] = useState<PppoeSecret | null>(null);
+    const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+    const [selectedWorkspaceForAdd, setSelectedWorkspaceForAdd] = useState<number | null>(null);
+    const [isNocWorkspaceSelectorOpen, setIsNocWorkspaceSelectorOpen] = useState(false);
 
     const [lastFetchTime, setLastFetchTime] = useState<number>(0);
     const [isInitialLoad, setIsInitialLoad] = useState(true);
@@ -358,29 +365,27 @@ const NocManagementTab: React.FC<NocManagementTabProps> = ({ workspaceIds }) => 
                 <CardHeader>
                     <div className="flex flex-col lg:flex-row lg:justify-between lg:items-center gap-4">
                         <CardTitle className="text-lg sm:text-xl">Secret PPPoE ({isInitialLoad ? '...' : filteredSecrets.length})</CardTitle>
-                        <div className="relative w-full lg:max-w-md">
-                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                            <Input
-                                ref={searchInputRef}
-                                type="text"
-                                placeholder="Cari user, IP, atau workspace..."
-                                value={searchQuery}
-                                onChange={(e) => setSearchQuery(e.target.value)}
-                                className="pl-9 pr-8 bg-input h-9"
-                            />
-                            {searchQuery && (
-                                <button
-                                    type="button"
-                                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                                    onMouseDown={(e) => e.preventDefault()}
-                                    onClick={() => {
-                                        setSearchQuery('');
-                                        searchInputRef.current?.focus();
-                                    }}
+                        <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center flex-1 lg:justify-end">
+                            <div className="flex gap-2 items-center">
+                                <Button 
+                                    size="sm" 
+                                    className="h-9 px-3"
+                                    onClick={() => setIsNocWorkspaceSelectorOpen(true)}
                                 >
-                                    <X size={14} />
-                                </button>
-                            )}
+                                    <Plus size={16} className="mr-1" /> <span className="hidden sm:inline">Tambah Secret</span>
+                                </Button>
+                            </div>
+                            <div className="relative w-full lg:max-w-xs">
+                                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                                <Input
+                                    ref={searchInputRef}
+                                    type="text"
+                                    placeholder="Cari user, IP, atau workspace..."
+                                    value={searchQuery}
+                                    onChange={(e) => setSearchQuery(e.target.value)}
+                                    className="pl-9 pr-8 bg-input h-9 text-sm"
+                                />
+                            </div>
                         </div>
                     </div>
                 </CardHeader>
@@ -510,6 +515,21 @@ const NocManagementTab: React.FC<NocManagementTabProps> = ({ workspaceIds }) => 
                     nocWorkspaceId={secretToEdit.workspace_id}
                 />
             )}
+            <AddPppoeSecretModal 
+                isOpen={isAddModalOpen}
+                onClose={() => setIsAddModalOpen(false)}
+                onSuccess={fetchSecrets}
+                nocWorkspaceId={selectedWorkspaceForAdd || undefined}
+            />
+            <NocWorkspaceSelectorModal
+                isOpen={isNocWorkspaceSelectorOpen}
+                onClose={() => setIsNocWorkspaceSelectorOpen(false)}
+                workspaces={workspaces}
+                onSelect={(id) => {
+                    setSelectedWorkspaceForAdd(id);
+                    setIsAddModalOpen(true);
+                }}
+            />
         </div>
     );
 };

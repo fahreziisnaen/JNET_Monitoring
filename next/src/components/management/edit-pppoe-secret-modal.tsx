@@ -25,10 +25,11 @@ const EditPppoeSecretModal = ({ isOpen, onClose, onSuccess, secretToEdit, nocWor
   const [profilesLoading, setProfilesLoading] = useState(false);
   const apiUrl = process.env.NEXT_PUBLIC_API_BASE_URL;
 
-  // Cache key untuk profile data (per workspace)
+  // Cache key berbasis workspaceId target (per workspace device yang diedit, bukan workspace user yang login)
   const { user } = useAuth();
-  const workspaceId = user?.workspace_id || 'default';
-  const profilesCacheKey = `pppoe-profiles-${workspaceId}`;
+  // workspaceId dari secretToEdit (NOC) atau dari props nocWorkspaceId, atau dari user sendiri
+  const targetWorkspaceId = secretToEdit?.workspace_id || nocWorkspaceId || user?.workspace_id || 'default';
+  const profilesCacheKey = `pppoe-profiles-ws-${targetWorkspaceId}`;
   const CACHE_TTL = 5 * 60 * 1000; // 5 menit cache
 
   // Load profiles dengan caching
@@ -39,9 +40,7 @@ const EditPppoeSecretModal = ({ isOpen, onClose, onSuccess, secretToEdit, nocWor
       if (cached) {
         const { data, timestamp } = JSON.parse(cached);
         const now = Date.now();
-        // Jika cache masih valid (< 5 menit), gunakan cache
         if (now - timestamp < CACHE_TTL) {
-          // Pastikan data terurut, unik, dan tidak ada empty string
           const sortedData = Array.from(new Set<string>((data as string[]).filter((p) => Boolean(p && p.trim())))).sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()));
           setProfiles(sortedData);
           return;
@@ -51,11 +50,10 @@ const EditPppoeSecretModal = ({ isOpen, onClose, onSuccess, secretToEdit, nocWor
       // Ignore cache error
     }
 
-    // Jika cache tidak ada atau expired, fetch dari API
+    // Fetch dari API - kirim workspaceId target agar backend mengambil profile dari workspace yang tepat
     setProfilesLoading(true);
     try {
-      // Append workspaceId query param if nocWorkspaceId is defined
-      const queryParams = nocWorkspaceId ? `?workspaceId=${nocWorkspaceId}` : '';
+      const queryParams = targetWorkspaceId ? `?workspaceId=${targetWorkspaceId}` : '';
       const res = await apiFetch(`${apiUrl}/api/pppoe/profiles${queryParams}`);
       if (!res.ok) throw new Error('Gagal memuat profil');
       const data = await res.json();

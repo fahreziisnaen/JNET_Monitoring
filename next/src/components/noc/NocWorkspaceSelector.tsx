@@ -12,9 +12,10 @@ interface Workspace {
 interface NocWorkspaceSelectorProps {
     selectedWorkspaceIds: number[];
     onChange: (ids: number[]) => void;
+    onWorkspacesFetched?: (workspaces: Workspace[]) => void;
 }
 
-const NocWorkspaceSelector: React.FC<NocWorkspaceSelectorProps> = ({ selectedWorkspaceIds, onChange }) => {
+const NocWorkspaceSelector: React.FC<NocWorkspaceSelectorProps> = ({ selectedWorkspaceIds, onChange, onWorkspacesFetched }) => {
     const { token, user } = useAuth();
     const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
     const [isOpen, setIsOpen] = useState(false);
@@ -35,6 +36,7 @@ const NocWorkspaceSelector: React.FC<NocWorkspaceSelectorProps> = ({ selectedWor
             if (response.ok) {
                 const data = await response.json();
                 setWorkspaces(data);
+                if (onWorkspacesFetched) onWorkspacesFetched(data);
 
                 // Pilih semua workspace secara default jika belum ada yang terpilih
                 if (selectedWorkspaceIds.length === 0 && data.length > 0) {

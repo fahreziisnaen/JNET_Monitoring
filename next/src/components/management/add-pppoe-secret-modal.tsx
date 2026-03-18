@@ -11,12 +11,14 @@ interface AddPppoeSecretModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSuccess: () => void;
+  nocWorkspaceId?: number;
 }
 
 const AddPppoeSecretModal = ({
   isOpen,
   onClose,
   onSuccess,
+  nocWorkspaceId,
 }: AddPppoeSecretModalProps) => {
   const [formData, setFormData] = useState({
     name: "",
@@ -29,16 +31,59 @@ const AddPppoeSecretModal = ({
   const [useStaticIp, setUseStaticIp] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [devices, setDevices] = useState<any[]>([]);
+  const [selectedDeviceId, setSelectedDeviceId] = useState<string>("");
+  const [devicesLoading, setDevicesLoading] = useState(false);
   const apiUrl = process.env.NEXT_PUBLIC_API_BASE_URL;
 
+  // Fetch devices when modal opens
   useEffect(() => {
     if (isOpen) {
+      const targetWorkspaceId = nocWorkspaceId || "";
+      const fetchDevices = async () => {
+        try {
+          setDevicesLoading(true);
+          const devRes = await apiFetch(`${apiUrl}/api/devices?workspaceId=${targetWorkspaceId}`);
+          if (devRes.ok) {
+            const devData = await devRes.json();
+            setDevices(devData || []);
+            // Auto-select first device if none selected and one exists
+            if (devData.length === 1 && !selectedDeviceId) {
+              setSelectedDeviceId(devData[0].id.toString());
+            }
+          }
+        } catch (err: any) {
+          setError("Gagal memuat daftar perangkat");
+        } finally {
+          setDevicesLoading(false);
+        }
+      };
+      
+      fetchDevices();
+      setUseStaticIp(false);
+      setFormData({
+        name: "",
+        password: "",
+        profile: "",
+        localAddress: "",
+        remoteAddress: "",
+      });
+    } else {
+      // Clear data when closed
+      setDevices([]);
+      setSelectedDeviceId("");
+    }
+  }, [isOpen, nocWorkspaceId]);
+
+  // Fetch profiles when device changes
+  useEffect(() => {
+    if (isOpen && selectedDeviceId) {
+      const targetWorkspaceId = nocWorkspaceId || "";
       const fetchProfiles = async () => {
         try {
-          const res = await apiFetch(`${apiUrl}/api/pppoe/profiles`);
+          const res = await apiFetch(`${apiUrl}/api/pppoe/profiles?workspaceId=${targetWorkspaceId}&deviceId=${selectedDeviceId}`);
           if (!res.ok) throw new Error("Gagal memuat profil");
           const data = await res.json();
-          // Pastikan data terurut, unik, dan tidak ada empty string
           const sortedData = Array.from(new Set<string>((data as string[]).filter((p) => Boolean(p && p.trim())))).sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()));
           setProfiles(sortedData);
           if (sortedData.length > 0) {
@@ -49,23 +94,16 @@ const AddPppoeSecretModal = ({
         }
       };
       fetchProfiles();
-      setUseStaticIp(false); // Reset to default dynamic behavior
-      setFormData({
-        name: "",
-        password: "",
-        profile: "",
-        localAddress: "",
-        remoteAddress: "",
-      });
     }
-  }, [isOpen]);
+  }, [isOpen, selectedDeviceId, nocWorkspaceId]);
 
   const getNextIpForProfile = useCallback(
     async (profileName: string) => {
       if (!profileName || !useStaticIp) return;
       setError("");
       try {
-        const response = await apiFetch(`${apiUrl}/api/pppoe/next-ip?profile=${encodeURIComponent(profileName)}`);
+        const targetWorkspaceId = nocWorkspaceId || "";
+        const response = await apiFetch(`${apiUrl}/api/pppoe/next-ip?profile=${encodeURIComponent(profileName)}&workspaceId=${targetWorkspaceId}&deviceId=${selectedDeviceId}`);
         const data = await response.json();
         if (!response.ok) throw new Error(data.message);
         setFormData((prev) => ({
@@ -110,7 +148,8 @@ const AddPppoeSecretModal = ({
     setLoading(true);
     setError("");
     try {
-      const res = await apiFetch(`${apiUrl}/api/pppoe/secrets`, {
+      const targetWorkspaceId = nocWorkspaceId || "";
+      const res = await apiFetch(`${apiUrl}/api/pppoe/secrets?workspaceId=${targetWorkspaceId}&deviceId=${selectedDeviceId}`, {
         method: "POST",
         body: JSON.stringify({ ...formData, service: "pppoe" }),
       });
@@ -160,6 +199,27 @@ const AddPppoeSecretModal = ({
                 </button>
               </header>
               <div className="p-6 space-y-4 max-h-[70vh] overflow-y-auto">
+                <div className="bg-primary/5 p-3 rounded-lg border border-primary/20">
+                  <label className="block text-xs font-semibold mb-2 text-primary uppercase tracking-wider">
+                    Pilih Perangkat / Router
+                  </label>
+                  <select
+                    className="w-full bg-background border border-input rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-primary h-10"
+                    value={selectedDeviceId}
+                    onChange={(e) => setSelectedDeviceId(e.target.value)}
+                    required
+                  >
+                    <option value="" disabled>
+                      {devicesLoading ? "Memuat router..." : "Pilih Router MikroTik"}
+                    </option>
+                    {devices.map((dev) => (
+                      <option key={dev.id} value={dev.id}>
+                        {dev.name} {dev.host && `(${dev.host})`}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-sm font-medium mb-1 text-muted-foreground">

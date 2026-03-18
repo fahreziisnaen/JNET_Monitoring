@@ -14,6 +14,7 @@ import AddClientModal from '@/components/location/add-client-modal';
 import EditClientModal from '@/components/location/edit-client-modal';
 import ClientDetailModal from '@/components/location/client-detail-modal';
 import { Button } from '@/components/ui/button';
+import NocWorkspaceSelectorModal from '@/components/noc/NocWorkspaceSelectorModal';
 import { assetTypes } from '@/components/location/asset-filter';
 import MapLegend from '@/components/location/map-legend';
 import MapFilterPanel from '@/components/location/map-filter-panel';
@@ -53,10 +54,11 @@ const isAssetUp = (asset: Asset): boolean => {
 
 interface LocationManagerProps {
   isNocMode?: boolean;
-  nocWorkspaceIds?: number[];
+  nocWorkspaces?: { id: number, name: string }[];
 }
 
-const LocationManager: React.FC<LocationManagerProps> = ({ isNocMode = false, nocWorkspaceIds = [] }) => {
+const LocationManager: React.FC<LocationManagerProps> = ({ isNocMode = false, nocWorkspaces = [] }) => {
+  const nocWorkspaceIds = nocWorkspaces.map(w => w.id);
   usePageTitle(isNocMode ? '' : 'Peta Lokasi');
   const [activeFilter, setActiveFilter] = useState('all');
   const [selectedWorkspaceForNocAdd, setSelectedWorkspaceForNocAdd] = useState<number | null>(null);
@@ -147,6 +149,9 @@ const LocationManager: React.FC<LocationManagerProps> = ({ isNocMode = false, no
   const [isClientDetailModalOpen, setIsClientDetailModalOpen] = useState(false);
   const [isEditClientModalOpen, setIsEditClientModalOpen] = useState(false);
   const [isDeleteClientModalOpen, setIsDeleteClientModalOpen] = useState(false);
+  const [targetNocWorkspaceId, setTargetNocWorkspaceId] = useState<number | null>(null);
+  const [isNocWorkspaceSelectorOpen, setIsNocWorkspaceSelectorOpen] = useState(false);
+  const [pendingAddType, setPendingAddType] = useState<'client' | 'asset' | null>(null);
 
   // Path editing state
   const [isEditingPath, setIsEditingPath] = useState(false);
@@ -1099,7 +1104,27 @@ const LocationManager: React.FC<LocationManagerProps> = ({ isNocMode = false, no
               {isNocMode ? `Peta NOC (${nocWorkspaceIds.length} Workspace)` : 'Peta Lokasi Aset'}
             </h1>
             <div className="flex gap-2 flex-wrap items-center">
-              {!isNocMode && (
+              {isNocMode ? (
+                <div className="flex gap-2 items-center">
+                  <Button 
+                    variant="outline" 
+                    onClick={() => {
+                      setPendingAddType('client');
+                      setIsNocWorkspaceSelectorOpen(true);
+                    }}
+                  >
+                    <User size={18} className="sm:mr-2" /> <span className="hidden sm:inline">Tambah Client</span>
+                  </Button>
+                  <Button 
+                    onClick={() => {
+                      setPendingAddType('asset');
+                      setIsNocWorkspaceSelectorOpen(true);
+                    }}
+                  >
+                    <Plus size={18} className="sm:mr-2" /> <span className="hidden sm:inline">Tambah Aset</span>
+                  </Button>
+                </div>
+              ) : (
                 <>
                   <Button variant="secondary" onClick={() => fileInputRef.current?.click()} disabled={isImporting}>
                     {isImporting ? <Loader2 size={18} className="sm:mr-2 animate-spin" /> : <Upload size={18} className="sm:mr-2" />}
@@ -1355,6 +1380,21 @@ const LocationManager: React.FC<LocationManagerProps> = ({ isNocMode = false, no
         />
       )}
 
+      {isNocMode && (
+        <NocWorkspaceSelectorModal
+          isOpen={isNocWorkspaceSelectorOpen}
+          onClose={() => setIsNocWorkspaceSelectorOpen(false)}
+          workspaces={nocWorkspaces}
+          onSelect={(id) => {
+            setTargetNocWorkspaceId(id);
+            if (pendingAddType === 'client') {
+              setIsAddClientModalOpen(true);
+            } else if (pendingAddType === 'asset') {
+              setIsAddModalOpen(true);
+            }
+          }}
+        />
+      )}
     </>
   );
 };

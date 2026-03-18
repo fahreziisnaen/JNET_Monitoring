@@ -213,9 +213,7 @@ async function startWorkspaceMonitoring(workspaceId, connectionKey, deviceId = n
     let client;
     let isRunning = false; // Flag untuk mencegah multiple execution bersamaan
     let lastCycleTime = 0; // Track waktu cycle terakhir
-    let lastSecretFetchTime = 0;
     let cachedSecrets = [];
-    const SECRET_FETCH_INTERVAL = 20000; // Scan secrets setiap 20 detik (HEMAT BEBAN)
 
     try {
         const WS_TIMEOUT = 24 * 60 * 60 * 1000;
@@ -294,7 +292,7 @@ async function startWorkspaceMonitoring(workspaceId, connectionKey, deviceId = n
 
             if (devices && devices[0]) {
                 const device = devices[0];
-                const setupResult = await setupPppoeListeners(device, {
+                setupPppoeListeners(device, {
                     onSecretUpdate: (action, attributes) => {
                         console.log(`[RealTime][Secret] ${action.toUpperCase()}: ${attributes.name}`);
                         // Update lokal cache di server.js
@@ -339,11 +337,14 @@ async function startWorkspaceMonitoring(workspaceId, connectionKey, deviceId = n
                     onError: (err) => {
                         console.error(`[RealTime] Listener error untuk workspace ${workspaceId}:`, err.message);
                     }
+                }).then(setupResult => {
+                    listenerCleanup = setupResult.cleanup;
+                }).catch(listenerError => {
+                    console.warn(`[RealTime] Gagal inisialisasi listener untuk workspace ${workspaceId}:`, listenerError.message);
                 });
-                listenerCleanup = setupResult.cleanup;
             }
-        } catch (listenerError) {
-            console.warn(`[RealTime] Gagal inisialisasi listener untuk workspace ${workspaceId}:`, listenerError.message);
+        } catch (error) {
+            console.error(`[RealTime] Error menyiapkan listener database untuk workspace ${workspaceId}:`, error.message);
         }
 
         const runMonitoringCycle = async (isForced = false) => {
@@ -360,20 +361,23 @@ async function startWorkspaceMonitoring(workspaceId, connectionKey, deviceId = n
             try {
                 // ... (keeping safeWrite)
                 const safeWrite = async (command, params = [], timeoutMs = 10000) => {
-                    return Promise.race([
-                        (async () => {
-                            try {
-                                const result = await client.write(command, params);
-                                return result;
-                            } catch (err) {
-                                if (err.message?.includes('!empty') || err.message?.includes('unknown reply: !empty')) return [];
-                                throw err;
-                            }
-                        })(),
-                        new Promise((_, reject) =>
-                            setTimeout(() => reject(new Error(`Timeout setelah ${timeoutMs}ms untuk command ${command}`)), timeoutMs)
-                        )
-                    ]);
+                    let timeoutId;
+                    const timeoutPromise = new Promise((_, reject) => {
+                        timeoutId = setTimeout(() => reject(new Error(`Timeout setelah ${timeoutMs}ms untuk command ${command}`)), timeoutMs);
+                    });
+
+                    try {
+                        const result = await Promise.race([
+                            client.write(command, params),
+                            timeoutPromise
+                        ]);
+                        clearTimeout(timeoutId);
+                        return result;
+                    } catch (err) {
+                        clearTimeout(timeoutId);
+                        if (err.message?.includes('!empty') || err.message?.includes('unknown reply: !empty')) return [];
+                        throw err;
+                    }
                 };
 
                 // 1. Resource: TETAP (Setiap 3 detik)
@@ -382,27 +386,11 @@ async function startWorkspaceMonitoring(workspaceId, connectionKey, deviceId = n
                 // 2. Active Users: TETAP (Setiap 3 detik)
                 const pppoeActive = await safeWrite('/ppp/active/print', [], 7000).catch(() => []);
 
-                // 3. Secrets: STAGGERED (Setiap 20 detik)
-                if (now - lastSecretFetchTime >= SECRET_FETCH_INTERVAL || cachedSecrets.length === 0) {
-                    console.log(`[WebSocket] Monitoring: Refreshing heavy secret list for workspace ${workspaceId}...`);
-                    // Timeout lebih panjang (45s) karena router mungkin sibuk
-                    // Optimasi: Ambil hanya field yang dibutuhkan untuk cache/store
-                    const pppoeSecrets = await safeWrite('/ppp/secret/print', [
-                        '.proplist=.id,name,profile,remote-address,last-logged-out,disabled'
-                    ], 45000).catch((err) => {
-                        console.warn(`[WebSocket] Gagal refresh secrets (timeout/error): ${err.message}. Menggunakan cache.`);
-                        return null; // Return null untu menandakan skip update cache
-                    });
-
-                    if (pppoeSecrets !== null) {
-                        cachedSecrets = pppoeSecrets;
-                        lastSecretFetchTime = now;
-                        // Sync ke global store
-                        mikrotikStore.setSecrets(workspaceId, deviceId, pppoeSecrets);
-                    }
-                }
-
-                const pppoeSecrets = cachedSecrets;
+                // 3. Secrets: Ambil dari Global Store (diperbarui real-time oleh backgroundMonitor)
+                // Ini menghilangkan blokade socket lama karena proses fetch secret yang memakan waktu (heavy query) 
+                // tidak lagi dilakukan di siklus monitoring WebSocket secara mandiri.
+                const pppoeSecrets = mikrotikStore.getSecrets(workspaceId, deviceId) || [];
+                cachedSecrets = pppoeSecrets;
 
                 // Sync data active ke store (setiap 3 detik)
                 mikrotikStore.setActive(workspaceId, deviceId, pppoeActive);
@@ -520,28 +508,50 @@ async function startWorkspaceMonitoring(workspaceId, connectionKey, deviceId = n
                 };
                 broadcastToWorkspace(workspaceId, deviceId, { type: 'batch-update', payload: batchPayload });
 
+                // SINKRONISASI DATABASE (SNAPSHOT PERSISTENSI):
+                // Simpan kumpulan data terakhir ke database agar layar tidak kosong saat Load awal / Refresh F5
+                try {
+                    await pool.query(
+                        `INSERT INTO dashboard_snapshot 
+                            (workspace_id, device_id, resource, pppoe_active, traffic, active_interfaces, updated_at) 
+                         VALUES (?, ?, ?, ?, ?, ?, NOW()) 
+                         ON DUPLICATE KEY UPDATE 
+                            resource = VALUES(resource), 
+                            pppoe_active = VALUES(pppoe_active), 
+                            traffic = VALUES(traffic), 
+                            active_interfaces = VALUES(active_interfaces), 
+                            updated_at = NOW()`,
+                        [
+                            workspaceId, 
+                            deviceId, 
+                            JSON.stringify(batchPayload.resource), 
+                            JSON.stringify(batchPayload.pppoeSecrets), // Kolom db bernama pppoe_active menampung secrets berdasar API
+                            JSON.stringify(batchPayload.traffic), 
+                            JSON.stringify(batchPayload.activeInterfaces)
+                        ]
+                    );
+                } catch (dbError) {
+                    console.error(`[Snapshot Sync] Gagal sinkronisasi data ke dashboard_snapshot untuk perangkat ${deviceId}:`, dbError.message);
+                }
+
             } catch (cycleError) {
                 // Handle error khusus untuk UNKNOWNREPLY
                 if (cycleError.errno === 'UNKNOWNREPLY' || cycleError.message?.includes('UNKNOWNREPLY')) {
                     // Jangan stop monitoring untuk !empty, hanya untuk error lain
                     if (cycleError.message?.includes('!empty')) {
-                        // Tetap kirim data kosong agar frontend tahu koneksi masih aktif
-                        const emptyPayload = { resource: {}, pppoeSecrets: [], activeInterfaces: [], traffic: {} };
-                        broadcastToWorkspace(workspaceId, deviceId, { type: 'batch-update', payload: emptyPayload });
-                        return; // Lanjutkan monitoring
+                        // Jangan hapus layar frontend, cukup skip iterasi ini
+                        return; // Lanjutkan monitoring tanpa mereplace dengan emptyPayload
                     }
                     stopWorkspaceMonitoring(connectionKey, `Gagal mendapatkan respon dari perangkat: ${cycleError.message}`);
                     return;
                 }
-                // Jangan stop monitoring untuk error lain, coba kirim data kosong dulu
-                try {
-                    const emptyPayload = { resource: {}, pppoeSecrets: [], activeInterfaces: [], traffic: {} };
-                    broadcastToWorkspace(workspaceId, deviceId, { type: 'batch-update', payload: emptyPayload });
-                } catch (broadcastError) {
-                    // Log WS monitoring disabled
-                }
-                // Hanya stop jika error fatal
-                if (cycleError.message?.includes('not connected') || cycleError.message?.includes('connection closed') || cycleError.message?.toLowerCase().includes('timeout')) {
+                
+                // Jika error timeout atau error intermiten, jangan kirim data kosong (emptyPayload)
+                // karena akan mereset tampilan UI ke wujud blank. Cukup lewati siklus ini.
+                console.warn(`[Monitoring] Siklus terlewati untuk workspace ${workspaceId} device ${deviceId} akibat: ${cycleError.message}`);
+                
+                // Hanya stop jika error fatal (koneksi diputus murni)
+                if (cycleError.message?.includes('not connected') || cycleError.message?.includes('connection closed')) {
                     stopWorkspaceMonitoring(connectionKey, `Connection error detected: ${cycleError.message}`);
                     mikrotikStore.setDeviceStatus(workspaceId, deviceId, 'disconnected');
                 }
@@ -601,7 +611,7 @@ wss.on('connection', (ws, req) => {
                 // Ignore jika sudah closed
             }
         }
-    }, 15000); // 15 detik timeout untuk setup connection
+    }, 65000); // 65 detik timeout untuk setup connection agar tidak membunuh setup listener router
 
     // Cek apakah WebSocket sudah di-close sebelum setup selesai
     const checkIfClosed = () => {
@@ -830,26 +840,44 @@ wss.on('connection', (ws, req) => {
                 try {
                     const data = JSON.parse(message);
                     if (data.type === 'force-refresh' && data.target === 'secrets') {
-                        console.log(`[WebSocket] Menerima force-refresh dari client untuk workspace ${ws.workspaceId}`);
-                        const currentConnection = getConnection(connectionKey);
-                        if (currentConnection && currentConnection.forceSecretRefresh) {
-                            currentConnection.forceSecretRefresh();
-                        } else {
-                            // Jika polling backend mati (misal karena offline sebelumnya), nyalakan kembali!
-                            console.log(`[WebSocket] Thread monitoring terhenti. Memulai ulang monitoring untuk workspace ${ws.workspaceId}`);
-                            await startWorkspaceMonitoring(ws.workspaceId, connectionKey, finalDeviceId);
-
-                            const newConnection = getConnection(connectionKey);
-                            if (newConnection) {
-                                // Hitung total user aktif di workspace ini untuk mengamankan lifecycle connection
-                                let activeUsers = 0;
-                                wss.clients.forEach(c => {
-                                    if (c.workspaceId === ws.workspaceId && c.readyState === WebSocket.OPEN) {
-                                        activeUsers++;
-                                    }
+                        console.log(`[WebSocket] Menerima force-refresh dari client untuk workspace ${ws.workspaceId}. Data dikirim dari memory cache (Store).`);
+                        
+                        // Ambil pasokan terbaru dari Global Store (diperbarui backgroundMonitor)
+                        const pppoeSecrets = mikrotikStore.getSecrets(ws.workspaceId, finalDeviceId) || [];
+                        const activeUsers = mikrotikStore.getActive(ws.workspaceId, finalDeviceId) || [];
+                        
+                        const activeUserMap = new Map();
+                        activeUsers.forEach(user => {
+                            if (user.name) {
+                                activeUserMap.set(user.name, {
+                                    address: user.address || null,
+                                    uptime: user.uptime || null,
+                                    service: user.service || 'pppoe',
+                                    '.id': user['.id'] || null
                                 });
-                                newConnection.userCount = activeUsers;
                             }
+                        });
+
+                        const enrichedSecrets = pppoeSecrets.map(secret => {
+                            const activeInfo = activeUserMap.get(secret.name);
+                            const isActive = !!activeInfo;
+                            const enriched = Object.assign({}, secret);
+                            enriched.isActive = isActive;
+                            if (isActive && activeInfo.uptime) enriched.uptime = activeInfo.uptime;
+                            if (isActive && activeInfo['.id']) enriched.activeConnectionId = activeInfo['.id'];
+                            if (isActive && activeInfo.address) {
+                                enriched.currentAddress = activeInfo.address;
+                                if (!enriched['remote-address']) enriched['remote-address'] = activeInfo.address;
+                            }
+                            return enriched;
+                        });
+
+                        // Kirim balik hanya kepada klien yang meminta
+                        if (ws.readyState === WebSocket.OPEN) {
+                            ws.send(JSON.stringify({
+                                type: 'pppoe-update',
+                                payload: { pppoeSecrets: enrichedSecrets }
+                            }));
                         }
                     }
                 } catch (e) {

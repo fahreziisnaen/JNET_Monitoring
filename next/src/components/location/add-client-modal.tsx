@@ -29,7 +29,7 @@ interface AddClientModalProps {
   nocWorkspaceId?: number;
 }
 
-const AddClientModal = ({ isOpen, onClose, onSuccess, assets = [] }: AddClientModalProps) => {
+const AddClientModal = ({ isOpen, onClose, onSuccess, assets = [], nocWorkspaceId }: AddClientModalProps) => {
   const { user } = useAuth();
 
   // Device selection
@@ -68,9 +68,10 @@ const AddClientModal = ({ isOpen, onClose, onSuccess, assets = [] }: AddClientMo
 
   // Fetch devices saat modal dibuka
   useEffect(() => {
-    if (isOpen && user?.workspace_id) {
+    const targetWorkspaceId = nocWorkspaceId || user?.workspace_id;
+    if (isOpen && targetWorkspaceId) {
       setDevicesLoading(true);
-      apiFetch(`${apiUrl}/api/devices`)
+      apiFetch(`${apiUrl}/api/devices?workspaceId=${targetWorkspaceId}`)
         .then(res => res.ok ? res.json() : [])
         .then((data: Device[]) => {
           setDevices(Array.isArray(data) ? data : []);
@@ -100,9 +101,10 @@ const AddClientModal = ({ isOpen, onClose, onSuccess, assets = [] }: AddClientMo
       // Reset device selection if more than 1 device
       // (single device auto-select handled in devices fetch effect)
 
-      // Fetch existing clients sekali, lalu build kedua data dari hasilnya
+      const targetWorkspaceId = nocWorkspaceId || user?.workspace_id;
+      if (!targetWorkspaceId) return;
       setLoading(true);
-      apiFetch(`${apiUrl}/api/clients`)
+      apiFetch(`${apiUrl}/api/clients?workspaceId=${targetWorkspaceId}`)
         .then(res => {
           if (!res.ok) throw new Error('Gagal memuat data client.');
           return res.json();
@@ -132,10 +134,11 @@ const AddClientModal = ({ isOpen, onClose, onSuccess, assets = [] }: AddClientMo
       return;
     }
 
+    const targetWorkspaceId = nocWorkspaceId || user?.workspace_id;
     setSecretsLoading(true);
     setSecretsInitialized(false);
     setSelectedSecret('');
-    apiFetch(`${apiUrl}/api/pppoe/secrets?deviceId=${selectedDeviceId}`)
+    apiFetch(`${apiUrl}/api/pppoe/secrets?deviceId=${selectedDeviceId}&workspaceId=${targetWorkspaceId || ""}`)
       .then(res => res.ok ? res.json() : { secrets: [] })
       .then(data => {
         const secrets = Array.isArray(data.secrets) ? data.secrets : (Array.isArray(data) ? data : []);
@@ -239,8 +242,9 @@ const AddClientModal = ({ isOpen, onClose, onSuccess, assets = [] }: AddClientMo
     if (odpAssetId) formDataToSubmit.append('odp_asset_id', odpAssetId);
     if (selectedPhoto) formDataToSubmit.append('photo', selectedPhoto);
 
+    const targetWorkspaceId = nocWorkspaceId || user?.workspace_id;
     try {
-      const res = await apiFetch(`${apiUrl}/api/clients`, {
+      const res = await apiFetch(`${apiUrl}/api/clients?workspaceId=${targetWorkspaceId || ""}`, {
         method: 'POST',
         body: formDataToSubmit
       });

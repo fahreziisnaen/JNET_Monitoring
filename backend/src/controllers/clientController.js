@@ -33,7 +33,12 @@ function parseRateToBps(rateStr) {
 
 // Get all clients for workspace
 exports.getClients = async (req, res) => {
-    const { workspace_id } = req.user;
+    let { workspace_id } = req.user;
+    
+    // Support override for NOC
+    if (req.query.workspaceId && req.user.role === 'admin') {
+        workspace_id = parseInt(req.query.workspaceId);
+    }
     try {
         // Ambil clients dengan status aktif dari pppoe_user_status dan owner ODP
         const [clients] = await pool.query(
@@ -178,7 +183,13 @@ exports.orphanCheck = async (req, res) => {
 
 // Get unlinked PPPoE secrets (secrets that are not yet clients)
 exports.getUnlinkedPppoeSecrets = async (req, res) => {
-    const { workspace_id } = req.user;
+    let { workspace_id } = req.user;
+    
+    // Support override for NOC
+    if (req.query.workspaceId && req.user.role === 'admin') {
+        workspace_id = parseInt(req.query.workspaceId);
+    }
+    
     const deviceId = req.query.deviceId ? parseInt(req.query.deviceId) : null;
     try {
         // Ambil secrets dari database (diisi oleh backgroundMonitor)
@@ -233,7 +244,13 @@ exports.getUnlinkedPppoeSecrets = async (req, res) => {
 
 // Create new client from PPPoE secret
 exports.createClient = async (req, res) => {
-    const { workspace_id } = req.user;
+    let { workspace_id } = req.user;
+
+    // Support override for NOC
+    if (req.query.workspaceId && req.user.role === 'admin') {
+        workspace_id = parseInt(req.query.workspaceId);
+    }
+
     const { pppoe_secret_name, client_name, whatsapp_number, latitude, longitude, odp_asset_id, connection_path, device_id } = req.body;
     const photo_url = req.file ? `/public/uploads/clients/${req.file.filename}` : null;
     const deviceId = device_id ? parseInt(device_id) : null;
@@ -325,7 +342,13 @@ exports.createClient = async (req, res) => {
 // Update client (coordinates and ODP link)
 exports.updateClient = async (req, res) => {
     const { id } = req.params;
-    const { workspace_id } = req.user;
+    let { workspace_id } = req.user;
+
+    // Support override for NOC
+    if (req.query.workspaceId && req.user.role === 'admin') {
+        workspace_id = parseInt(req.query.workspaceId);
+    }
+    
     const { latitude, longitude, connection_path, pppoe_secret_name, client_name, whatsapp_number } = req.body;
     let { odp_asset_id } = req.body;
 
@@ -373,6 +396,11 @@ exports.updateClient = async (req, res) => {
                     'DELETE FROM odp_user_connections WHERE workspace_id = ? AND asset_id = ? AND pppoe_secret_name = ?',
                     [workspace_id, oldOdpId, client.pppoe_secret_name]
                 );
+                // Reset kabel karena client sekarang tidak punya parent lagi
+                await pool.query(
+                    'UPDATE clients SET connection_path = NULL WHERE id = ? AND workspace_id = ?',
+                    [id, workspace_id]
+                );
             } else {
                 // Link to new ODP
                 const [odpAsset] = await pool.query(
@@ -393,6 +421,15 @@ exports.updateClient = async (req, res) => {
                     await pool.query(
                         'DELETE FROM odp_user_connections WHERE workspace_id = ? AND asset_id = ? AND pppoe_secret_name = ?',
                         [workspace_id, oldOdpId, client.pppoe_secret_name]
+                    );
+                }
+
+                // Reset connection_path karena kabel menuju ODP lama akan kacau setelah ganti ODP
+                // Biarkan peta menggambar garis lurus default dari client ke ODP baru
+                if (oldOdpId && oldOdpId !== parseInt(odp_asset_id)) {
+                    await pool.query(
+                        'UPDATE clients SET connection_path = NULL WHERE id = ? AND workspace_id = ?',
+                        [id, workspace_id]
                     );
                 }
 
@@ -487,7 +524,12 @@ exports.updateClient = async (req, res) => {
 // Delete client
 exports.deleteClient = async (req, res) => {
     const { id } = req.params;
-    const { workspace_id } = req.user;
+    let { workspace_id } = req.user;
+
+    // Support override for NOC
+    if (req.query.workspaceId && req.user.role === 'admin') {
+        workspace_id = parseInt(req.query.workspaceId);
+    }
 
     try {
         // Get client info before deletion
@@ -538,7 +580,13 @@ const previousTrafficData = new Map(); // key: workspace_id:pppoe_secret_name, v
 // Get single client
 exports.getClient = async (req, res) => {
     const { id } = req.params;
-    const { workspace_id } = req.user;
+    let { workspace_id } = req.user;
+
+    // Support override for NOC
+    if (req.query.workspaceId && req.user.role === 'admin') {
+        workspace_id = parseInt(req.query.workspaceId);
+    }
+    
     const deviceId = req.query.deviceId ? parseInt(req.query.deviceId) : null;
 
     try {

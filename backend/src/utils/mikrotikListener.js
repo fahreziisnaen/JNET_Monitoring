@@ -84,6 +84,7 @@ async function setupPppoeListeners(device, { onSecretUpdate, onActiveUpdate, onE
 
     try {
         const setupPromise = (async () => {
+            // Gunakan koneksi sekuensial untuk menghindari throttling login dari Mikrotik (terlalu banyak koneksi rentan hang)
             await secretClient.connect();
             await activeClient.connect();
 
@@ -115,9 +116,9 @@ async function setupPppoeListeners(device, { onSecretUpdate, onActiveUpdate, onE
             return { cleanup };
         })();
 
-        // Beri timeout 5 detik untuk inisialisasi listener agar tidak bikin WS connection hang
+        // Beri timeout 60 detik untuk inisialisasi listener agar router yang sibuk bisa merespon
         const timeoutPromise = new Promise((_, reject) =>
-            setTimeout(() => reject(new Error('Timeout inisialisasi listener')), 5000)
+            setTimeout(() => reject(new Error('Timeout inisialisasi listener')), 60000)
         );
 
         return await Promise.race([setupPromise, timeoutPromise]);

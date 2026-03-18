@@ -9,13 +9,21 @@ import NocManagementTab from '@/components/noc/NocManagementTab';
 import NocMapTab from '@/components/noc/NocMapTab';
 import { usePageTitle } from '@/hooks/usePageTitle';
 
+interface Workspace {
+    id: number;
+    name: string;
+}
+
 const NocPage = () => {
     usePageTitle('NOC');
     const { user } = useAuth();
     const router = useRouter();
 
+    const [allWorkspaces, setAllWorkspaces] = useState<Workspace[]>([]);
     const [selectedWorkspaceIds, setSelectedWorkspaceIds] = useState<number[]>([]);
     const [activeTab, setActiveTab] = useState<'management' | 'map'>('management');
+
+    const activeWorkspaces = allWorkspaces.filter(ws => selectedWorkspaceIds.includes(ws.id));
 
     // Proteksi rute NOC hanya untuk superadmin
     useEffect(() => {
@@ -50,6 +58,7 @@ const NocPage = () => {
                     <NocWorkspaceSelector
                         selectedWorkspaceIds={selectedWorkspaceIds}
                         onChange={setSelectedWorkspaceIds}
+                        onWorkspacesFetched={setAllWorkspaces}
                     />
                 </div>
 
@@ -78,9 +87,9 @@ const NocPage = () => {
             </div>
 
             {activeTab === 'management' ? (
-                <NocManagementTab workspaceIds={selectedWorkspaceIds} />
+                <NocManagementTab workspaces={activeWorkspaces} />
             ) : (
-                <NocMapTab workspaceIds={selectedWorkspaceIds} />
+                <NocMapTab workspaces={activeWorkspaces} />
             )}
         </div>
     );
