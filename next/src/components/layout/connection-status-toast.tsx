@@ -53,10 +53,52 @@ export default function ConnectionStatusToast() {
             }
         };
 
+        // Handler for PPPoE client going OFFLINE
+        const handleDowntimeNotification = (event: any) => {
+            const data = event.detail;
+            if (!data?.users?.length) return;
+
+            const users: string[] = data.users;
+            if (users.length === 1) {
+                toast.error(`Client Offline`, {
+                    description: `User ${users[0]} terputus dari jaringan.`,
+                    duration: 8000,
+                });
+            } else {
+                toast.error(`${users.length} Client Offline`, {
+                    description: users.slice(0, 3).join(', ') + (users.length > 3 ? ` +${users.length - 3} lainnya` : '') + ' terputus.',
+                    duration: 8000,
+                });
+            }
+        };
+
+        // Handler for PPPoE client coming back ONLINE
+        const handleReconnectNotification = (event: any) => {
+            const data = event.detail;
+            if (!data?.users?.length) return;
+
+            const users: string[] = data.users;
+            if (users.length === 1) {
+                toast.success(`Client Online`, {
+                    description: `User ${users[0]} kembali terhubung.`,
+                    duration: 6000,
+                });
+            } else {
+                toast.success(`${users.length} Client Online`, {
+                    description: users.slice(0, 3).join(', ') + (users.length > 3 ? ` +${users.length - 3} lainnya` : '') + ' kembali terhubung.',
+                    duration: 6000,
+                });
+            }
+        };
+
         window.addEventListener('mikrotik-connection-status', handleStatusEvent);
+        window.addEventListener('downtime-notification', handleDowntimeNotification);
+        window.addEventListener('reconnect-notification', handleReconnectNotification);
 
         return () => {
             window.removeEventListener('mikrotik-connection-status', handleStatusEvent);
+            window.removeEventListener('downtime-notification', handleDowntimeNotification);
+            window.removeEventListener('reconnect-notification', handleReconnectNotification);
         };
     }, [token, user]);
 

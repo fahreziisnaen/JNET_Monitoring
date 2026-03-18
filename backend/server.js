@@ -37,18 +37,28 @@ if (RouterOSAPI.RouterOSAPI) {
 // Triggering restart to re-init monitors: 2026-03-18 00:34
 const pool = require('./src/config/database');
 
-// Auto-migration: tambah kolom device_id ke tabel clients jika belum ada
+// Auto-migration: tambah kolom-kolom yang diperlukan jika belum ada
 async function runMigrations() {
+    // Migration 1: clients.device_id
     try {
         const [columns] = await pool.query("SHOW COLUMNS FROM clients LIKE 'device_id'");
         if (columns.length === 0) {
             await pool.query("ALTER TABLE clients ADD COLUMN device_id INT DEFAULT NULL AFTER workspace_id");
-            console.log('[Migrasi] Kolom clients.device_id berhasil ditambahkan');
-        } else {
-            console.log('[Migrasi] Struktur tabel clients: OK');
+            console.error('[Migrasi] Kolom clients.device_id berhasil ditambahkan');
         }
     } catch (err) {
-        console.error('[Migration] Error:', err.message);
+        console.error('[Migrasi] Error cek clients.device_id:', err.message);
+    }
+
+    // Migration 2: downtime_events.reconnect_notification_sent
+    try {
+        const [cols] = await pool.query("SHOW COLUMNS FROM downtime_events LIKE 'reconnect_notification_sent'");
+        if (cols.length === 0) {
+            await pool.query("ALTER TABLE downtime_events ADD COLUMN reconnect_notification_sent BOOLEAN DEFAULT FALSE");
+            console.error('[Migrasi] Kolom downtime_events.reconnect_notification_sent berhasil ditambahkan');
+        }
+    } catch (err) {
+        console.error('[Migrasi] Error cek downtime_events.reconnect_notification_sent:', err.message);
     }
 }
 runMigrations();

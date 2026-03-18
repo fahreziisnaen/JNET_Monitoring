@@ -24,6 +24,15 @@ const INIT_STAGGER_MS = 800;         // jeda antar device saat startup
 const physicalMonitors = new Map(); // physicalKey -> { intervalId, state }
 const logicalToPhysical = new Map(); // workspaceId:deviceId -> physicalKey
 
+// Track per-user online status to detect transitions
+// Key: `${workspaceId}:${deviceId}:${pppoeUserName}` -> bool (wasActive)
+const userStatusCache = new Map();
+
+// Server start time for suppression
+const serverStartTime = Date.now();
+const SUPPRESSION_PERIOD_MS = 5 * 60 * 1000; // 5 minutes
+
+
 /**
  * Mulai monitoring untuk satu perangkat FISIK (Physical Device).
  * Satu router fisik mungkin digunakan oleh banyak workspace.
@@ -233,6 +242,50 @@ async function startPhysicalMonitor(group, broadcastCallback) {
                         for (const user of eligibleForDowntime) {
                             const [open] = await pool.query('SELECT id FROM downtime_events WHERE workspace_id=? AND device_id=? AND pppoe_user=? AND end_time IS NULL', [inst.workspace_id, inst.id, user.name]).catch(()=>[[]]);
                             if (open.length === 0) await pool.query('INSERT INTO downtime_events (workspace_id, device_id, pppoe_user, start_time) VALUES (?, ?, ?, NOW())', [inst.workspace_id, inst.id, user.name]).catch(() => {});
+                        }
+
+                        // --- REALTIME TOAST NOTIFICATION BROADCAST ---
+                        // Suppress during first 5 minutes after server start (avoid flood on restart)
+                        if (state.broadcastCallback && Date.now() - serverStartTime > SUPPRESSION_PERIOD_MS) {
+                            const downtimeUsers = [];
+                            const reconnectUsers = [];
+
+                            for (const secret of enriched) {
+                                if (secret.disabled === true || secret.disabled === 'true' || secret.disabled === 1) continue;
+                                const cacheKey = `${inst.workspace_id}:${inst.id}:${secret.name}`;
+                                const wasActive = userStatusCache.get(cacheKey);
+
+                                // Only notify on transitions (not first time we see the user)
+                                if (wasActive !== undefined) {
+                                    if (wasActive && !secret.isActive) {
+                                        // Was online, now offline → DOWN
+                                        downtimeUsers.push(secret.name);
+                                    } else if (!wasActive && secret.isActive) {
+                                        // Was offline, now online → UP
+                                        reconnectUsers.push(secret.name);
+                                    }
+                                }
+                                userStatusCache.set(cacheKey, secret.isActive);
+                            }
+
+                            if (downtimeUsers.length > 0) {
+                                state.broadcastCallback(inst.workspace_id, inst.id, {
+                                    type: 'downtime-notification',
+                                    payload: { users: downtimeUsers }
+                                });
+                            }
+                            if (reconnectUsers.length > 0) {
+                                state.broadcastCallback(inst.workspace_id, inst.id, {
+                                    type: 'reconnect-notification',
+                                    payload: { users: reconnectUsers }
+                                });
+                            }
+                        } else if (Date.now() - serverStartTime < SUPPRESSION_PERIOD_MS) {
+                            // During suppression, still populate cache so we get correct baseline
+                            for (const secret of enriched) {
+                                const cacheKey = `${inst.workspace_id}:${inst.id}:${secret.name}`;
+                                userStatusCache.set(cacheKey, secret.isActive);
+                            }
                         }
                     }
 

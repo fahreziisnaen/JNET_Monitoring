@@ -233,6 +233,7 @@ CREATE TABLE `downtime_events` (
   `end_time` datetime DEFAULT NULL,
   `duration_seconds` int DEFAULT NULL,
   `notification_sent` BOOLEAN DEFAULT FALSE COMMENT 'Untuk track apakah notifikasi disconnect sudah dikirim setelah 2 menit downtime',
+  `reconnect_notification_sent` BOOLEAN DEFAULT FALSE COMMENT 'Untuk track apakah notifikasi reconnect sudah dikirim',
   PRIMARY KEY (`id`),
   KEY `idx_workspace_id` (`workspace_id`),
   KEY `idx_device_id` (`device_id`),

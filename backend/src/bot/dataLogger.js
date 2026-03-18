@@ -23,6 +23,21 @@ const SUPPRESSION_PERIOD_MS = 5 * 60 * 1000; // 5 menit
  * @param {number} totalSeconds - Total durasi dalam detik
  * @returns {string} - Durasi yang sudah diformat
  */
+/**
+ * Format tanggal dan waktu ke format: 15/3/2026, 16.08.31
+ * @param {Date} date - Date object
+ * @returns {string}
+ */
+function formatDateTime(date = new Date()) {
+    const d = date.getDate();
+    const m = date.getMonth() + 1;
+    const y = date.getFullYear();
+    const h = String(date.getHours()).padStart(2, '0');
+    const min = String(date.getMinutes()).padStart(2, '0');
+    const s = String(date.getSeconds()).padStart(2, '0');
+    return `${d}/${m}/${y}, ${h}.${min}.${s}`;
+}
+
 function formatDuration(totalSeconds) {
     if (!totalSeconds || totalSeconds < 0) {
         return '0 detik';
@@ -181,19 +196,19 @@ async function sendDowntimeNotifications(broadcastCallback = null) {
             const whatsappTarget = await getWorkspaceWhatsAppTarget(workspaceId);
             if (!whatsappTarget) continue;
 
-            const nowStr = new Date().toLocaleString('id-ID');
-            let message = `⚠️ *PPPoE User Offline* ⚠️\n\n`;
+            const nowStr = formatDateTime();
+            let message = `🚨 *PPPoE User Disconnected* 🚨\n\n`;
             message += `Waktu: ${nowStr}\n\n`;
 
             if (group.items.length === 1) {
                 const item = group.items[0];
-                const startTime = new Date(item.start_time).toLocaleTimeString('id-ID');
+                const startTime = formatDateTime(new Date(item.start_time));
                 message += `User yang offline:\n`;
                 message += `• *${item.pppoe_user}* (*${item.device_name}*) sejak ${startTime}\n\n`;
             } else {
                 message += `User yang offline (${group.items.length}):\n`;
                 group.items.forEach((item, index) => {
-                    const startTime = new Date(item.start_time).toLocaleTimeString('id-ID');
+                    const startTime = formatDateTime(new Date(item.start_time));
                     message += `${index + 1}. *${item.pppoe_user}* (*${item.device_name}*) - ${startTime}\n`;
                 });
                 message += `\n`;
@@ -230,6 +245,7 @@ async function sendReconnectNotifications(broadcastCallback = null) {
         `;
         const [reconnects] = await pool.query(query);
 
+        console.log(`[Reconnect Alert] Ditemukan ${reconnects.length} event reconnect yang perlu dikirim.`);
         if (reconnects.length === 0) return;
 
         // Group by workspace_id
@@ -244,7 +260,7 @@ async function sendReconnectNotifications(broadcastCallback = null) {
             const whatsappTarget = await getWorkspaceWhatsAppTarget(workspaceId);
             if (!whatsappTarget) continue;
 
-            const nowStr = new Date().toLocaleString('id-ID');
+            const nowStr = formatDateTime();
             let message = `✅ *PPPoE User Reconnected* ✅\n\n`;
             message += `Waktu: ${nowStr}\n\n`;
 
