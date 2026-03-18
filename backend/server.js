@@ -24,7 +24,7 @@ const cron = require('node-cron');
 
 const { startWhatsApp } = require('./src/services/whatsappService');
 const { generateAndSendDailyReports } = require('./src/bot/reportGenerator');
-const { monitorSlaAndNotifications, sendDowntimeNotifications } = require('./src/bot/dataLogger');
+const { monitorSlaAndNotifications, sendDowntimeNotifications, sendReconnectNotifications } = require('./src/bot/dataLogger');
 const { startBackgroundMonitoring, refreshSecretsNow } = require('./src/bot/backgroundMonitor');
 const { setupPppoeListeners } = require('./src/utils/mikrotikListener');
 const mikrotikStore = require('./src/utils/mikrotikStore');

@@ -52,10 +52,11 @@ const TRAFFIC_LOG_INTERVAL_MS = parseInt(process.env.TRAFFIC_LOG_INTERVAL_MS) ||
 const DASHBOARD_UPDATE_INTERVAL_MS = parseInt(process.env.DASHBOARD_UPDATE_INTERVAL_MS) || 15000;
 
 async function checkAlarms(workspaceId, device, broadcastCallback = null) {
-    if (!alarmState.has(workspaceId)) {
-        alarmState.set(workspaceId, { cpuCooldown: 0, offlineCooldown: 0, isOffline: false });
+    const stateKey = `${workspaceId}_${device.id}`;
+    if (!alarmState.has(stateKey)) {
+        alarmState.set(stateKey, { cpuCooldown: 0, offlineCooldown: 0, isOffline: false });
     }
-    const state = alarmState.get(workspaceId);
+    const state = alarmState.get(stateKey);
     const now = Date.now();
 
     // Ambil WhatsApp target (group atau individual) dari workspace
@@ -180,23 +181,24 @@ async function sendDowntimeNotifications(broadcastCallback = null) {
             const whatsappTarget = await getWorkspaceWhatsAppTarget(workspaceId);
             if (!whatsappTarget) continue;
 
-            const now = new Date().toLocaleString('id-ID');
-            let message = `🚨 *PPPoE User Disconnected* 🚨\n\n`;
-            message += `Workspace: *${group.name}*\n`;
-            message += `Waktu: ${now}\n\n`;
+            const nowStr = new Date().toLocaleString('id-ID');
+            let message = `⚠️ *PPPoE User Offline* ⚠️\n\n`;
+            message += `Waktu: ${nowStr}\n\n`;
 
             if (group.items.length === 1) {
                 const item = group.items[0];
-                message += `User yang disconnect:\n`;
-                message += `• *${item.pppoe_user}* pada *${item.device_name}*\n\n`;
+                const startTime = new Date(item.start_time).toLocaleTimeString('id-ID');
+                message += `User yang offline:\n`;
+                message += `• *${item.pppoe_user}* (*${item.device_name}*) sejak ${startTime}\n\n`;
             } else {
-                message += `User yang disconnect (${group.items.length}):\n`;
+                message += `User yang offline (${group.items.length}):\n`;
                 group.items.forEach((item, index) => {
-                    message += `${index + 1}. *${item.pppoe_user}* pada *${item.device_name}*\n`;
+                    const startTime = new Date(item.start_time).toLocaleTimeString('id-ID');
+                    message += `${index + 1}. *${item.pppoe_user}* (*${item.device_name}*) - ${startTime}\n`;
                 });
                 message += `\n`;
             }
-            message += `Mohon periksa kondisi jaringan atau hubungi user terkait.`;
+            message += `Mohon periksa jaringan Anda.`;
 
             const success = await sendWhatsAppMessage(whatsappTarget, message);
             if (success) {
@@ -242,27 +244,18 @@ async function sendReconnectNotifications(broadcastCallback = null) {
             const whatsappTarget = await getWorkspaceWhatsAppTarget(workspaceId);
             if (!whatsappTarget) continue;
 
-            const now = new Date().toLocaleString('id-ID');
+            const nowStr = new Date().toLocaleString('id-ID');
             let message = `✅ *PPPoE User Reconnected* ✅\n\n`;
-            message += `Workspace: *${group.name}*\n`;
-            message += `Waktu: ${now}\n\n`;
+            message += `Waktu: ${nowStr}\n\n`;
 
             if (group.items.length === 1) {
                 const item = group.items[0];
                 message += `User yang reconnect:\n`;
-                message += `• *${item.pppoe_user}* pada *${item.device_name}*\n`;
-                if (item.duration_seconds) {
-                    message += `Durasi downtime: ${formatDuration(item.duration_seconds)}\n`;
-                }
-                message += `\n`;
+                message += `1. *${item.pppoe_user}* (*${item.device_name}*) - ${formatDuration(item.duration_seconds)}\n\n`;
             } else {
                 message += `User yang reconnect (${group.items.length}):\n`;
                 group.items.forEach((item, index) => {
-                    message += `${index + 1}. *${item.pppoe_user}* pada *${item.device_name}*`;
-                    if (item.duration_seconds) {
-                        message += ` (${formatDuration(item.duration_seconds)})`;
-                    }
-                    message += `\n`;
+                    message += `${index + 1}. *${item.pppoe_user}* (*${item.device_name}*) - ${formatDuration(item.duration_seconds)}\n`;
                 });
                 message += `\n`;
             }
