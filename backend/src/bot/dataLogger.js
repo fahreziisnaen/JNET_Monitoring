@@ -111,15 +111,10 @@ async function checkAlarms(workspaceId, device, broadcastCallback = null) {
 
 async function monitorSlaAndNotifications(broadcastCallback = null) {
     try {
-        const [workspaces] = await pool.query('SELECT id, active_device_id FROM workspaces');
-        for (const workspace of workspaces) {
-            if (!workspace.active_device_id) continue;
-            
-            const [devices] = await pool.query('SELECT * FROM mikrotik_devices WHERE id = ?', [workspace.active_device_id]);
-            if (devices.length > 0) {
-                await checkAlarms(workspace.id, devices[0], broadcastCallback);
-                // processSlaEvents(workspace.id, devices[0]); // Disabled redundant SLA processing here
-            }
+        // Ambil semua device dari semua workspace untuk dimonitoring alaramnya
+        const [devices] = await pool.query('SELECT * FROM mikrotik_devices');
+        for (const device of devices) {
+            await checkAlarms(device.workspace_id, device, broadcastCallback);
         }
     } catch (error) {
         console.error('[Bot Service] Error in monitorSlaAndNotifications:', error);
@@ -140,7 +135,13 @@ async function sendDowntimeNotifications(broadcastCallback = null) {
             const whatsappTarget = await getWorkspaceWhatsAppTarget(downtime.workspace_id);
             if (!whatsappTarget) continue;
 
-            // Optional: send periodic warning for long downtimes
+            const message = `⚠️ *KLIEN DOWN* ⚠️\n\nKlien *${downtime.pppoe_user}* pada perangkat *${downtime.name}* terdeteksi offline sejak ${new Date(downtime.start_time).toLocaleString('id-ID')}.`;
+            
+            const success = await sendWhatsAppMessage(whatsappTarget, message);
+            if (success) {
+                await pool.query('UPDATE downtime_events SET notification_sent = TRUE WHERE id = ?', [downtime.id]);
+                console.log(`[Notifikasi] Berhasil mengirim alert KLIEN DOWN untuk ${downtime.pppoe_user}`);
+            }
         }
     } catch (error) {
         console.error('[Bot Service] Error in sendDowntimeNotifications:', error);

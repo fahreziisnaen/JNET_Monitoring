@@ -273,6 +273,38 @@ async function startDeviceMonitor(workspaceId, deviceId, broadcastCallback) {
                         [workspaceId, deviceId]
                     );
 
+                    // --- TRACK DOWNTIME EVENTS (SLA) ---
+                    // 1. Close events for users who are now ACTIVE
+                    if (activeUsers.length > 0) {
+                        const activeNames = activeUsers.map(u => u.name);
+                        await pool.query(`
+                            UPDATE downtime_events 
+                            SET end_time = NOW(), duration_seconds = TIMESTAMPDIFF(SECOND, start_time, NOW()) 
+                            WHERE workspace_id = ? AND device_id = ? AND pppoe_user IN (?) AND end_time IS NULL
+                        `, [workspaceId, deviceId, activeNames]);
+                    }
+
+                    // 2. Open events for users who are INACTIVE and NOT DISABLED
+                    // (Hanya jika mereka belum punya event terbuka)
+                    const eligibleForDowntime = enriched.filter(s => !s.isActive && (s.disabled === 0 || s.disabled === false || s.disabled === 'false'));
+                    if (eligibleForDowntime.length > 0) {
+                        for (const user of eligibleForDowntime) {
+                            // Cek apakah sudah ada event terbuka
+                            const [openEvents] = await pool.query(
+                                'SELECT id FROM downtime_events WHERE workspace_id = ? AND device_id = ? AND pppoe_user = ? AND end_time IS NULL',
+                                [workspaceId, deviceId, user.name]
+                            );
+                            
+                            if (openEvents.length === 0) {
+                                // Buat event baru
+                                await pool.query(
+                                    'INSERT INTO downtime_events (workspace_id, device_id, pppoe_user, start_time) VALUES (?, ?, ?, NOW())',
+                                    [workspaceId, deviceId, user.name]
+                                );
+                            }
+                        }
+                    }
+
                 } catch (dbErr) {
                     console.error(`[Pencatatan] Gagal sinkronisasi data user ke database (${label || deviceId}): ${dbErr.message}`);
                 }

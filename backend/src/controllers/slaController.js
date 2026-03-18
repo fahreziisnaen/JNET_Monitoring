@@ -1,7 +1,7 @@
 const pool = require('../config/database');
 
 exports.handleSlaEvent = async (req, res) => {
-    const { user, status, workspace_id } = req.body;
+    const { user, status, workspace_id, device_id } = req.body;
     if (!user || !status || !workspace_id) {
         return res.status(400).send('Bad Request: Missing user, status, or workspace_id');
     }
@@ -25,8 +25,8 @@ exports.handleSlaEvent = async (req, res) => {
             );
             if (openEvents.length === 0) {
                 await dbConnection.query(
-                    'INSERT INTO downtime_events (workspace_id, pppoe_user, start_time) VALUES (?, ?, NOW())',
-                    [workspace_id, user]
+                    'INSERT INTO downtime_events (workspace_id, device_id, pppoe_user, start_time) VALUES (?, ?, ?, NOW())',
+                    [workspace_id, device_id || 0, user]
                 );
             }
         }
