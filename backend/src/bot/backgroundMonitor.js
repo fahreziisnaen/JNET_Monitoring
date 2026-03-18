@@ -134,10 +134,22 @@ async function startPhysicalMonitor(group, broadcastCallback) {
                 .map(iface => iface.name);
 
             const trafficResults = await Promise.all(
-                interfacesToMonitor.map(name =>
-                    runCommandForWorkspace(workspaceId, '/interface/monitor-traffic', [`=interface=${name}`, '=once='], deviceId)
-                        .then(r => r[0]).catch(() => null)
-                )
+                interfacesToMonitor.map(name => {
+                    // Gunakan tanda kutip jika nama mengandung spasi atau karakter khusus
+                    const paramName = (name.includes(' ') || name.includes('(') || name.includes(')') || name.includes('/') || name.includes('\\')) 
+                        ? `"${name}"` 
+                        : name;
+                    
+                    return runCommandForWorkspace(workspaceId, '/interface/monitor-traffic', [`=interface=${paramName}`, '=once='], deviceId)
+                        .then(r => r[0])
+                        .catch(err => {
+                            // Diamkan log jika error "input does not match" agar tidak memenuhi log
+                            if (!err.message.includes('match any value')) {
+                                console.error(`[Pemantauan] Gagal monitor traffic di ${name}: ${err.message}`);
+                            }
+                            return null;
+                        });
+                })
             );
             const traffic = {};
             trafficResults.forEach(result => {
