@@ -6,7 +6,13 @@ const fs = require('fs');
 const path = require('path');
 
 exports.getAssets = async (req, res) => {
-    const workspaceId = req.user.workspace_id;
+    let workspaceId = req.user.workspace_id;
+    
+    // Support override for NOC
+    if (req.query.workspaceId && req.user.role === 'admin') {
+        workspaceId = parseInt(req.query.workspaceId);
+    }
+
     if (!workspaceId) {
         return res.json([]);
     }
@@ -568,7 +574,13 @@ exports.getUnconnectedPppoeUsers = async (req, res) => {
 };
 
 exports.getAssetOwners = async (req, res) => {
-    const workspaceId = req.user.workspace_id;
+    let workspaceId = req.user.workspace_id;
+    
+    // Support override for NOC
+    if (req.query.workspaceId && req.user.role === 'admin') {
+        workspaceId = parseInt(req.query.workspaceId);
+    }
+
     if (!workspaceId) {
         console.log("[GET ASSET OWNERS] No workspace_id found for user:", req.user.id);
         return res.json([]);
