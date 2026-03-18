@@ -87,8 +87,13 @@ exports.updateDevice = async (req, res) => {
             [id, workspaceId]
         );
 
-        if (currentDevice.length > 0 && currentDevice[0].host !== host) {
-            console.log(`[Device Update] Host berubah dari ${currentDevice[0].host} ke ${host}. Membersihkan data lama (DB + Memori)...`);
+        if (currentDevice.length > 0 && (
+            currentDevice[0].host !== host || 
+            currentDevice[0].port !== parseInt(port) || 
+            currentDevice[0].user !== user || 
+            (password && currentDevice[0].password !== password)
+        )) {
+            console.error(`[Device Update] Kredensial berubah untuk ${host}. Membersihkan data lama (DB + Memori)...`);
             
             // 1. Bersihkan database
             await Promise.all([

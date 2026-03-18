@@ -785,6 +785,7 @@ server.listen(PORT, '0.0.0.0', () => {
     // Berjalan terus menerus, tidak bergantung pada user login
     cron.schedule(process.env.DOWNTIME_NOTIFY_CRON || '*/30 * * * * *', () => {
         sendDowntimeNotifications(broadcastToWorkspace);
+        sendReconnectNotifications(broadcastToWorkspace);
     });
 
     /* 

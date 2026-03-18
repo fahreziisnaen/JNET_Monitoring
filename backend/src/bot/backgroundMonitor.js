@@ -75,8 +75,16 @@ async function startPhysicalMonitor(group, broadcastCallback) {
                 if (pppoeActive !== null) {
                     mikrotikStore.setActive(inst.workspace_id, inst.id, pppoeActive);
                     mikrotikStore.setDeviceStatus(inst.workspace_id, inst.id, 'connected');
+                    mikrotikStore.setResource(inst.workspace_id, inst.id, resource);
+
+                    // Update database untuk Dashboard Snapshot
+                    pool.query(
+                        'UPDATE mikrotik_devices SET last_known_cpu = ?, last_known_uptime = ?, last_known_active_users = ?, last_status_update = NOW() WHERE id = ?',
+                        [resource['cpu-load'] || 0, resource['uptime'] || 'unknown', pppoeActive.length, inst.id]
+                    ).catch(() => {});
                 } else {
                     mikrotikStore.setDeviceStatus(inst.workspace_id, inst.id, 'disconnected');
+                    pool.query('UPDATE mikrotik_devices SET last_status_update = NOW() WHERE id = ?', [inst.id]).catch(() => {});
                 }
             }
 

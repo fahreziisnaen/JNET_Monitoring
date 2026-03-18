@@ -60,70 +60,69 @@ async function checkAlarms(workspaceId, device, broadcastCallback = null) {
 
     // Ambil WhatsApp target (group atau individual) dari workspace
     const whatsappTarget = await getWorkspaceWhatsAppTarget(workspaceId);
+    if (!whatsappTarget) return;
+
     // Suppress alerts during initial startup (5 minutes)
     if (now - serverStartTime < SUPPRESSION_PERIOD_MS) {
-        // Hanya update status store, jangan kirim alarm WA
-        try {
-            const [resource] = await runCommandForWorkspace(workspaceId, '/system/resource/print', [], device.id);
-            if (state.isOffline) {
-                state.isOffline = false;
-                mikrotikStore.setDeviceStatus(workspaceId, device.id, 'connected');
-            }
-        } catch (e) {
-            state.isOffline = true;
-            mikrotikStore.setDeviceStatus(workspaceId, device.id, 'disconnected');
-        }
         return;
     }
 
     try {
-        const [resource] = await runCommandForWorkspace(workspaceId, '/system/resource/print', [], device.id);
-        if (state.isOffline) {
-            // Transmit 'connected' broadcast to UI to dismiss failure Toast instantly
-            if (broadcastCallback) {
-                console.log(`[Notifikasi] Mengabarkan status PERANGKAT ONLINE ke workspace ${workspaceId}`);
-                broadcastCallback(workspaceId, device.id, {
-                    type: 'connection-status',
-                    payload: {
-                        status: 'connected',
-                        deviceId: device.id,
-                        message: `Koneksi ke perangkat Mikrotik berhasil dipulihkan.`,
-                        timestamp: Date.now()
-                    }
-                });
+        // AMBIL DATA DARI STORE (Zero-API approach)
+        // BackgroundMonitor sudah mengupdate store ini secara berkala
+        const resource = mikrotikStore.getResource(workspaceId, device.id) || {};
+        const deviceStatus = mikrotikStore.getDeviceStatus(workspaceId, device.id);
+
+        if (deviceStatus === 'connected') {
+            if (state.isOffline) {
+                // Transmit 'connected' broadcast to UI to dismiss failure Toast instantly
+                if (broadcastCallback) {
+                    console.error(`[Notifikasi] Perangkat ${device.name} KEMBALI ONLINE`);
+                    broadcastCallback(workspaceId, device.id, {
+                        type: 'connection-status',
+                        payload: {
+                            status: 'connected',
+                            deviceId: device.id,
+                            message: `Koneksi ke perangkat Mikrotik berhasil dipulihkan.`,
+                            timestamp: Date.now()
+                        }
+                    });
+                }
+
+                if (state.offlineCooldown !== 0) {
+                    const message = `✅ *PERANGKAT ONLINE* ✅\n\nKoneksi ke perangkat *${device.name}* telah pulih.`;
+                    await sendWhatsAppMessage(whatsappTarget, message);
+                    state.offlineCooldown = 0;
+                }
+
+                // Reset offline flag
+                state.isOffline = false;
             }
-            mikrotikStore.setDeviceStatus(workspaceId, device.id, 'connected');
 
-            if (state.offlineCooldown !== 0) {
-                const message = `✅ *PERANGKAT ONLINE* ✅\n\nKoneksi ke perangkat *${device.name}* telah pulih.`;
-                await sendWhatsAppMessage(whatsappTarget, message);
-                state.offlineCooldown = 0;
+            const [alarms] = await pool.query('SELECT * FROM alarms WHERE workspace_id = ? AND type = "CPU_LOAD"', [workspaceId]);
+            if (alarms.length > 0 && state.cpuCooldown < now) {
+                const cpuLoad = parseInt(resource['cpu-load'], 10) || 0;
+                if (cpuLoad > alarms[0].threshold_mbps) {
+                    const message = `🚨 *ALARM CPU TINGGI* 🚨\n\nPerangkat *${device.name}* mengalami lonjakan CPU mencapai *${cpuLoad}%*. Segera periksa kondisi perangkat Anda!`;
+                    await sendWhatsAppMessage(whatsappTarget, message);
+                    state.cpuCooldown = now + CPU_COOLDOWN_MINUTES * 60 * 1000;
+                }
             }
-
-            // Reset offline flag
-            state.isOffline = false;
-        }
-
-        const [alarms] = await pool.query('SELECT * FROM alarms WHERE workspace_id = ? AND type = "CPU_LOAD"', [workspaceId]);
-        if (alarms.length > 0 && state.cpuCooldown < now) {
-            const cpuLoad = parseInt(resource['cpu-load'], 10) || 0;
-            if (cpuLoad > alarms[0].threshold_mbps) {
-                const message = `🚨 *ALARM CPU TINGGI* 🚨\n\nPerangkat *${device.name}* mengalami lonjakan CPU mencapai *${cpuLoad}%*. Segera periksa kondisi perangkat Anda!`;
-                await sendWhatsAppMessage(whatsappTarget, message);
-                state.cpuCooldown = now + CPU_COOLDOWN_MINUTES * 60 * 1000;
+        } else if (deviceStatus === 'disconnected' || !deviceStatus) {
+            // Track that we are currently offline so recovery knows to fire
+            if (!state.isOffline) {
+                state.isOffline = true;
+                // Immediate notification on first failure
+                if (state.offlineCooldown < now) {
+                    console.error(`[Notifikasi] Perangkat ${device.name} TERDETEKSI OFFLINE`);
+                    const message = `❌ *PERANGKAT OFFLINE* ❌\n\nKoneksi ke perangkat *${device.name}* terputus. Mohon periksa jaringan Anda.`;
+                    await sendWhatsAppMessage(whatsappTarget, message);
+                    state.offlineCooldown = now + OFFLINE_COOLDOWN_MINUTES * 60 * 1000;
+                }
             }
         }
     } catch (error) {
-        // Track that we are currently offline so recovery knows to fire
-        if (!state.isOffline) {
-            state.isOffline = true;
-            // Immediate notification on first failure
-            if (state.offlineCooldown < now) {
-                const message = `❌ *PERANGKAT OFFLINE* ❌\n\nKoneksi ke perangkat *${device.name}* terputus. Mohon periksa jaringan Anda.`;
-                await sendWhatsAppMessage(whatsappTarget, message);
-                state.offlineCooldown = now + OFFLINE_COOLDOWN_MINUTES * 60 * 1000;
-            }
-        }
+        console.error(`[Alarm Check] Error memproses ${device.name}:`, error.message);
     }
 }
 
@@ -157,29 +156,127 @@ async function sendDowntimeNotifications(broadcastCallback = null) {
         }
 
         const query = `
-            SELECT d.id, d.workspace_id, m.name, d.start_time, d.pppoe_user
+            SELECT d.id, d.workspace_id, m.name as device_name, d.start_time, d.pppoe_user, w.name as workspace_name
             FROM downtime_events d
             JOIN mikrotik_devices m ON d.device_id = m.id
+            JOIN workspaces w ON d.workspace_id = w.id
             WHERE d.end_time IS NULL 
               AND d.notification_sent = FALSE
               AND d.start_time < DATE_SUB(NOW(), INTERVAL 2 MINUTE)
         `;
         const [downtimes] = await pool.query(query);
 
-        for (const downtime of downtimes) {
-            const whatsappTarget = await getWorkspaceWhatsAppTarget(downtime.workspace_id);
+        if (downtimes.length === 0) return;
+
+        // Group by workspace_id
+        const groups = {};
+        for (const d of downtimes) {
+            if (!groups[d.workspace_id]) groups[d.workspace_id] = { name: d.workspace_name, items: [] };
+            groups[d.workspace_id].items.push(d);
+        }
+
+        for (const workspaceId in groups) {
+            const group = groups[workspaceId];
+            const whatsappTarget = await getWorkspaceWhatsAppTarget(workspaceId);
             if (!whatsappTarget) continue;
 
-            const message = `⚠️ *KLIEN DOWN* ⚠️\n\nKlien *${downtime.pppoe_user}* pada perangkat *${downtime.name}* terdeteksi offline sejak ${new Date(downtime.start_time).toLocaleString('id-ID')}.`;
-            
+            const now = new Date().toLocaleString('id-ID');
+            let message = `🚨 *PPPoE User Disconnected* 🚨\n\n`;
+            message += `Workspace: *${group.name}*\n`;
+            message += `Waktu: ${now}\n\n`;
+
+            if (group.items.length === 1) {
+                const item = group.items[0];
+                message += `User yang disconnect:\n`;
+                message += `• *${item.pppoe_user}* pada *${item.device_name}*\n\n`;
+            } else {
+                message += `User yang disconnect (${group.items.length}):\n`;
+                group.items.forEach((item, index) => {
+                    message += `${index + 1}. *${item.pppoe_user}* pada *${item.device_name}*\n`;
+                });
+                message += `\n`;
+            }
+            message += `Mohon periksa kondisi jaringan atau hubungi user terkait.`;
+
             const success = await sendWhatsAppMessage(whatsappTarget, message);
             if (success) {
-                await pool.query('UPDATE downtime_events SET notification_sent = TRUE WHERE id = ?', [downtime.id]);
-                console.log(`[Notifikasi] Berhasil mengirim alert KLIEN DOWN untuk ${downtime.pppoe_user}`);
+                const ids = group.items.map(i => i.id);
+                await pool.query('UPDATE downtime_events SET notification_sent = TRUE WHERE id IN (?)', [ids]);
+                console.log(`[Notifikasi] Berhasil mengirim alert DISCONNECT untuk ${group.items.length} user di workspace ${group.name}`);
             }
         }
     } catch (error) {
         console.error('[Bot Service] Error in sendDowntimeNotifications:', error);
+    }
+}
+
+async function sendReconnectNotifications(broadcastCallback = null) {
+    try {
+        // Suppress client alerts during initial startup (5 minutes)
+        if (Date.now() - serverStartTime < SUPPRESSION_PERIOD_MS) {
+            return;
+        }
+
+        const query = `
+            SELECT d.id, d.workspace_id, m.name as device_name, d.start_time, d.end_time, d.pppoe_user, d.duration_seconds, w.name as workspace_name
+            FROM downtime_events d
+            JOIN mikrotik_devices m ON d.device_id = m.id
+            JOIN workspaces w ON d.workspace_id = w.id
+            WHERE d.end_time IS NOT NULL 
+              AND d.reconnect_notification_sent = FALSE
+              AND d.notification_sent = TRUE
+        `;
+        const [reconnects] = await pool.query(query);
+
+        if (reconnects.length === 0) return;
+
+        // Group by workspace_id
+        const groups = {};
+        for (const r of reconnects) {
+            if (!groups[r.workspace_id]) groups[r.workspace_id] = { name: r.workspace_name, items: [] };
+            groups[r.workspace_id].items.push(r);
+        }
+
+        for (const workspaceId in groups) {
+            const group = groups[workspaceId];
+            const whatsappTarget = await getWorkspaceWhatsAppTarget(workspaceId);
+            if (!whatsappTarget) continue;
+
+            const now = new Date().toLocaleString('id-ID');
+            let message = `✅ *PPPoE User Reconnected* ✅\n\n`;
+            message += `Workspace: *${group.name}*\n`;
+            message += `Waktu: ${now}\n\n`;
+
+            if (group.items.length === 1) {
+                const item = group.items[0];
+                message += `User yang reconnect:\n`;
+                message += `• *${item.pppoe_user}* pada *${item.device_name}*\n`;
+                if (item.duration_seconds) {
+                    message += `Durasi downtime: ${formatDuration(item.duration_seconds)}\n`;
+                }
+                message += `\n`;
+            } else {
+                message += `User yang reconnect (${group.items.length}):\n`;
+                group.items.forEach((item, index) => {
+                    message += `${index + 1}. *${item.pppoe_user}* pada *${item.device_name}*`;
+                    if (item.duration_seconds) {
+                        message += ` (${formatDuration(item.duration_seconds)})`;
+                    }
+                    message += `\n`;
+                });
+                message += `\n`;
+            }
+            message += `Koneksi telah pulih. User dapat menggunakan layanan kembali.`;
+
+            const success = await sendWhatsAppMessage(whatsappTarget, message);
+            if (success) {
+                const ids = group.items.map(i => i.id);
+                await pool.query('UPDATE downtime_events SET reconnect_notification_sent = TRUE WHERE id IN (?)', [ids]);
+                console.log(`[Notifikasi] Berhasil mengirim alert RECONNECT untuk ${group.items.length} user di workspace ${group.name}`);
+            }
+        }
+    } catch (error) {
+        console.error('[Bot Service] Error in sendReconnectNotifications:', error);
     }
 }
 
@@ -199,102 +296,6 @@ async function groupDevicesByCredentials() {
         groups.get(key).devices.push({ workspace_id: device.workspace_id, id: device.id, host: device.host, name: device.name });
     }
     return groups;
-}
-
-// Optimization: Single snapshot per unique physical device
-async function updateDashboardSnapshot(workspaceId, deviceId) {
-    try {
-        const [devices] = await pool.query('SELECT * FROM mikrotik_devices WHERE id = ?', [deviceId]);
-        if (devices.length === 0) return;
-
-        const device = devices[0];
-        const resource = await runCommandForWorkspace(workspaceId, '/system/resource/print', [], deviceId, true).then(r => r[0]).catch(() => ({}));
-        const activeUsersCount = await runCommandForWorkspace(workspaceId, '/ppp/active/print', ['=count-only='], deviceId, true).catch(() => 0);
-        
-        await pool.query(
-            'UPDATE mikrotik_devices SET last_known_cpu = ?, last_known_uptime = ?, last_known_active_users = ?, last_status_update = NOW() WHERE id = ?',
-            [resource['cpu-load'] || 0, resource['uptime'] || 'unknown', activeUsersCount, deviceId]
-        );
-    } catch (error) {
-        // Handle error dengan lebih baik, jangan crash aplikasi
-        if (error.errno === 'UNKNOWNREPLY' || error.message?.includes('UNKNOWNREPLY')) {
-            if (error.message?.includes('!empty') || error.message?.includes('unknown reply: !empty')) {
-                return; // Skip, ini normal
-            }
-            console.warn(`[Status Dashboard] Error UNKNOWNREPLY untuk workspace ${workspaceId}, akan diabaikan:`, error.message);
-        } else if (error.message?.includes('not connected') || error.message?.includes('connection')) {
-            console.warn(`[Status Dashboard] Error koneksi untuk workspace ${workspaceId}, akan diabaikan:`, error.message);
-        } else {
-            console.error(`[Status Dashboard] Gagal memproses workspace ${workspaceId}:`, error.message || error);
-        }
-    }
-}
-
-// Flag untuk mencegah multiple execution bersamaan
-let isUpdatingSnapshots = false;
-
-/**
- * Update snapshot untuk semua device di semua workspace
- * OPTIMIZED: Polling sekali per device fisik, share hasil ke semua workspace
- */
-async function updateAllDashboardSnapshots() {
-    // Prevent multiple execution bersamaan
-    if (isUpdatingSnapshots) {
-        if (process.env.DEBUG_API === 'true') {
-            console.log(`[Status Dashboard] ⏭️ Pembaruan sudah berjalan, melewati siklus ini`);
-        }
-        return;
-    }
-
-    isUpdatingSnapshots = true;
-
-    try {
-        if (process.env.DEBUG_API === 'true') {
-            console.log(`[Status Dashboard] 🔄 Memulai sinkronisasi snapshot dashboard`);
-        }
-
-        // Group devices berdasarkan credentials
-        const deviceGroups = await groupDevicesByCredentials();
-
-        if (deviceGroups.size === 0) {
-            console.log(`[Status Dashboard] ⚠️ Tidak ada perangkat yang terdaftar untuk snapshot`);
-            return;
-        }
-
-        console.log(`[Status Dashboard] 📡 Memproses ${deviceGroups.size} grup perangkat`);
-
-        // Polling sekali per device fisik
-        for (const [groupKey, group] of deviceGroups) {
-            if (group.devices.length === 0) continue;
-
-            // Gunakan device pertama dari group sebagai representasi
-            const firstDevice = group.devices[0];
-            // Label mudah dibaca untuk log (menggantikan MD5 hash groupKey)
-            const groupLabel = `${firstDevice.name} (${firstDevice.host})`;
-
-            try {
-                if (process.env.DEBUG_API === 'true') {
-                    console.log(`[Status Dashboard] 📡 Memproses kelompok ${groupLabel}...`);
-                }
-                // Trigger update snapshot untuk setiap device di group ini
-                // updateDashboardSnapshot sudah menggunakan runCommandForWorkspace yang robust
-                for (const device of group.devices) {
-                    await updateDashboardSnapshot(device.workspace_id, device.id);
-                }
-
-            } catch (error) {
-                console.error(`[Status Dashboard] ❌ Gagal memproses grup ${groupLabel}:`, error.message);
-            }
-        }
-    } catch (error) {
-        console.error("[Status Dashboard] ❌ Kesalahan fatal saat mengambil daftar perangkat:", error);
-    } finally {
-        // Reset flag setelah selesai
-        isUpdatingSnapshots = false;
-        if (process.env.DEBUG_API === 'true') {
-            console.log(`[Status Dashboard] ✅ Pembaruan snapshot selesai, flag direset`);
-        }
-    }
 }
 
 module.exports = { monitorSlaAndNotifications, sendDowntimeNotifications };

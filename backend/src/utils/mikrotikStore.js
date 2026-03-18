@@ -7,6 +7,7 @@ const workspaceSecrets = new Map(); // Map<workspaceId_deviceId, secrets[]>
 const workspaceActive = new Map();  // Map<workspaceId_deviceId, active[]>
 const workspaceHotspotActive = new Map(); // Map<workspaceId_deviceId, hotspotActive[]>
 const deviceStatus = new Map();     // Map<workspaceId_deviceId, status>
+const deviceResource = new Map();   // Map<workspaceId_deviceId, resource{}>
 
 module.exports = {
     setDeviceStatus: (workspaceId, deviceId, status) => {
@@ -14,7 +15,15 @@ module.exports = {
     },
 
     getDeviceStatus: (workspaceId, deviceId) => {
-        return deviceStatus.get(`${workspaceId}_${deviceId}`) || 'connected';
+        return deviceStatus.get(`${workspaceId}_${deviceId}`) || 'disconnected';
+    },
+
+    setResource: (workspaceId, deviceId, resource) => {
+        deviceResource.set(`${workspaceId}_${deviceId}`, resource);
+    },
+
+    getResource: (workspaceId, deviceId) => {
+        return deviceResource.get(`${workspaceId}_${deviceId}`) || {};
     },
 
     setSecrets: (workspaceId, deviceId, secrets) => {
@@ -66,6 +75,8 @@ module.exports = {
         const id = `${workspaceId}_${deviceId}`;
         workspaceSecrets.delete(id);
         workspaceActive.delete(id);
-        // Note: We don't clear deviceStatus here as it tracks physical connection state independent of data dumps
+        workspaceHotspotActive.delete(id);
+        deviceResource.delete(id);
+        deviceStatus.delete(id);
     }
 };
