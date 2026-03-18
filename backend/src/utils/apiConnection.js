@@ -20,6 +20,9 @@ const pendingReadCommands = new Map(); // Map<string, Promise>
 const waitLogCache = new Map(); // Map<string, number>
 
 const DEFAULT_IDLE_TIMEOUT = 5 * 60 * 1000; // 5 menit default
+const TIMEOUT_NORMAL = 45000;
+const TIMEOUT_HEAVY = 90000;
+const TIMEOUT_MUTATION = 120000;
 
 /**
  * Generate connection key berdasarkan device credentials (host+user+password+port)
@@ -199,7 +202,11 @@ async function getOrCreateConnection(workspaceId, timeout, customKey = null, dev
 
             client.on('error', (error) => {
                 // Jangan hapus koneksi untuk !empty, ini bukan error fatal
-                if (error.message?.includes('!empty') || error.message?.includes('unknown reply: !empty')) {
+                const isSilentError = error.message?.includes('!empty') || 
+                                     error.message?.includes('unknown reply: !empty') ||
+                                     (error.errno === 'UNKNOWNREPLY' && error.message?.includes('!empty'));
+
+                if (isSilentError) {
                     // '!empty' bukan error — hanya query yang hasilnya kosong, tidak perlu dilog
                     return;
                 }
@@ -374,8 +381,19 @@ async function runCommandForWorkspace(workspaceId, command, params = [], deviceI
 
     // PHASE 2: Eksekusi Command
     const isSafe = isSafeToRetry(command);
-    // Gunakan timeout lebih panjang untuk mutasi (60s), query tetap 45s (sebelumnya 30s)
-    const timeoutMs = options.timeout || (isSafe ? 45000 : 60000);
+    
+    // Tentukan timeout yang sesuai
+    let timeoutMs = options.timeout;
+    if (!timeoutMs) {
+        if (!isSafe) {
+            timeoutMs = TIMEOUT_MUTATION; // 120s
+        } else if (command.includes('/print') || command.includes('/monitor')) {
+            timeoutMs = TIMEOUT_HEAVY; // 90s untuk print/monitor (sering berat)
+        } else {
+            timeoutMs = TIMEOUT_NORMAL; // 45s
+        }
+    }
+
     // deduplication key: connection + command + params
     const commandKey = `${deviceConnectionKey}:${command}:${JSON.stringify(params)}`;
 

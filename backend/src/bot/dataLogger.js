@@ -291,4 +291,4 @@ async function groupDevicesByCredentials() {
     return groups;
 }
 
-module.exports = { monitorSlaAndNotifications, sendDowntimeNotifications };
+module.exports = { monitorSlaAndNotifications, sendDowntimeNotifications, sendReconnectNotifications };
