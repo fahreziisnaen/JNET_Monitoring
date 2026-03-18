@@ -857,4 +857,4 @@ setTimeout(() => {
         console.error('[Pemantauan] Gagal memulai layanan latar belakang:', err.message);
     });
 }, 3000); // Tunggu 3 detik setelah server ready
-console.log('[Pemantauan] Layanan pemantauan latar belakang akan dimulai dalam 3 detik...');
+console.error('[Sistem] Layanan pemantauan latar belakang (Optimized) AKTIF');

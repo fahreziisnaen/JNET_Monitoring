@@ -4,6 +4,10 @@ const { sendWhatsAppMessage, getWorkspaceWhatsAppTarget } = require('../services
 const crypto = require('crypto');
 const mikrotikStore = require('../utils/mikrotikStore');
 
+// Global start time to suppress alerts on restart
+const serverStartTime = Date.now();
+const SUPPRESSION_PERIOD_MS = 5 * 60 * 1000; // 5 menit
+
 /**
  * Wrapper client.write() dengan timeout agar tidak hang selamanya.
  * node-routeros tidak memiliki built-in external timeout pada Promise-nya.
@@ -56,7 +60,21 @@ async function checkAlarms(workspaceId, device, broadcastCallback = null) {
 
     // Ambil WhatsApp target (group atau individual) dari workspace
     const whatsappTarget = await getWorkspaceWhatsAppTarget(workspaceId);
-    if (!whatsappTarget) return;
+    // Suppress alerts during initial startup (5 minutes)
+    if (now - serverStartTime < SUPPRESSION_PERIOD_MS) {
+        // Hanya update status store, jangan kirim alarm WA
+        try {
+            const [resource] = await runCommandForWorkspace(workspaceId, '/system/resource/print', [], device.id);
+            if (state.isOffline) {
+                state.isOffline = false;
+                mikrotikStore.setDeviceStatus(workspaceId, device.id, 'connected');
+            }
+        } catch (e) {
+            state.isOffline = true;
+            mikrotikStore.setDeviceStatus(workspaceId, device.id, 'disconnected');
+        }
+        return;
+    }
 
     try {
         const [resource] = await runCommandForWorkspace(workspaceId, '/system/resource/print', [], device.id);
@@ -133,11 +151,18 @@ async function monitorSlaAndNotifications(broadcastCallback = null) {
 
 async function sendDowntimeNotifications(broadcastCallback = null) {
     try {
+        // Suppress client alerts during initial startup (5 minutes)
+        if (Date.now() - serverStartTime < SUPPRESSION_PERIOD_MS) {
+            return;
+        }
+
         const query = `
-            SELECT d.id, d.workspace_id, m.name, d.start_time
+            SELECT d.id, d.workspace_id, m.name, d.start_time, d.pppoe_user
             FROM downtime_events d
             JOIN mikrotik_devices m ON d.device_id = m.id
-            WHERE d.end_time IS NULL AND d.start_time < DATE_SUB(NOW(), INTERVAL 2 MINUTE)
+            WHERE d.end_time IS NULL 
+              AND d.notification_sent = FALSE
+              AND d.start_time < DATE_SUB(NOW(), INTERVAL 2 MINUTE)
         `;
         const [downtimes] = await pool.query(query);
 

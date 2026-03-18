@@ -13,6 +13,7 @@
 const pool = require('../config/database');
 const { runCommandForWorkspace } = require('../utils/apiConnection');
 const mikrotikStore = require('../utils/mikrotikStore');
+const crypto = require('crypto');
 
 const POLLING_INTERVAL_MS = parseInt(process.env.POLLING_INTERVAL_MS) || 3000;    // polling active users setiap 3 detik
 const SECRET_REFRESH_MS = parseInt(process.env.SECRET_REFRESH_MS) || 120000;    // refresh secrets list setiap 2 menit (sebelumnya 20 detik)
@@ -34,8 +35,6 @@ async function startPhysicalMonitor(group, broadcastCallback) {
     const firstDevice = group.devices[0];
     const label = `Router: ${firstDevice.host} (Used by ${group.devices.length} instances)`;
 
-    console.log(`[Pemantauan] Memulai pemantauan FISIK untuk ${label}`);
-
     const state = {
         isRunning: false,
         isFetchingSecrets: false,
@@ -46,6 +45,8 @@ async function startPhysicalMonitor(group, broadcastCallback) {
         group: group, // Menyimpan list {workspace_id, id}
         broadcastCallback: broadcastCallback,
     };
+
+    console.error(`[Pemantauan] Monitor FISIK AKTIF: ${label}`);
 
     const runCycle = async () => {
         if (state.isRunning) return;
@@ -65,7 +66,7 @@ async function startPhysicalMonitor(group, broadcastCallback) {
             
             // 2. Active users
             const pppoeActive = await runCommandForWorkspace(workspaceId, '/ppp/active/print', [], deviceId).catch(err => {
-                console.warn(`[Pemantauan] Gagal mengambil daftar user aktif di ${label}: ${err.message}`);
+                console.error(`[Pemantauan] Gagal mengambil daftar user aktif di ${label}: ${err.message}`);
                 return null;
             });
 
@@ -157,7 +158,7 @@ async function startPhysicalMonitor(group, broadcastCallback) {
                             }
                         }
                     } catch (err) {
-                        console.warn(`[Singkronisasi] Gagal fetch secrets ${label}: ${err.message}`);
+                        console.error(`[Singkronisasi] Gagal fetch secrets ${label}: ${err.message}`);
                     } finally {
                         state.isFetchingSecrets = false;
                     }
@@ -165,30 +166,35 @@ async function startPhysicalMonitor(group, broadcastCallback) {
             }
 
             // 4. Proses Enrichment & SLA Sync per Workspace
-            if (pppoeActive !== null && state.cachedSecrets.length > 0) {
-                const activeMap = new Map();
+            const activeMap = new Map();
+            if (pppoeActive !== null) {
                 pppoeActive.forEach(u => {
                     if (u.name) activeMap.set(u.name, { address: u.address, uptime: u.uptime, '.id': u['.id'] });
                 });
+            }
 
-                const enriched = state.cachedSecrets.map(secret => {
-                    const activeInfo = activeMap.get(secret.name);
-                    const enrichedSecret = { ...secret, isActive: !!activeInfo };
-                    if (activeInfo?.uptime) enrichedSecret.uptime = activeInfo.uptime;
-                    if (activeInfo?.['.id']) enrichedSecret.activeConnectionId = activeInfo['.id'];
-                    if (activeInfo?.address) {
-                        enrichedSecret.currentAddress = activeInfo.address;
-                        if (!enrichedSecret['remote-address']) enrichedSecret['remote-address'] = activeInfo.address;
-                    }
-                    return enrichedSecret;
-                });
+            // Selalu broadcast data yang tersedia (Resource & Traffic)
+            // Meskipun Secrets belum selesai difetch di awal startup
+            for (const inst of group.devices) {
+                try {
+                    const currentSecrets = mikrotikStore.getSecrets(inst.workspace_id, inst.id) || [];
+                    const enriched = currentSecrets.map(secret => {
+                        const activeInfo = activeMap.get(secret.name);
+                        const enrichedSecret = { ...secret, isActive: !!activeInfo };
+                        if (activeInfo?.uptime) enrichedSecret.uptime = activeInfo.uptime;
+                        if (activeInfo?.['.id']) enrichedSecret.activeConnectionId = activeInfo['.id'];
+                        if (activeInfo?.address) {
+                            enrichedSecret.currentAddress = activeInfo.address;
+                            if (!enrichedSecret['remote-address']) enrichedSecret['remote-address'] = activeInfo.address;
+                        }
+                        return enrichedSecret;
+                    });
 
-                for (const inst of group.devices) {
-                    try {
-                        const activeUsers = enriched.filter(s => s.isActive);
-                        const inactiveNames = enriched.filter(s => !s.isActive).map(s => s.name);
+                    const activeUsers = enriched.filter(s => s.isActive);
+                    const inactiveNames = enriched.filter(s => !s.isActive).map(s => s.name);
 
-                        // Sync Database pppoe_secrets
+                    // Sync Database pppoe_secrets (Hanya jika ada data pppoeActive yang valid)
+                    if (pppoeActive !== null && enriched.length > 0) {
                         const secretsValues = enriched.map(s => [
                             inst.workspace_id, inst.id, s.name, s.profile || '', s['remote-address'] || null,
                             s.disabled === 'true' || s.disabled === true ? 1 : 0,
@@ -198,37 +204,43 @@ async function startPhysicalMonitor(group, broadcastCallback) {
                             INSERT INTO pppoe_secrets (workspace_id, device_id, name, profile, remote_address, disabled, is_active, uptime, current_address, active_connection_id)
                             VALUES ? ON DUPLICATE KEY UPDATE profile=VALUES(profile), remote_address=VALUES(remote_address), disabled=VALUES(disabled), 
                             is_active=VALUES(is_active), uptime=VALUES(uptime), current_address=VALUES(current_address), active_connection_id=VALUES(active_connection_id), updated_at=NOW()
-                        `, [secretsValues]);
+                        `, [secretsValues]).catch(e => console.error(`[DB] Galgal sync secrets: ${e.message}`));
 
                         // Sync pppoe_user_status (NOC)
                         if (activeUsers.length > 0) {
                             const activeStatusValues = activeUsers.map(u => [inst.workspace_id, inst.id, u.name, true, new Date()]);
-                            await pool.query(`INSERT INTO pppoe_user_status (workspace_id, device_id, pppoe_user, is_active, last_seen_active) VALUES ? ON DUPLICATE KEY UPDATE is_active=TRUE, last_seen_active=NOW()`, [activeStatusValues]);
+                            await pool.query(`INSERT INTO pppoe_user_status (workspace_id, device_id, pppoe_user, is_active, last_seen_active) VALUES ? ON DUPLICATE KEY UPDATE is_active=TRUE, last_seen_active=NOW()`, [activeStatusValues]).catch(() => {});
                         }
                         if (inactiveNames.length > 0) {
-                            await pool.query(`UPDATE pppoe_user_status SET is_active=FALSE WHERE workspace_id=? AND device_id=? AND pppoe_user IN (?)`, [inst.workspace_id, inst.id, inactiveNames]);
+                            await pool.query(`UPDATE pppoe_user_status SET is_active=FALSE WHERE workspace_id=? AND device_id=? AND pppoe_user IN (?)`, [inst.workspace_id, inst.id, inactiveNames]).catch(() => {});
                         }
 
                         // --- SLA TRACKING ---
                         if (activeUsers.length > 0) {
-                            await pool.query(`UPDATE downtime_events SET end_time=NOW(), duration_seconds=TIMESTAMPDIFF(SECOND, start_time, NOW()) WHERE workspace_id=? AND device_id=? AND pppoe_user IN (?) AND end_time IS NULL`, [inst.workspace_id, inst.id, activeUsers.map(u=>u.name)]);
+                            await pool.query(`UPDATE downtime_events SET end_time=NOW(), duration_seconds=TIMESTAMPDIFF(SECOND, start_time, NOW()) WHERE workspace_id=? AND device_id=? AND pppoe_user IN (?) AND end_time IS NULL`, [inst.workspace_id, inst.id, activeUsers.map(u=>u.name)]).catch(() => {});
                         }
                         const eligibleForDowntime = enriched.filter(s => !s.isActive && (s.disabled === 0 || s.disabled === false || s.disabled === 'false'));
                         for (const user of eligibleForDowntime) {
-                            const [open] = await pool.query('SELECT id FROM downtime_events WHERE workspace_id=? AND device_id=? AND pppoe_user=? AND end_time IS NULL', [inst.workspace_id, inst.id, user.name]);
-                            if (open.length === 0) await pool.query('INSERT INTO downtime_events (workspace_id, device_id, pppoe_user, start_time) VALUES (?, ?, ?, NOW())', [inst.workspace_id, inst.id, user.name]);
+                            const [open] = await pool.query('SELECT id FROM downtime_events WHERE workspace_id=? AND device_id=? AND pppoe_user=? AND end_time IS NULL', [inst.workspace_id, inst.id, user.name]).catch(()=>[[]]);
+                            if (open.length === 0) await pool.query('INSERT INTO downtime_events (workspace_id, device_id, pppoe_user, start_time) VALUES (?, ?, ?, NOW())', [inst.workspace_id, inst.id, user.name]).catch(() => {});
                         }
-
-                        // Broadcast ke Workspace
-                        if (state.broadcastCallback) {
-                            state.broadcastCallback(inst.workspace_id, inst.id, {
-                                type: 'batch-update',
-                                payload: { resource, pppoeSecrets: enriched, activeInterfaces, traffic, hotspotActive: mikrotikStore.getHotspotActive(inst.workspace_id, inst.id) }
-                            });
-                        }
-                    } catch (instErr) {
-                        console.error(`[Pencatatan] Gagal sync workspace ${inst.workspace_id}: ${instErr.message}`);
                     }
+
+                    // Broadcast ke Workspace (Dashboard UI)
+                    if (state.broadcastCallback) {
+                        state.broadcastCallback(inst.workspace_id, inst.id, {
+                            type: 'batch-update',
+                            payload: { 
+                                resource, 
+                                pppoeSecrets: enriched, 
+                                activeInterfaces, 
+                                traffic, 
+                                hotspotActive: mikrotikStore.getHotspotActive(inst.workspace_id, inst.id) 
+                            }
+                        });
+                    }
+                } catch (instErr) {
+                    console.error(`[Pencatatan] Gagal sync workspace ${inst.workspace_id}: ${instErr.message}`);
                 }
             }
 
@@ -248,9 +260,11 @@ async function startPhysicalMonitor(group, broadcastCallback) {
 }
 
 async function startBackgroundMonitoring(broadcastCallback = null) {
-    console.log('[Sistem] Memulai layanan pemantauan latar belakang (Optimized)...');
+    console.error('[Sistem] Memulai layanan pemantauan latar belakang (Optimized)...');
     try {
         const [devices] = await pool.query(`SELECT * FROM mikrotik_devices`);
+        console.error(`[Sistem] Menemukan ${devices.length} perangkat di database`);
+        
         const groups = new Map();
 
         devices.forEach(device => {
@@ -264,10 +278,14 @@ async function startBackgroundMonitoring(broadcastCallback = null) {
             logicalToPhysical.set(`${device.workspace_id}:${device.id}`, key);
         });
 
+        console.error(`[Sistem] Berhasil membuat ${groups.size} grup pemantauan fisik`);
+
         let index = 0;
         for (const group of groups.values()) {
             setTimeout(() => {
-                startPhysicalMonitor(group, broadcastCallback).catch(console.error);
+                startPhysicalMonitor(group, broadcastCallback).catch(err => {
+                    console.error(`[Sistem] Gagal memulai monitor fisik ${group.key}:`, err.message);
+                });
             }, index * INIT_STAGGER_MS);
             index++;
         }
