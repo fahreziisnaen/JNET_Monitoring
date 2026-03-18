@@ -267,6 +267,7 @@ async function startWorkspaceMonitoring(workspaceId, connectionKey, deviceId = n
                 const activeInfo = activeUserMap.get(secret.name);
                 const isActive = !!activeInfo;
                 const enriched = Object.assign({}, secret);
+                enriched.deviceId = deviceId;
                 enriched.isActive = isActive;
                 if (isActive && activeInfo.uptime) enriched.uptime = activeInfo.uptime;
                 if (isActive && activeInfo['.id']) enriched.activeConnectionId = activeInfo['.id'];
@@ -416,6 +417,9 @@ async function startWorkspaceMonitoring(workspaceId, connectionKey, deviceId = n
 
                     // Build enriched secret object
                     const enriched = Object.assign({}, secret);
+
+                    // Tambahkan deviceId agar frontend tahu dari mana asal secret ini
+                    enriched.deviceId = deviceId;
 
                     // Tambahkan field isActive
                     enriched.isActive = isActive;

@@ -111,7 +111,7 @@ const AddAssetModal = ({ isOpen, onClose, onSuccess }: AddAssetModalProps) => {
       // Filter berdasarkan hierarchy: Mikrotik -> OLT -> ODC -> ODP (ODP bisa parent dari ODP juga)
       let parentTypes: string[] = [];
       if (assetType === 'ODP') {
-        parentTypes = ['ODC', 'ODP'];
+        parentTypes = ['ODC', 'ODP', 'OLT'];
       } else if (assetType === 'ODC') {
         parentTypes = ['OLT'];
       } else if (assetType === 'OLT') {
@@ -620,7 +620,7 @@ const AddAssetModal = ({ isOpen, onClose, onSuccess }: AddAssetModalProps) => {
                     </div>
                     <p className="text-xs text-muted-foreground mt-1">
                       {formData.type === "ODP"
-                        ? "Pilih ODC atau ODP sebagai parent untuk membuat garis koneksi"
+                        ? "Pilih ODC, ODP, atau OLT sebagai parent untuk membuat garis koneksi"
                         : formData.type === "ODC"
                           ? "Pilih OLT sebagai parent untuk membuat garis koneksi ke ODC"
                           : "Pilih Mikrotik sebagai parent untuk membuat garis koneksi ke OLT"}

@@ -22,6 +22,7 @@ interface PppoeSecret {
   disabled: 'true' | 'false';
   isActive?: boolean; // Status aktif dari backend
   activeConnectionId?: string; // .id dari active connection untuk keperluan kick
+  deviceId?: number;
 }
 
 interface PppoeSecretsTableProps {
@@ -69,7 +70,8 @@ const PppoeSecretsTable = ({ refreshTrigger, onActionComplete, initialFilter = '
         'remote-address': secret.currentAddress || secret['remote-address'] || null,
         disabled: secret.disabled || 'false',
         isActive: secret.isActive === true,
-        activeConnectionId: secret.activeConnectionId || undefined
+        activeConnectionId: secret.activeConnectionId || undefined,
+        deviceId: secret.deviceId || selectedDeviceId
       };
       return secretData;
     });

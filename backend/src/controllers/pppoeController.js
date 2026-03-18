@@ -82,6 +82,7 @@ exports.getSecrets = async (req, res) => {
 
         let query = `
             SELECT 
+                device_id as deviceId,
                 name, 
                 profile, 
                 remote_address as 'remote-address', 

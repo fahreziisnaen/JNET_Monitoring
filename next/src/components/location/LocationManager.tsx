@@ -1127,14 +1127,6 @@ const LocationManager: React.FC<LocationManagerProps> = ({ isNocMode = false, no
                   >
                     <User size={18} className="sm:mr-2" /> <span className="hidden sm:inline">Tambah Client</span>
                   </Button>
-                  <Button 
-                    onClick={() => {
-                      setPendingAddType('asset');
-                      setIsNocWorkspaceSelectorOpen(true);
-                    }}
-                  >
-                    <Plus size={18} className="sm:mr-2" /> <span className="hidden sm:inline">Tambah Aset</span>
-                  </Button>
                 </div>
               ) : (
                 <>

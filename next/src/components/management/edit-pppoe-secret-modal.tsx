@@ -29,7 +29,8 @@ const EditPppoeSecretModal = ({ isOpen, onClose, onSuccess, secretToEdit, nocWor
   const { user } = useAuth();
   // workspaceId dari secretToEdit (NOC) atau dari props nocWorkspaceId, atau dari user sendiri
   const targetWorkspaceId = secretToEdit?.workspace_id || nocWorkspaceId || user?.workspace_id || 'default';
-  const profilesCacheKey = `pppoe-profiles-ws-${targetWorkspaceId}`;
+  const targetDeviceId = secretToEdit?.deviceId;
+  const profilesCacheKey = `pppoe-profiles-ws-${targetWorkspaceId}-dev-${targetDeviceId || 'all'}`;
   const CACHE_TTL = 5 * 60 * 1000; // 5 menit cache
 
   // Load profiles dengan caching
@@ -53,7 +54,10 @@ const EditPppoeSecretModal = ({ isOpen, onClose, onSuccess, secretToEdit, nocWor
     // Fetch dari API - kirim workspaceId target agar backend mengambil profile dari workspace yang tepat
     setProfilesLoading(true);
     try {
-      const queryParams = targetWorkspaceId ? `?workspaceId=${targetWorkspaceId}` : '';
+      let queryParams = targetWorkspaceId ? `?workspaceId=${targetWorkspaceId}` : '';
+      if (targetDeviceId) {
+        queryParams += queryParams ? `&deviceId=${targetDeviceId}` : `?deviceId=${targetDeviceId}`;
+      }
       const res = await apiFetch(`${apiUrl}/api/pppoe/profiles${queryParams}`);
       if (!res.ok) throw new Error('Gagal memuat profil');
       const data = await res.json();
@@ -97,7 +101,10 @@ const EditPppoeSecretModal = ({ isOpen, onClose, onSuccess, secretToEdit, nocWor
       // Cek apakah profile berubah
       const profileChanged = formData.profile !== secretToEdit.profile;
 
-      const queryParams = nocWorkspaceId ? `?workspaceId=${nocWorkspaceId}` : '';
+      let queryParams = nocWorkspaceId ? `?workspaceId=${nocWorkspaceId}` : '';
+      if (secretToEdit.deviceId) {
+        queryParams += queryParams ? `&deviceId=${secretToEdit.deviceId}` : `?deviceId=${secretToEdit.deviceId}`;
+      }
 
       // Update secret terlebih dahulu
       const res = await apiFetch(`${apiUrl}/api/pppoe/secrets/${encodeURIComponent(secretToEdit.name)}${queryParams}`, {

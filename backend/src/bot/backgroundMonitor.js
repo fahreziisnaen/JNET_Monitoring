@@ -76,15 +76,26 @@ async function startDeviceMonitor(workspaceId, deviceId, broadcastCallback) {
             }
 
             // 2b. Hotspot active users - Fire-and-forget (non-blocking total)
-            // Menggunakan socket terpisah, tidak menunggu hasilnya agar siklus utama tidak terblokir
-            const hotspotKey = `workspace_${workspaceId}_device_${deviceId}_hotspot`;
-            runCommandForWorkspace(workspaceId, '/ip/hotspot/active/print', [], deviceId, { customKey: hotspotKey })
-                .then(hotspotActive => {
-                    if (hotspotActive && hotspotActive.length > 0) {
-                        mikrotikStore.setHotspotActive(workspaceId, deviceId, hotspotActive);
-                    }
-                })
-                .catch(() => {}); // Abaikan error hotspot - jangan crash siklus utama
+            // Hanya polling jika perangkat diketahui memiliki fitur Hotspot
+            if (state.hasHotspot !== false) {
+                const hotspotKey = `workspace_${workspaceId}_device_${deviceId}_hotspot`;
+                runCommandForWorkspace(workspaceId, '/ip/hotspot/active/print', [], deviceId, { customKey: hotspotKey })
+                    .then(hotspotActive => {
+                        state.hasHotspot = true; // Konfirmasi memiliki fitur hotspot
+                        if (hotspotActive && hotspotActive.length > 0) {
+                            mikrotikStore.setHotspotActive(workspaceId, deviceId, hotspotActive);
+                        }
+                    })
+                    .catch(err => {
+                        // Jika error mengandung kata "no such command" atau "unknown command",
+                        // tandai perangkat ini sebagai tidak memiliki Hotspot untuk menghemat daya/bandwidth.
+                        const errMsg = (err.message || "").toLowerCase();
+                        if (errMsg.includes('no such command') || errMsg.includes('unknown command') || errMsg.includes('not found')) {
+                            console.log(`[Pemantauan] Perangkat ${label || deviceId} tidak mendukung Hotspot. Menonaktifkan polling hotspot.`);
+                            state.hasHotspot = false; 
+                        }
+                    });
+            }
 
             // 2c. Active interfaces (tiap 3 detik)
             const allInterfaces = await runCommandForWorkspace(workspaceId, '/interface/print', [], deviceId).catch(() => []);
