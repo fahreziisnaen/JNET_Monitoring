@@ -267,6 +267,12 @@ async function startDeviceMonitor(workspaceId, deviceId, broadcastCallback) {
                         `, [workspaceId, deviceId, inactiveNames]);
                     }
 
+                    // Cleanup data status lama (24 jam) agar peta tidak kotor dengan sisa user yang sudah tidak ada
+                    await pool.query(
+                        `DELETE FROM pppoe_user_status WHERE workspace_id = ? AND device_id = ? AND last_seen_active < DATE_SUB(NOW(), INTERVAL 24 HOUR)`,
+                        [workspaceId, deviceId]
+                    );
+
                 } catch (dbErr) {
                     console.error(`[Pencatatan] Gagal sinkronisasi data user ke database (${label || deviceId}): ${dbErr.message}`);
                 }

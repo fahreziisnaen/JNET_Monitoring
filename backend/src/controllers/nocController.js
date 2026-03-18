@@ -59,7 +59,9 @@ exports.getAggregatedMapData = async (req, res) => {
                     const [activeUsersResult] = await pool.query(
                         `SELECT ouc.asset_id, COUNT(*) as count 
                          FROM odp_user_connections ouc
-                         INNER JOIN pppoe_user_status pus ON ouc.pppoe_secret_name = pus.pppoe_user AND ouc.workspace_id = pus.workspace_id
+                         INNER JOIN pppoe_user_status pus 
+                            ON ouc.pppoe_secret_name = pus.pppoe_user 
+                            AND ouc.workspace_id = pus.workspace_id
                          WHERE ouc.asset_id IN (${placeholders}) AND pus.is_active = 1
                          GROUP BY ouc.asset_id`,
                         [...odpIds]
@@ -145,6 +147,7 @@ exports.getAggregatedMapData = async (req, res) => {
             LEFT JOIN pppoe_user_status pus 
                 ON c.pppoe_secret_name = pus.pppoe_user 
                 AND pus.workspace_id = c.workspace_id
+                AND (c.device_id IS NULL OR pus.device_id = c.device_id)
             WHERE c.workspace_id IN (?)
         `, [validWorkspaceIds]);
 
