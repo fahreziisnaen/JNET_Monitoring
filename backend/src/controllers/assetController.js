@@ -214,6 +214,26 @@ exports.updateAsset = async (req, res) => {
     const { name, type, latitude, longitude, description, splitter_count, parent_asset_id, connection_status, connection_path, owner_name } = req.body;
 
     try {
+        // Cek asset lama untuk mendeteksi perubahan parent
+        const [oldAssets] = await pool.query(
+            'SELECT parent_asset_id FROM network_assets WHERE id = ? AND workspace_id = ?',
+            [id, workspaceId]
+        );
+
+        if (oldAssets.length === 0) {
+            return res.status(404).json({ message: 'Aset tidak ditemukan.' });
+        }
+
+        const oldParentId = oldAssets[0].parent_asset_id;
+        let shouldResetPath = false;
+
+        // Mendeteksi perubahan parent_asset_id
+        if (parent_asset_id !== undefined) {
+            const newParentId = (parent_asset_id === '' || parent_asset_id === 'null' || parent_asset_id === null) ? null : parseInt(parent_asset_id);
+            if (newParentId !== oldParentId) {
+                shouldResetPath = true;
+            }
+        }
         const updates = [];
         const values = [];
 
@@ -243,7 +263,12 @@ exports.updateAsset = async (req, res) => {
         }
         if (parent_asset_id !== undefined) {
             updates.push('parent_asset_id = ?');
-            values.push(parent_asset_id || null);
+            const finalParentId = (parent_asset_id === '' || parent_asset_id === 'null' || parent_asset_id === null) ? null : parent_asset_id;
+            values.push(finalParentId);
+        }
+        if (shouldResetPath) {
+            updates.push('connection_path = ?');
+            values.push(null);
         }
         if (connection_status !== undefined) {
             updates.push('connection_status = ?');

@@ -268,7 +268,7 @@ const EditAssetModal = ({
     formDataToSubmit.append('longitude', String(longitude));
     formDataToSubmit.append('description', formData.description || "");
     if (formData.splitterCount) formDataToSubmit.append('splitter_count', formData.splitterCount);
-    if (formData.parentAssetId) formDataToSubmit.append('parent_asset_id', formData.parentAssetId);
+    formDataToSubmit.append('parent_asset_id', formData.parentAssetId || '');
     formDataToSubmit.append('connection_status', formData.connectionStatus);
     if (formData.ownerName) formDataToSubmit.append('owner_name', formData.ownerName);
 
