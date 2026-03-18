@@ -131,13 +131,13 @@ async function monitorSlaAndNotifications(broadcastCallback = null) {
     try {
         // Group devices by physical credentials to avoid redundant polling
         const groups = await groupDevicesByCredentials();
-        
+
         for (const [groupKey, group] of groups) {
             if (group.devices.length === 0) continue;
-            
+
             // Perwakilan untuk polling physical
             const rep = group.devices[0];
-            
+
             // Lakukan alarm check untuk setiap instance dalam group
             for (const inst of group.devices) {
                 // inst di sini adalah { workspace_id, id, host, name }
@@ -198,7 +198,7 @@ async function sendDowntimeNotifications(broadcastCallback = null) {
                 });
                 message += `\n`;
             }
-            message += `Mohon periksa jaringan Anda.`;
+            message += `Silakan periksa kondisi jaringan atau hubungi user terkait..`;
 
             const success = await sendWhatsAppMessage(whatsappTarget, message);
             if (success) {
@@ -225,7 +225,7 @@ async function sendReconnectNotifications(broadcastCallback = null) {
             JOIN mikrotik_devices m ON d.device_id = m.id
             JOIN workspaces w ON d.workspace_id = w.id
             WHERE d.end_time IS NOT NULL 
-              AND d.reconnect_notification_sent = FALSE
+              AND (d.reconnect_notification_sent = FALSE OR d.reconnect_notification_sent IS NULL)
               AND d.notification_sent = TRUE
         `;
         const [reconnects] = await pool.query(query);

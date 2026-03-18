@@ -247,9 +247,10 @@ exports.addSecret = async (req, res) => {
     console.log(`[Add Secret][${requestId}] Request baru untuk "${name}" (Profile: ${profile})`);
 
     try {
+        const targetDeviceId = req.query.deviceId ? parseInt(req.query.deviceId) : (req.body.deviceId ? parseInt(req.body.deviceId) : null);
+
         try {
             console.log(`[Add Secret][${requestId}] Pengecekan proaktif via database (instant)...`);
-            const targetDeviceId = req.query.deviceId || req.body.deviceId || null;
             
             let checkQuery = 'SELECT 1 FROM pppoe_secrets WHERE workspace_id = ? AND name = ?';
             let checkParams = [workspaceId, name];
