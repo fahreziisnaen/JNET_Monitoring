@@ -14,7 +14,7 @@ interface AddAssetModalProps {
   nocWorkspaceId?: number;
 }
 
-const AddAssetModal = ({ isOpen, onClose, onSuccess }: AddAssetModalProps) => {
+const AddAssetModal = ({ isOpen, onClose, onSuccess, nocWorkspaceId }: AddAssetModalProps) => {
   const [formData, setFormData] = useState({
     name: "",
     type: "ODP",
@@ -63,11 +63,11 @@ const AddAssetModal = ({ isOpen, onClose, onSuccess }: AddAssetModalProps) => {
       setSelectedPhoto(null);
       setPhotoPreview(null);
       // Load available parents untuk type default
-      loadAvailableParents("ODP");
+      loadAvailableParents(formData.type);
       // Load asset owners
       loadAssetOwners();
     }
-  }, [isOpen]);
+  }, [isOpen, nocWorkspaceId]);
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -86,7 +86,8 @@ const AddAssetModal = ({ isOpen, onClose, onSuccess }: AddAssetModalProps) => {
   const loadAssetOwners = async () => {
     try {
       const apiUrl = process.env.NEXT_PUBLIC_API_BASE_URL;
-      const res = await apiFetch(`${apiUrl}/api/assets/owners`);
+      const queryParams = nocWorkspaceId ? `?workspaceId=${nocWorkspaceId}` : '';
+      const res = await apiFetch(`${apiUrl}/api/assets/owners${queryParams}`);
       if (res.ok) {
         const owners = await res.json();
         console.log('[Add Asset Modal] Asset owners loaded:', owners);
@@ -103,7 +104,8 @@ const AddAssetModal = ({ isOpen, onClose, onSuccess }: AddAssetModalProps) => {
   const loadAvailableParents = async (assetType: string) => {
     try {
       const apiUrl = process.env.NEXT_PUBLIC_API_BASE_URL;
-      const res = await apiFetch(`${apiUrl}/api/assets`);
+      const queryParams = nocWorkspaceId ? `?workspaceId=${nocWorkspaceId}` : '';
+      const res = await apiFetch(`${apiUrl}/api/assets${queryParams}`);
       if (!res.ok) return;
 
       const allAssets: Asset[] = await res.json();
@@ -120,7 +122,7 @@ const AddAssetModal = ({ isOpen, onClose, onSuccess }: AddAssetModalProps) => {
       // Mikrotik tidak punya parent
 
       const parents = allAssets.filter(
-        asset => parentTypes.includes(asset.type)
+        asset => parentTypes.some(pt => pt.toLowerCase() === (asset.type || '').toLowerCase())
       );
 
       setAvailableParents(parents);
@@ -149,10 +151,12 @@ const AddAssetModal = ({ isOpen, onClose, onSuccess }: AddAssetModalProps) => {
     });
   };
 
-  const filteredParents = availableParents.filter((parent) =>
-    parent.name.toLowerCase().includes(parentSearchQuery.toLowerCase()) ||
-    parent.type.toLowerCase().includes(parentSearchQuery.toLowerCase())
-  );
+  const filteredParents = availableParents.filter((parent) => {
+    const query = (parentSearchQuery || '').toLowerCase();
+    const nameMatch = (parent.name || '').toLowerCase().includes(query);
+    const typeMatch = (parent.type || '').toLowerCase().includes(query);
+    return nameMatch || typeMatch;
+  });
 
   const selectedParent = availableParents.find(
     (p) => String(p.id) === formData.parentAssetId

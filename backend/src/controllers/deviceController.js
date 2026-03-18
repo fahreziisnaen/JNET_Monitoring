@@ -1,4 +1,6 @@
 const pool = require('../config/database');
+const mikrotikStore = require('../utils/mikrotikStore');
+const backgroundMonitor = require('../bot/backgroundMonitor');
 
 exports.listDevices = async (req, res) => {
     let workspaceId = req.user.workspace_id;
@@ -73,6 +75,32 @@ exports.updateDevice = async (req, res) => {
     const { name, host, user, password, port } = req.body;
     if (!name || !host || !user || !port) return res.status(400).json({ message: 'Semua field wajib diisi.' });
     try {
+        // Ambil data host lama untuk deteksi pergantian perangkat
+        const [currentDevice] = await pool.query(
+            'SELECT host FROM mikrotik_devices WHERE id = ? AND workspace_id = ?',
+            [id, workspaceId]
+        );
+
+        if (currentDevice.length > 0 && currentDevice[0].host !== host) {
+            console.log(`[Device Update] Host berubah dari ${currentDevice[0].host} ke ${host}. Membersihkan data lama (DB + Memori)...`);
+            
+            // 1. Bersihkan database
+            await Promise.all([
+                pool.query('DELETE FROM pppoe_secrets WHERE workspace_id = ? AND device_id = ?', [workspaceId, id]),
+                pool.query('DELETE FROM dashboard_snapshot WHERE workspace_id = ? AND device_id = ?', [workspaceId, id]),
+                pool.query('DELETE FROM interface_traffic_logs WHERE workspace_id = ? AND device_id = ?', [workspaceId, id]),
+                pool.query('DELETE FROM pppoe_user_status WHERE workspace_id = ? AND device_id = ?', [workspaceId, id])
+            ]);
+
+            // 2. Bersihkan in-memory store
+            mikrotikStore.clear(workspaceId, id);
+
+            // 3. Restart background monitor agar state internal ikut fresh
+            backgroundMonitor.restartDeviceMonitor(workspaceId, id).catch(err => {
+                console.error(`[Device Update] Gagal me-restart monitor untuk device ${id}:`, err.message);
+            });
+        }
+
         let query, params;
         if (password && password.length > 0) {
             query = 'UPDATE mikrotik_devices SET name = ?, host = ?, user = ?, port = ?, password = ? WHERE id = ? AND workspace_id = ?';

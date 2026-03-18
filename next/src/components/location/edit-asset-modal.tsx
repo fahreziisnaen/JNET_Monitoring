@@ -20,6 +20,7 @@ const EditAssetModal = ({
   onClose,
   onSuccess,
   assetToEdit,
+  nocWorkspaceId,
 }: EditAssetModalProps) => {
   const [formData, setFormData] = useState({
     name: "",
@@ -136,7 +137,8 @@ const EditAssetModal = ({
   const loadAssetOwners = async () => {
     try {
       const apiUrl = process.env.NEXT_PUBLIC_API_BASE_URL;
-      const res = await apiFetch(`${apiUrl}/api/assets/owners`);
+      const queryParams = nocWorkspaceId ? `?workspaceId=${nocWorkspaceId}` : '';
+      const res = await apiFetch(`${apiUrl}/api/assets/owners${queryParams}`);
       if (res.ok) {
         const owners = await res.json();
         console.log('[Edit Asset Modal] Asset owners loaded:', owners);
@@ -153,7 +155,8 @@ const EditAssetModal = ({
   const loadAvailableParents = async (assetType: string, currentAssetId: number) => {
     try {
       const apiUrl = process.env.NEXT_PUBLIC_API_BASE_URL;
-      const res = await apiFetch(`${apiUrl}/api/assets`);
+      const queryParams = nocWorkspaceId ? `?workspaceId=${nocWorkspaceId}` : '';
+      const res = await apiFetch(`${apiUrl}/api/assets${queryParams}`);
       if (!res.ok) return;
 
       const allAssets: Asset[] = await res.json();
@@ -170,7 +173,7 @@ const EditAssetModal = ({
       // Mikrotik tidak punya parent
 
       const parents = allAssets.filter(
-        asset => parentTypes.includes(asset.type) && asset.id !== currentAssetId
+        asset => parentTypes.some(pt => pt.toLowerCase() === (asset.type || '').toLowerCase()) && asset.id !== currentAssetId
       );
 
       setAvailableParents(parents);
@@ -199,10 +202,12 @@ const EditAssetModal = ({
     });
   };
 
-  const filteredParents = availableParents.filter((parent) =>
-    parent.name.toLowerCase().includes(parentSearchQuery.toLowerCase()) ||
-    parent.type.toLowerCase().includes(parentSearchQuery.toLowerCase())
-  );
+  const filteredParents = availableParents.filter((parent) => {
+    const query = (parentSearchQuery || '').toLowerCase();
+    const nameMatch = (parent.name || '').toLowerCase().includes(query);
+    const typeMatch = (parent.type || '').toLowerCase().includes(query);
+    return nameMatch || typeMatch;
+  });
 
   const selectedParent = availableParents.find(
     (p) => String(p.id) === formData.parentAssetId

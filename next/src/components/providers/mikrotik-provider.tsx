@@ -104,13 +104,18 @@ export const MikrotikProvider = ({ children }: { children: React.ReactNode }) =>
                 const prev = deviceDataRef.current.get(deviceId) || { ...DEFAULT_DEVICE_DATA };
 
                 if (message.type === 'batch-update' && message.payload) {
+                    const payload = message.payload;
+                    const hasResource = payload.resource && Object.keys(payload.resource).length > 0;
+                    const hasInterfaces = payload.activeInterfaces && payload.activeInterfaces.length > 0;
+                    const hasTraffic = payload.traffic && Object.keys(payload.traffic).length > 0;
+
                     deviceDataRef.current.set(deviceId, {
-                        pppoeSecrets: message.payload.pppoeSecrets || [],
-                        resource: message.payload.resource ?? prev.resource,
-                        activeInterfaces: message.payload.activeInterfaces || [],
-                        traffic: message.payload.traffic ?? {},
+                        pppoeSecrets: payload.pppoeSecrets || [],
+                        resource: hasResource ? payload.resource : prev.resource,
+                        activeInterfaces: hasInterfaces ? payload.activeInterfaces : prev.activeInterfaces,
+                        traffic: hasTraffic ? payload.traffic : prev.traffic,
                         isConnected: true, // Pastikan connected jika ada data batch
-                        hotspotActive: message.payload.hotspotActive || prev.hotspotActive || [],
+                        hotspotActive: payload.hotspotActive || prev.hotspotActive || [],
                     });
                     triggerRender();
                 } else if (message.type === 'pppoe-update' && message.payload) {
