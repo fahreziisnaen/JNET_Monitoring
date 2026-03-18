@@ -29,6 +29,7 @@ interface PppoeSecret {
     activeConnectionId?: string;
     workspace_name: string;
     workspace_id: number;
+    deviceId: number;
     router_name?: string;
     mikrotik_status?: 'connected' | 'disconnected' | 'connecting';
 }
@@ -122,7 +123,12 @@ const NocManagementTab: React.FC<NocManagementTabProps> = ({ workspaces }) => {
 
             if (response.ok) {
                 const data = await response.json();
-                setSecrets(data.secrets || []);
+                // Map device_id (backend) ke deviceId (frontend) untuk konsistensi
+                const mappedSecrets = (data.secrets || []).map((s: any) => ({
+                    ...s,
+                    deviceId: s.device_id || s.deviceId
+                }));
+                setSecrets(mappedSecrets);
                 setUptimeOffset(0); // Re-sync saat data baru dari server
             }
         } catch (error) {
@@ -260,7 +266,7 @@ const NocManagementTab: React.FC<NocManagementTabProps> = ({ workspaces }) => {
 
                 try {
                     const encodedId = encodeURIComponent(secret.activeConnectionId);
-                    const res = await apiFetch(`${apiUrl}/api/pppoe/active/${encodedId}/kick?workspaceId=${secret.workspace_id}`, {
+                    const res = await apiFetch(`${apiUrl}/api/pppoe/active/${encodedId}/kick?workspaceId=${secret.workspace_id}&deviceId=${secret.deviceId}`, {
                         method: 'POST'
                     });
                     if (!res.ok) {
@@ -272,7 +278,7 @@ const NocManagementTab: React.FC<NocManagementTabProps> = ({ workspaces }) => {
                 }
             } else if (action === 'disable') {
                 const encodedId = encodeURIComponent(secret.name);
-                const res = await apiFetch(`${apiUrl}/api/pppoe/secrets/${encodedId}/status?workspaceId=${secret.workspace_id}`, {
+                const res = await apiFetch(`${apiUrl}/api/pppoe/secrets/${encodedId}/status?workspaceId=${secret.workspace_id}&deviceId=${secret.deviceId}`, {
                     method: 'PUT',
                     body: JSON.stringify({ disabled: 'yes' })
                 });
@@ -284,7 +290,7 @@ const NocManagementTab: React.FC<NocManagementTabProps> = ({ workspaces }) => {
                 if (secret.isActive && secret.activeConnectionId) {
                     try {
                         const encodedActiveId = encodeURIComponent(secret.activeConnectionId);
-                        await apiFetch(`${apiUrl}/api/pppoe/active/${encodedActiveId}/kick?workspaceId=${secret.workspace_id}`, {
+                        await apiFetch(`${apiUrl}/api/pppoe/active/${encodedActiveId}/kick?workspaceId=${secret.workspace_id}&deviceId=${secret.deviceId}`, {
                             method: 'POST'
                         });
                     } catch (kickError: any) {
@@ -294,7 +300,7 @@ const NocManagementTab: React.FC<NocManagementTabProps> = ({ workspaces }) => {
             } else {
                 // Enable
                 const encodedId = encodeURIComponent(secret.name);
-                const res = await apiFetch(`${apiUrl}/api/pppoe/secrets/${encodedId}/status?workspaceId=${secret.workspace_id}`, {
+                const res = await apiFetch(`${apiUrl}/api/pppoe/secrets/${encodedId}/status?workspaceId=${secret.workspace_id}&deviceId=${secret.deviceId}`, {
                     method: 'PUT',
                     body: JSON.stringify({ disabled: 'no' })
                 });
@@ -321,7 +327,7 @@ const NocManagementTab: React.FC<NocManagementTabProps> = ({ workspaces }) => {
 
         try {
             const encodedId = encodeURIComponent(secretToDelete.name);
-            const res = await apiFetch(`${apiUrl}/api/pppoe/secrets/${encodedId}?workspaceId=${secretToDelete.workspace_id}`, { method: 'DELETE' });
+            const res = await apiFetch(`${apiUrl}/api/pppoe/secrets/${encodedId}?workspaceId=${secretToDelete.workspace_id}&deviceId=${secretToDelete.deviceId}`, { method: 'DELETE' });
             if (!res.ok) throw new Error("Gagal Menghapus Secret");
 
             toast.success("Berhasil Menghapus Secret", { description: `Secret untuk ${secretToDelete.name} telah dihapus.` });

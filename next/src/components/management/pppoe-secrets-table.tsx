@@ -325,7 +325,9 @@ const PppoeSecretsTable = ({ refreshTrigger, onActionComplete, initialFilter = '
 
         try {
           const encodedId = encodeURIComponent(secret.activeConnectionId);
-          const deviceQuery = selectedDeviceId ? `?deviceId=${selectedDeviceId}` : '';
+          // Prioritaskan deviceId dari secret itu sendiri (untuk akurasi di NOC)
+          const targetDeviceId = secret.deviceId || selectedDeviceId;
+          const deviceQuery = targetDeviceId ? `?deviceId=${targetDeviceId}` : '';
           const res = await apiFetch(`${apiUrl}/api/pppoe/active/${encodedId}/kick${deviceQuery}`, {
             method: 'POST'
           });
