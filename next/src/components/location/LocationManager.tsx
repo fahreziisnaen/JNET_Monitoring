@@ -893,13 +893,25 @@ const LocationManager: React.FC<LocationManagerProps> = ({ isNocMode = false, no
   };
 
   const handleWaypointDragStart = useCallback((points: [number, number][], dragIdx?: number) => {
-    pushHistory(points);
+    pushHistory([...points]);
     // If dragging an existing waypoint, start the pull mechanism for that index
     if (dragIdx !== undefined) {
       setIsPullingNewPoint(true);
       setActiveDraggedIndex(dragIdx);
     }
   }, [pushHistory]);
+
+  const handleDeleteWaypoint = (index: number) => {
+    if (!isEditingPath || editingPathPoints.length <= 2) return;
+    // Don't delete endpoints
+    if (index === 0 || index === editingPathPoints.length - 1) return;
+
+    pushHistory([...editingPathPoints]);
+    const newPoints = [...editingPathPoints];
+    newPoints.splice(index, 1);
+    setEditingPathPoints(newPoints);
+    toast.info("Titik dihapus");
+  };
 
   const handleSavePath = async () => {
     const apiUrl = process.env.NEXT_PUBLIC_API_BASE_URL;
@@ -1266,6 +1278,7 @@ const LocationManager: React.FC<LocationManagerProps> = ({ isNocMode = false, no
               activeDraggedIndex={activeDraggedIndex}
               onMouseUp={handleMouseUp}
               onMarkerDragEnd={handleMarkerDragEnd}
+              onDeleteWaypoint={handleDeleteWaypoint}
             />
             <MapLegend />
             <MapFilterPanel

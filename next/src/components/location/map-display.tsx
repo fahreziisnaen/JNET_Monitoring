@@ -325,6 +325,7 @@ interface MapDisplayProps {
   activeDraggedIndex: number | null;
   onMouseUp: () => void;
   onMarkerDragEnd?: (type: 'asset' | 'client', id: number, lat: number, lng: number) => void;
+  onDeleteWaypoint?: (index: number) => void;
 }
 
 const MapDisplay = ({
@@ -347,7 +348,8 @@ const MapDisplay = ({
   isPullingNewPoint = false,
   activeDraggedIndex,
   onMouseUp,
-  onMarkerDragEnd
+  onMarkerDragEnd,
+  onDeleteWaypoint
 }: MapDisplayProps) => {
   // Debug: log assets untuk troubleshooting
   React.useEffect(() => {
@@ -631,6 +633,11 @@ const MapDisplay = ({
 
                       // Push undo history and start pull mechanism for this waypoint
                       if (onWaypointDragStart) onWaypointDragStart(editingPathPoints, idx);
+                    },
+                    contextmenu: (e) => {
+                      if (isEndpoint || !isEditingPath || !onDeleteWaypoint) return;
+                      L.DomEvent.stopPropagation(e as any);
+                      onDeleteWaypoint(idx);
                     }
                   }}
                   icon={L.divIcon({
