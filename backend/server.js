@@ -510,7 +510,9 @@ async function startWorkspaceMonitoring(workspaceId, connectionKey, deviceId = n
                     activeInterfaces: activeInterfacesList || [], // Kirim list interface aktif
                     traffic: trafficUpdateBatch
                 };
-                broadcastToWorkspace(workspaceId, deviceId, { type: 'batch-update', payload: batchPayload });
+                if (Object.keys(finalResource).length > 0) {
+                    broadcastToWorkspace(workspaceId, deviceId, { type: 'batch-update', payload: batchPayload });
+                }
 
                 // SINKRONISASI DATABASE (SNAPSHOT PERSISTENSI):
                 // Simpan kumpulan data terakhir ke database agar layar tidak kosong saat Load awal / Refresh F5
