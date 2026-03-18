@@ -21,8 +21,7 @@ interface EditClientModalProps {
 const EditClientModal = ({ isOpen, onClose, onSuccess, client, assets = [], nocWorkspaceId }: EditClientModalProps) => {
   const [clientName, setClientName] = useState('');
   const [whatsappNumber, setWhatsappNumber] = useState('');
-  const [latitude, setLatitude] = useState('');
-  const [longitude, setLongitude] = useState('');
+  const [coords, setCoords] = useState('');
   const [odpAssetId, setOdpAssetId] = useState<string>('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -46,8 +45,7 @@ const EditClientModal = ({ isOpen, onClose, onSuccess, client, assets = [], nocW
     if (client && isOpen) {
       setClientName(client.client_name || '');
       setWhatsappNumber(client.whatsapp_number || '');
-      setLatitude(client.latitude.toString());
-      setLongitude(client.longitude.toString());
+      setCoords(`${client.latitude}, ${client.longitude}`);
       setOdpAssetId(client.odp_asset_id?.toString() || '');
       setPhotoPreview(client.photo_url ? `${apiUrl}${client.photo_url}` : null);
       setSelectedPhoto(null);
@@ -104,26 +102,31 @@ const EditClientModal = ({ isOpen, onClose, onSuccess, client, assets = [], nocW
     e.preventDefault();
     if (!client) return;
 
-    if (!latitude || !longitude) {
+    if (!coords) {
       setError('Koordinat wajib diisi.');
       return;
     }
 
-    const lat = parseFloat(latitude);
-    const lon = parseFloat(longitude);
-    if (isNaN(lat) || isNaN(lon) || lat < -90 || lat > 90 || lon < -180 || lon > 180) {
-      setError('Koordinat tidak valid. Silakan masukkan ulang.');
-      // Reset koordinat ke nilai awal dari client agar user bisa memasukkan ulang
+    const coordsParts = coords.split(",").map((s) => s.trim());
+    if (coordsParts.length !== 2) {
+      setError('Format koordinat tidak valid. Gunakan format: latitude, longitude (contoh: -7.821, 112.013)');
       if (client) {
-        setClientName(client.client_name || '');
-        setWhatsappNumber(client.whatsapp_number || '');
-        setLatitude(client.latitude.toString());
-        setLongitude(client.longitude.toString());
+        setCoords(`${client.latitude}, ${client.longitude}`);
       } else {
-        setClientName('');
-        setWhatsappNumber('');
-        setLatitude('');
-        setLongitude('');
+        setCoords('');
+      }
+      return;
+    }
+
+    const lat = parseFloat(coordsParts[0]);
+    const lon = parseFloat(coordsParts[1]);
+
+    if (isNaN(lat) || isNaN(lon) || lat < -90 || lat > 90 || lon < -180 || lon > 180) {
+      setError('Koordinat tidak valid. Silakan masukkan ulang. Latitude: -90 sampai 90, Longitude: -180 sampai 180.');
+      if (client) {
+        setCoords(`${client.latitude}, ${client.longitude}`);
+      } else {
+        setCoords('');
       }
       return;
     }
@@ -274,37 +277,19 @@ const EditClientModal = ({ isOpen, onClose, onSuccess, client, assets = [], nocW
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label htmlFor="latitude" className="block text-sm font-medium mb-2 flex items-center gap-2">
-                    <MapPin size={14} /> Latitude
-                  </label>
-                  <Input
-                    id="latitude"
-                    type="number"
-                    step="any"
-                    value={latitude}
-                    onChange={(e) => setLatitude(e.target.value)}
-                    placeholder="-7.821"
-                    className="bg-input"
-                    required
-                  />
-                </div>
-                <div>
-                  <label htmlFor="longitude" className="block text-sm font-medium mb-2 flex items-center gap-2">
-                    <MapPin size={14} /> Longitude
-                  </label>
-                  <Input
-                    id="longitude"
-                    type="number"
-                    step="any"
-                    value={longitude}
-                    onChange={(e) => setLongitude(e.target.value)}
-                    placeholder="112.016"
-                    className="bg-input"
-                    required
-                  />
-                </div>
+              <div>
+                <label htmlFor="coords" className="block text-sm font-medium mb-2 flex items-center gap-2">
+                  <MapPin size={14} /> Koordinat
+                </label>
+                <Input
+                  id="coords"
+                  type="text"
+                  value={coords}
+                  onChange={(e) => setCoords(e.target.value)}
+                  placeholder="e.g., -7.821, 112.013"
+                  className="bg-input"
+                  required
+                />
               </div>
 
               <div ref={odpDropdownRef} className="relative">

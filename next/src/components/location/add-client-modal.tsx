@@ -47,8 +47,7 @@ const AddClientModal = ({ isOpen, onClose, onSuccess, assets = [], nocWorkspaceI
   const [selectedSecret, setSelectedSecret] = useState('');
   const [clientName, setClientName] = useState('');
   const [whatsappNumber, setWhatsappNumber] = useState('');
-  const [latitude, setLatitude] = useState('');
-  const [longitude, setLongitude] = useState('');
+  const [coords, setCoords] = useState('');
   const [odpAssetId, setOdpAssetId] = useState<string>('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -92,8 +91,7 @@ const AddClientModal = ({ isOpen, onClose, onSuccess, assets = [], nocWorkspaceI
       setSelectedSecret('');
       setClientName('');
       setWhatsappNumber('');
-      setLatitude('');
-      setLongitude('');
+      setCoords('');
       setOdpAssetId('');
       setSelectedPhoto(null);
       setPhotoPreview(null);
@@ -215,17 +213,24 @@ const AddClientModal = ({ isOpen, onClose, onSuccess, assets = [], nocWorkspaceI
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedSecret || !latitude || !longitude || !selectedDeviceId) {
+    if (!selectedSecret || !coords || !selectedDeviceId) {
       setError('Semua field wajib diisi.');
       return;
     }
 
-    const lat = parseFloat(latitude);
-    const lon = parseFloat(longitude);
+    const coordsParts = coords.split(",").map((s) => s.trim());
+    if (coordsParts.length !== 2) {
+      setError('Format koordinat tidak valid. Gunakan format: latitude, longitude (contoh: -7.821, 112.013)');
+      setCoords('');
+      return;
+    }
+
+    const lat = parseFloat(coordsParts[0]);
+    const lon = parseFloat(coordsParts[1]);
+
     if (isNaN(lat) || isNaN(lon) || lat < -90 || lat > 90 || lon < -180 || lon > 180) {
-      setError('Koordinat tidak valid. Silakan masukkan ulang.');
-      setLatitude('');
-      setLongitude('');
+      setError('Koordinat tidak valid. Silakan masukkan ulang. Latitude: -90 sampai 90, Longitude: -180 sampai 180.');
+      setCoords('');
       return;
     }
 
@@ -430,19 +435,19 @@ const AddClientModal = ({ isOpen, onClose, onSuccess, assets = [], nocWorkspaceI
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label htmlFor="latitude" className="block text-sm font-medium mb-2 flex items-center gap-2">
-                    <MapPin size={14} /> Latitude
-                  </label>
-                  <Input id="latitude" type="number" step="any" value={latitude} onChange={(e) => setLatitude(e.target.value)} placeholder="-7.821" className="bg-input" required />
-                </div>
-                <div>
-                  <label htmlFor="longitude" className="block text-sm font-medium mb-2 flex items-center gap-2">
-                    <MapPin size={14} /> Longitude
-                  </label>
-                  <Input id="longitude" type="number" step="any" value={longitude} onChange={(e) => setLongitude(e.target.value)} placeholder="112.016" className="bg-input" required />
-                </div>
+              <div>
+                <label htmlFor="coords" className="block text-sm font-medium mb-2 flex items-center gap-2">
+                  <MapPin size={14} /> Koordinat
+                </label>
+                <Input
+                  id="coords"
+                  type="text"
+                  value={coords}
+                  onChange={(e) => setCoords(e.target.value)}
+                  placeholder="e.g., -7.821, 112.013"
+                  className="bg-input"
+                  required
+                />
               </div>
 
               <div ref={odpDropdownRef} className="relative">
