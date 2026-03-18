@@ -1,6 +1,7 @@
 const { runCommandForWorkspace } = require('../utils/apiConnection');
 const pool = require('../config/database');
 const mikrotikStore = require('../utils/mikrotikStore');
+const { refreshSecretsNow } = require('../bot/backgroundMonitor');
 const fs = require('fs');
 const path = require('path');
 
@@ -286,6 +287,10 @@ exports.addSecret = async (req, res) => {
         console.log(`[Add Secret][${requestId}] Mengirim command /add ke MikroTik...`);
         await runCommandForWorkspace(workspaceId, '/ppp/secret/add', params, targetDeviceId);
         console.log(`[Add Secret][${requestId}] Berhasil membuat secret.`);
+        
+        // Trigger refresh agar UI langsung update
+        refreshSecretsNow(workspaceId, targetDeviceId);
+        
         res.status(201).json({ message: `Secret untuk ${name} berhasil dibuat.` });
     } catch (error) {
         const rawMessage = error.message || '';
@@ -387,6 +392,10 @@ exports.setSecretStatus = async (req, res) => {
     try {
         const realId = await resolveSecretId(workspaceId, id, deviceId);
         await runCommandForWorkspace(workspaceId, '/ppp/secret/set', [`=.id=${realId}`, `=disabled=${disabled}`], deviceId);
+        
+        // Trigger refresh agar UI langsung update
+        refreshSecretsNow(workspaceId, deviceId);
+        
         res.status(200).json({ message: `Secret berhasil di-${disabled === 'true' ? 'disable' : 'enable'}.` });
     } catch (error) { res.status(500).json({ message: error.message }); }
 };
@@ -403,6 +412,10 @@ exports.kickActiveUser = async (req, res) => {
 
     try {
         await runCommandForWorkspace(workspaceId, '/ppp/active/remove', [`=.id=${id}`], deviceId);
+        
+        // Trigger refresh agar UI langsung update
+        refreshSecretsNow(workspaceId, deviceId);
+        
         res.status(200).json({ message: 'Koneksi pengguna berhasil diputuskan.' });
     } catch (error) { res.status(500).json({ message: error.message }); }
 };
@@ -495,8 +508,11 @@ exports.updateSecret = async (req, res) => {
         if (password) {
             params.push(`=password=${password}`);
         }
-        await runCommandForWorkspace(workspace_id, '/ppp/secret/set', params);
-
+        await runCommandForWorkspace(workspace_id, '/ppp/secret/set', params, deviceId);
+        
+        // Trigger refresh agar UI langsung update
+        refreshSecretsNow(workspace_id, deviceId);
+        
         // Update database references if name changed
         if (name && oldName && name !== oldName) {
             try {
@@ -577,7 +593,10 @@ exports.deleteSecret = async (req, res) => {
                 console.log(`[Delete Secret] Client map data untuk ${secretName} berhasil dihapus dari database.`);
             }
         }
-
+        
+        // Trigger refresh agar UI langsung update
+        refreshSecretsNow(workspace_id, deviceId);
+        
         res.status(200).json({ message: 'Secret dan data client map berhasil dihapus.' });
     } catch (error) {
         console.error(`[Delete Secret] Gagal hapus id: ${id}: ${error.message}`);

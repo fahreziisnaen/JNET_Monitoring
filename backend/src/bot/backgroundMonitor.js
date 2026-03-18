@@ -344,4 +344,20 @@ async function restartDeviceMonitor(workspaceId, deviceId, broadcastCallback = n
     startDeviceMonitor(workspaceId, deviceId, callbackToUse).catch(console.error);
 }
 
-module.exports = { startBackgroundMonitoring, restartDeviceMonitor, stopDeviceMonitor };
+/**
+ * Triggers an immediate refresh of secrets for a specific device.
+ */
+async function refreshSecretsNow(workspaceId, deviceId) {
+    const monitorKey = `bg-${workspaceId}-${deviceId}`;
+    const state = deviceMonitors.get(monitorKey);
+    if (state) {
+        // Reset lastSecretFetch to force a refresh on the next cycle, 
+        // and ideally trigger the cycle immediately if possible.
+        state.lastSecretFetch = 0;
+        // We could also call runCycle if it's not already running, but 
+        // setting lastSecretFetch to 0 is sufficient for the next runCycle 
+        // (every 3s) to pick it up.
+    }
+}
+
+module.exports = { startBackgroundMonitoring, restartDeviceMonitor, stopDeviceMonitor, refreshSecretsNow };
