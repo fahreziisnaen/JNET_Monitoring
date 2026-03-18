@@ -44,6 +44,7 @@ async function startDeviceMonitor(workspaceId, deviceId, broadcastCallback) {
         cachedSecrets: [],
         lastCycleTime: 0,
         lastTrafficLog: 0,
+        broadcastCallback: broadcastCallback, // Simpan callback untuk reuse saat restart
     };
     deviceMonitors.set(monitorKey, state);
 
@@ -272,13 +273,14 @@ async function startDeviceMonitor(workspaceId, deviceId, broadcastCallback) {
             }
 
             // 5. Broadcast ke WS
-            if (broadcastCallback) {
-                broadcastCallback(workspaceId, deviceId, {
+            const callback = broadcastCallback || state.broadcastCallback;
+            if (callback) {
+                callback(workspaceId, deviceId, {
                     type: 'batch-update',
                     payload: { resource, pppoeSecrets: enriched, activeInterfaces, traffic, hotspotActive: mikrotikStore.getHotspotActive(workspaceId, deviceId) }
                 });
 
-                broadcastCallback(workspaceId, deviceId, {
+                callback(workspaceId, deviceId, {
                     type: 'pppoe-secrets',
                     payload: { secrets: enriched, deviceId, timestamp: Date.now() }
                 });
@@ -327,9 +329,13 @@ async function startBackgroundMonitoring(broadcastCallback = null) {
 }
 
 async function restartDeviceMonitor(workspaceId, deviceId, broadcastCallback = null) {
+    const monitorKey = `bg-${workspaceId}-${deviceId}`;
+    const oldState = deviceMonitors.get(monitorKey);
+    const callbackToUse = broadcastCallback || oldState?.broadcastCallback;
+
     stopDeviceMonitor(workspaceId, deviceId);
     await new Promise(r => setTimeout(r, 500));
-    startDeviceMonitor(workspaceId, deviceId, broadcastCallback).catch(console.error);
+    startDeviceMonitor(workspaceId, deviceId, callbackToUse).catch(console.error);
 }
 
 module.exports = { startBackgroundMonitoring, restartDeviceMonitor, stopDeviceMonitor };

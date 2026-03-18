@@ -150,7 +150,7 @@ function broadcastToWorkspace(workspaceId, deviceId, data) {
     let sentCount = 0;
     wss.clients.forEach((client) => {
         const isDeviceMatch = !deviceId || client.deviceId == deviceId;
-        if (client.workspaceId === workspaceId && isDeviceMatch && client.readyState === WebSocket.OPEN) {
+        if (client.workspaceId == workspaceId && isDeviceMatch && client.readyState === WebSocket.OPEN) {
             try {
                 client.send(JSON.stringify(data));
                 sentCount++;
@@ -170,8 +170,8 @@ function stopWorkspaceMonitoring(connectionKey, reason = 'Koneksi terputus') {
         // Tapi kita tidak punya workspaceId langsung di parameter, jadi kita ambil dari connectionKey
         const parts = connectionKey.split('-');
         if (parts.length >= 2) {
-            const workspaceId = parts[1];
-            const deviceId = parts[2] ? parseInt(parts[2]) : null;
+            const workspaceId = parseInt(parts[1], 10);
+            const deviceId = parts[2] ? parseInt(parts[2], 10) : null;
 
             console.log(`[WebSocket] Menghentikan pemantauan untuk workspace ${workspaceId}, perangkat ${deviceId}. Alasan: ${reason}`);
 

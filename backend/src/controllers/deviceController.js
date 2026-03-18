@@ -71,7 +71,13 @@ exports.addDevice = async (req, res) => {
 
 exports.updateDevice = async (req, res) => {
     const { id } = req.params;
-    const workspaceId = req.user.workspace_id;
+    let workspaceId = req.user.workspace_id;
+    
+    // Dukungan override workspaceId untuk NOC
+    if (req.query.workspaceId && req.user.role === 'admin') {
+        workspaceId = parseInt(req.query.workspaceId);
+    }
+
     const { name, host, user, password, port } = req.body;
     if (!name || !host || !user || !port) return res.status(400).json({ message: 'Semua field wajib diisi.' });
     try {
@@ -119,7 +125,13 @@ exports.updateDevice = async (req, res) => {
 
 exports.deleteDevice = async (req, res) => {
     const { id } = req.params;
-    const workspaceId = req.user.workspace_id;
+    let workspaceId = req.user.workspace_id;
+
+    // Dukungan override workspaceId untuk NOC
+    if (req.query.workspaceId && req.user.role === 'admin') {
+        workspaceId = parseInt(req.query.workspaceId);
+    }
+
     try {
         const [result] = await pool.query('DELETE FROM mikrotik_devices WHERE id = ? AND workspace_id = ?', [id, workspaceId]);
         if (result.affectedRows === 0) return res.status(404).json({ message: 'Perangkat tidak ditemukan atau Anda tidak punya izin.' });
