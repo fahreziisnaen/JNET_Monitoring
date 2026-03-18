@@ -142,13 +142,17 @@ async function startDeviceMonitor(workspaceId, deviceId, broadcastCallback) {
                 state.isFetchingSecrets = true;
                 (async () => {
                     try {
-                        // console.log(`[BGMonitor] Device ${deviceId} secrets sync START`);
+                        if (process.env.DEBUG_API === 'true') {
+                            console.log(`[Singkronisasi] Memulai pembaruan data user untuk perangkat ${deviceId}`);
+                        }
                         const secrets = await runCommandForWorkspace(workspaceId, '/ppp/secret/print', [], deviceId);
                         if (secrets !== null && Array.isArray(secrets)) {
                             state.cachedSecrets = secrets;
                             state.lastSecretFetch = Date.now();
                             mikrotikStore.setSecrets(workspaceId, deviceId, secrets);
-                            // console.log(`[BGMonitor] Device ${deviceId} secrets sync SUCCESS: ${secrets.length} records`);
+                            if (process.env.DEBUG_API === 'true') {
+                                console.log(`[Singkronisasi] Berhasil memperbarui ${secrets.length} data user untuk perangkat ${deviceId}`);
+                            }
                         }
                     } catch (err) {
                         console.warn(`[Singkronisasi] Gagal memperbarui daftar secret untuk ${label || deviceId}: ${err.message}`);

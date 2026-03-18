@@ -24,7 +24,7 @@ const cron = require('node-cron');
 
 const { startWhatsApp } = require('./src/services/whatsappService');
 const { generateAndSendDailyReports } = require('./src/bot/reportGenerator');
-const { monitorSlaAndNotifications, sendDowntimeNotifications, syncMikrotikSecrets } = require('./src/bot/dataLogger');
+const { monitorSlaAndNotifications, sendDowntimeNotifications } = require('./src/bot/dataLogger');
 const { startBackgroundMonitoring } = require('./src/bot/backgroundMonitor');
 const { setupPppoeListeners } = require('./src/utils/mikrotikListener');
 const mikrotikStore = require('./src/utils/mikrotikStore');
@@ -625,20 +625,19 @@ wss.on('connection', (ws, req) => {
             let decoded = null;
 
             // Parse URL untuk mendapatkan query parameters
-            console.log('[WebSocket] Request URL:', req.url);
-            console.log('[WebSocket] Request headers:', {
+            console.log('[WebSocket] URL Permintaan:', req.url);
+            console.log('[WebSocket] Header permintaan:', {
                 cookie: req.headers.cookie ? 'Ada' : 'Tidak ada',
                 authorization: req.headers.authorization ? 'Ada' : 'Tidak ada',
                 host: req.headers.host
             });
 
-            // Parse query string manual karena WebSocket URL mungkin tidak standard
             let urlParams = new URLSearchParams();
             if (req.url.includes('?')) {
                 const queryString = req.url.split('?')[1];
                 urlParams = new URLSearchParams(queryString);
             }
-            console.log('[WebSocket] Query params:', Object.fromEntries(urlParams));
+            console.log('[WebSocket] Parameter query:', Object.fromEntries(urlParams));
 
             // Prioritas 1: Cek token di query parameter (untuk WebSocket yang tidak bisa kirim cookie dengan mudah)
             const tokenParam = urlParams.get('token');
@@ -781,7 +780,7 @@ wss.on('connection', (ws, req) => {
 
             // Jika background monitor sudah punya data, kirim snapshot langsung
             if (storedSecrets.length > 0 && deviceStatus === 'connected') {
-                console.log(`[WebSocket] BGMonitor data tersedia untuk device ${finalDeviceId}, kirim snapshot langsung`);
+                console.log(`[WebSocket] Data BGMonitor tersedia untuk perangkat ${finalDeviceId}, mengirim snapshot langsung`);
                 const activeMap = new Map(storedActive.map(u => [u.name, u]));
                 const enriched = storedSecrets.map(secret => {
                     const activeInfo = activeMap.get(secret.name);
@@ -803,7 +802,7 @@ wss.on('connection', (ws, req) => {
                 } catch (e) { }
             } else {
                 // Fallback: start monitoring loop jika backgroundMonitor belum ready
-                console.log(`[WebSocket] BGMonitor belum ada data untuk device ${finalDeviceId}, start monitoring loop`);
+                console.log(`[WebSocket] BGMonitor belum memiliki data untuk perangkat ${finalDeviceId}, memulai loop pemantauan`);
                 let connection = getConnection(connectionKey);
                 if (!connection) {
                     if (checkIfClosed()) return;
@@ -825,10 +824,7 @@ wss.on('connection', (ws, req) => {
                 connectionTimeout = null;
             }
 
-            // Final check sebelum log success
-            if (checkIfClosed()) return;
-
-            console.log(`[WebSocket] Koneksi berhasil di-setup untuk workspace ${ws.workspaceId}, device ${finalDeviceId}`);
+            console.log(`[WebSocket] Koneksi berhasil dikonfigurasi untuk workspace ${ws.workspaceId}, perangkat ${finalDeviceId}`);
 
             ws.on('message', async (message) => { // Dibuat async
                 try {
@@ -971,13 +967,6 @@ server.listen(PORT, '0.0.0.0', () => {
     cron.schedule(process.env.SLA_MONITOR_CRON || '*/3 * * * * *', () => {
         monitorSlaAndNotifications(broadcastToWorkspace);
     });
-
-    /*
-    // Sinkronisasi Secrets untuk NOC (setiap 1 menit) agar data real-time tersedia tanpa login
-    cron.schedule('0 * * * * *', () => {
-        syncMikrotikSecrets();
-    });
-    */
 
     // Dashboard snapshot - DISABLED as per user request to save storage
     // cron.schedule('*/3 * * * * *', updateAllDashboardSnapshots);
