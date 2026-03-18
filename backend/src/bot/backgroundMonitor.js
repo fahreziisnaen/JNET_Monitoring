@@ -88,7 +88,8 @@ async function startPhysicalMonitor(group, broadcastCallback) {
                 }
             }
 
-            // 2b. Hotspot active users
+            // 2b. Hotspot active users (DISABLED - Not needed as per user request)
+            /*
             if (state.hasHotspot !== false) {
                 // Gunakan device Connection Key default (shared) agar tidak buka socket baru
                 runCommandForWorkspace(workspaceId, '/ip/hotspot/active/print', [], deviceId)
@@ -107,6 +108,7 @@ async function startPhysicalMonitor(group, broadcastCallback) {
                         }
                     });
             }
+            */
 
             // 2c. Interfaces & Traffic
             const allInterfaces = await runCommandForWorkspace(workspaceId, '/interface/print', [], deviceId).catch(() => []);
@@ -242,8 +244,7 @@ async function startPhysicalMonitor(group, broadcastCallback) {
                                 resource, 
                                 pppoeSecrets: enriched, 
                                 activeInterfaces, 
-                                traffic, 
-                                hotspotActive: mikrotikStore.getHotspotActive(inst.workspace_id, inst.id) 
+                                traffic
                             }
                         });
                     }

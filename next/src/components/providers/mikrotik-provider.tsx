@@ -16,7 +16,6 @@ interface DeviceData {
     activeInterfaces: Array<{ name: string; type: string; running: boolean }>;
     traffic: any;
     isConnected: boolean;
-    hotspotActive: any[];
 }
 
 const DEFAULT_DEVICE_DATA: DeviceData = {
@@ -25,7 +24,6 @@ const DEFAULT_DEVICE_DATA: DeviceData = {
     activeInterfaces: [],
     traffic: {},
     isConnected: false,
-    hotspotActive: [],
 };
 
 export const MikrotikProvider = ({ children }: { children: React.ReactNode }) => {
@@ -115,7 +113,6 @@ export const MikrotikProvider = ({ children }: { children: React.ReactNode }) =>
                         activeInterfaces: hasInterfaces ? payload.activeInterfaces : prev.activeInterfaces,
                         traffic: hasTraffic ? payload.traffic : prev.traffic,
                         isConnected: true, // Pastikan connected jika ada data batch
-                        hotspotActive: payload.hotspotActive || prev.hotspotActive || [],
                     });
                     triggerRender();
                 } else if (message.type === 'pppoe-update' && message.payload) {
@@ -227,7 +224,6 @@ export const MikrotikProvider = ({ children }: { children: React.ReactNode }) =>
                                 activeInterfaces: data.activeInterfaces || prev.activeInterfaces,
                                 traffic: data.traffic || prev.traffic,
                                 isConnected: data.deviceStatus === 'connected',
-                                hotspotActive: prev.hotspotActive || [],
                             });
                             triggerRender();
                         })
@@ -298,7 +294,6 @@ export const MikrotikProvider = ({ children }: { children: React.ReactNode }) =>
         activeInterfaces: currentData.activeInterfaces,
         traffic: currentData.traffic,
         isConnected: currentData.isConnected,
-        hotspotActive: currentData.hotspotActive,
         selectedDeviceId,
         setSelectedDeviceId: handleDeviceChange,
         forceRefresh,
