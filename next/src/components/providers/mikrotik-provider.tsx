@@ -109,14 +109,14 @@ export const MikrotikProvider = ({ children }: { children: React.ReactNode }) =>
                         resource: message.payload.resource ?? prev.resource,
                         activeInterfaces: message.payload.activeInterfaces || [],
                         traffic: message.payload.traffic ?? {},
-                        isConnected: prev.isConnected,
+                        isConnected: true, // Pastikan connected jika ada data batch
                         hotspotActive: message.payload.hotspotActive || prev.hotspotActive || [],
                     });
                     triggerRender();
                 } else if (message.type === 'pppoe-update' && message.payload) {
                     const newSecrets = message.payload.pppoeSecrets || [];
                     if (JSON.stringify(newSecrets) !== JSON.stringify(prev.pppoeSecrets)) {
-                        deviceDataRef.current.set(deviceId, { ...prev, pppoeSecrets: newSecrets });
+                        deviceDataRef.current.set(deviceId, { ...prev, pppoeSecrets: newSecrets, isConnected: true });
                         triggerRender();
                     }
                 } else if (message.type === 'connection-status' && message.payload) {

@@ -51,13 +51,16 @@ const ManagementPage = () => {
 
   // Ensure auto update triggers correctly on reconnection
   useEffect(() => {
-    if (isConnected === true && forceRefresh) {
-      forceRefresh();
+    if (isConnected === true) {
+      if (forceRefresh) forceRefresh();
+      setLoading(false);
+    } else {
+      // Tunggu sebentar sebelum menunjukkan offline, untuk memberi waktu WS konek
+      const timer = setTimeout(() => {
+        setLoading(false);
+      }, 2000);
+      return () => clearTimeout(timer);
     }
-    // Ketika status isConnected diketahui (true atau false), hilangkan loading
-    // isConnected awalnya false di provider, tapi kita tunggu sampai snapshot / WS merespons
-    // agar kita tidak langsung menampilkan "offline" sebelum snapshot selesai
-    setLoading(false);
   }, [isConnected, forceRefresh]);
 
   // Tidak perlu fetchSummary lagi, semua data dari WebSocket
