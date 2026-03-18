@@ -382,10 +382,12 @@ async function startWorkspaceMonitoring(workspaceId, connectionKey, deviceId = n
                 };
 
                 // 1. Resource: TETAP (Setiap 3 detik)
-                const resource = await safeWrite('/system/resource/print', [], 5000).then(r => r[0] || {}).catch(() => ({}));
+                const resourceResults = await safeWrite('/system/resource/print', [], 5000);
+                const resource = resourceResults[0];
+                if (!resource) throw new Error("Data resource MikroTik tidak tersedia");
 
                 // 2. Active Users: TETAP (Setiap 3 detik)
-                const pppoeActive = await safeWrite('/ppp/active/print', [], 7000).catch(() => []);
+                const pppoeActive = await safeWrite('/ppp/active/print', [], 7000);
 
                 // 3. Secrets: Ambil dari Global Store (diperbarui real-time oleh backgroundMonitor)
                 // Ini menghilangkan blokade socket lama karena proses fetch secret yang memakan waktu (heavy query) 
@@ -450,9 +452,7 @@ async function startWorkspaceMonitoring(workspaceId, connectionKey, deviceId = n
                 // processSlaEvents sudah dijalankan oleh cron job monitorSlaAndNotifications setiap 3 detik
                 // yang berjalan terus menerus tanpa bergantung pada user login
 
-                const allInterfaces = await safeWrite('/interface/print', [], 10000).catch(err => {
-                    return [];
-                });
+                const allInterfaces = await safeWrite('/interface/print', [], 10000);
 
                 // Filter interface yang aktif (running) untuk ditampilkan di frontend
                 const activeInterfacesList = allInterfaces
@@ -514,28 +514,31 @@ async function startWorkspaceMonitoring(workspaceId, connectionKey, deviceId = n
 
                 // SINKRONISASI DATABASE (SNAPSHOT PERSISTENSI):
                 // Simpan kumpulan data terakhir ke database agar layar tidak kosong saat Load awal / Refresh F5
-                try {
-                    await pool.query(
-                        `INSERT INTO dashboard_snapshot 
-                            (workspace_id, device_id, resource, pppoe_active, traffic, active_interfaces, updated_at) 
-                         VALUES (?, ?, ?, ?, ?, ?, NOW()) 
-                         ON DUPLICATE KEY UPDATE 
-                            resource = VALUES(resource), 
-                            pppoe_active = VALUES(pppoe_active), 
-                            traffic = VALUES(traffic), 
-                            active_interfaces = VALUES(active_interfaces), 
-                            updated_at = NOW()`,
-                        [
-                            workspaceId, 
-                            deviceId, 
-                            JSON.stringify(batchPayload.resource), 
-                            JSON.stringify(batchPayload.pppoeSecrets), // Kolom db bernama pppoe_active menampung secrets berdasar API
-                            JSON.stringify(batchPayload.traffic), 
-                            JSON.stringify(batchPayload.activeInterfaces)
-                        ]
-                    );
-                } catch (dbError) {
-                    console.error(`[Snapshot Sync] Gagal sinkronisasi data ke dashboard_snapshot untuk perangkat ${deviceId}:`, dbError.message);
+                // HANYA update jika resource berhasil diambil (menghindari snapshot kosong saat flapping)
+                if (resource && Object.keys(resource).length > 0) {
+                    try {
+                        await pool.query(
+                            `INSERT INTO dashboard_snapshot 
+                                (workspace_id, device_id, resource, pppoe_active, traffic, active_interfaces, updated_at) 
+                             VALUES (?, ?, ?, ?, ?, ?, NOW()) 
+                             ON DUPLICATE KEY UPDATE 
+                                resource = VALUES(resource), 
+                                pppoe_active = VALUES(pppoe_active), 
+                                traffic = VALUES(traffic), 
+                                active_interfaces = VALUES(active_interfaces), 
+                                updated_at = NOW()`,
+                            [
+                                workspaceId, 
+                                deviceId, 
+                                JSON.stringify(batchPayload.resource), 
+                                JSON.stringify(batchPayload.pppoeSecrets), // Kolom db bernama pppoe_active menampung secrets berdasar API
+                                JSON.stringify(batchPayload.traffic), 
+                                JSON.stringify(batchPayload.activeInterfaces)
+                            ]
+                        );
+                    } catch (dbError) {
+                        console.error(`[Snapshot Sync] Gagal sinkronisasi data ke dashboard_snapshot untuk perangkat ${deviceId}:`, dbError.message);
+                    }
                 }
 
             } catch (cycleError) {
