@@ -86,7 +86,7 @@ const EditPppoeSecretModal = ({ isOpen, onClose, onSuccess, secretToEdit, nocWor
       loadProfiles();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isOpen, secretToEdit]);
+  }, [isOpen, secretToEdit?.name, secretToEdit?.workspace_id]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     setFormData(prev => ({ ...prev, [e.target.name]: e.target.value }));

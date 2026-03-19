@@ -61,6 +61,10 @@ const NocManagementTab: React.FC<NocManagementTabProps> = ({ workspaces }) => {
     const [lastFetchTime, setLastFetchTime] = useState<number>(0);
     const [isInitialLoad, setIsInitialLoad] = useState(true);
     const [uptimeOffset, setUptimeOffset] = useState(0);
+    const memoizedSecretToEdit = useMemo(() => {
+        if (!secretToEdit) return null;
+        return { ...secretToEdit, disabled: secretToEdit.disabled === 'true' };
+    }, [secretToEdit]);
 
     useEffect(() => {
         const interval = setInterval(() => setUptimeOffset(prev => prev + 1), 1000);
@@ -510,14 +514,11 @@ const NocManagementTab: React.FC<NocManagementTabProps> = ({ workspaces }) => {
                 <EditPppoeSecretModal
                     isOpen={isEditModalOpen}
                     onClose={() => setIsEditModalOpen(false)}
-                    secretToEdit={{ ...secretToEdit, disabled: secretToEdit.disabled === 'true' }}
+                    secretToEdit={memoizedSecretToEdit}
                     onSuccess={() => {
                         setLastFetchTime(0);
                         fetchSecrets();
                     }}
-                    // Note: override via querystring in the edit modal handles its own patch logic using active mikrotik selected id normally
-                    // Given we added workspaceId override natively in edit mode this requires passing workspaceId as prop. 
-                    // To do this simply, we will construct apiFetch locally inside the EditModal? No, just pass prop:
                     nocWorkspaceId={secretToEdit.workspace_id}
                 />
             )}

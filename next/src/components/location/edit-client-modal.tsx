@@ -68,7 +68,8 @@ const EditClientModal = ({ isOpen, onClose, onSuccess, client, assets = [], nocW
           .catch(() => setDeviceName(`Device #${deviceId}`));
       }
     }
-  }, [client, isOpen, apiUrl]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [client?.id, isOpen]);
 
   // Close dropdown when clicking outside
   useEffect(() => {
