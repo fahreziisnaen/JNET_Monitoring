@@ -178,7 +178,7 @@ async function sendDowntimeNotifications(broadcastCallback = null) {
             JOIN workspaces w ON d.workspace_id = w.id
             WHERE d.end_time IS NULL 
               AND d.notification_sent = FALSE
-              AND d.start_time < DATE_SUB(NOW(), INTERVAL 2 MINUTE)
+              AND d.start_time < DATE_SUB(NOW(), INTERVAL 10 MINUTE)
         `;
         const [downtimes] = await pool.query(query);
 
@@ -240,8 +240,16 @@ async function sendReconnectNotifications(broadcastCallback = null) {
             JOIN mikrotik_devices m ON d.device_id = m.id
             JOIN workspaces w ON d.workspace_id = w.id
             WHERE d.end_time IS NOT NULL 
+              AND d.end_time < DATE_SUB(NOW(), INTERVAL 1 MINUTE)
               AND (d.reconnect_notification_sent = FALSE OR d.reconnect_notification_sent IS NULL)
               AND d.notification_sent = TRUE
+              AND NOT EXISTS (
+                SELECT 1 FROM downtime_events d2 
+                WHERE d2.workspace_id = d.workspace_id 
+                  AND d2.device_id = d.device_id 
+                  AND d2.pppoe_user = d.pppoe_user 
+                  AND d2.start_time > d.end_time
+              )
         `;
         const [reconnects] = await pool.query(query);
 
