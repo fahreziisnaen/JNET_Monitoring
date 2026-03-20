@@ -312,6 +312,7 @@ const PppoeSecretsTable = ({ refreshTrigger, onActionComplete, initialFilter = '
 
     try {
       if (action === 'isolate' || action === 'unisolate') {
+        toast.info(`Memproses ${action} untuk ${secret.name}...`);
         const encodedId = encodeURIComponent(secret.name);
         // Prioritaskan deviceId dari secret itu sendiri
         const targetDeviceId = secret.deviceId || selectedDeviceId;

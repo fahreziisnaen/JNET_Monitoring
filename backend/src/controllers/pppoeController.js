@@ -645,6 +645,8 @@ exports.isolateSecret = async (req, res) => {
         workspaceId = parseInt(req.query.workspaceId);
     }
 
+    console.log(`[Isolate Secret] Request for: ${id}, workspace: ${workspaceId}, device: ${deviceId}`);
+
     try {
         // 1. Cek apakah profil "Isolir" tersedia di MikroTik
         const profiles = await runCommandForWorkspace(workspaceId, '/ppp/profile/print', ['?name=Isolir'], deviceId);
@@ -669,10 +671,15 @@ exports.isolateSecret = async (req, res) => {
         }
 
         // 3. Simpan profil lama ke database
-        await pool.query(
-            'UPDATE pppoe_secrets SET previous_profile = ? WHERE workspace_id = ? AND device_id = ? AND name = ?',
-            [currentProfile, workspaceId, deviceId, secretName]
-        );
+        let updateQuery = 'UPDATE pppoe_secrets SET previous_profile = ? WHERE workspace_id = ? AND name = ?';
+        let updateParams = [currentProfile, workspaceId, secretName];
+        if (deviceId) {
+            updateQuery += ' AND device_id = ?';
+            updateParams.push(deviceId);
+        }
+
+        await pool.query(updateQuery, updateParams);
+        console.log(`[Isolate Secret] Saved previous_profile: ${currentProfile} for ${secretName}`);
 
         // 4. Ubah profil ke Isolir di MikroTik
         await runCommandForWorkspace(workspaceId, '/ppp/secret/set', [`=.id=${realId}`, '=profile=Isolir'], deviceId);
@@ -704,6 +711,8 @@ exports.unisolateSecret = async (req, res) => {
         workspaceId = parseInt(req.query.workspaceId);
     }
 
+    console.log(`[Unisolate Secret] Request for: ${id}, workspace: ${workspaceId}, device: ${deviceId}`);
+
     try {
         // 1. Ambil data secret dari MikroTik
         const secretData = await runCommandForWorkspace(workspaceId, '/ppp/secret/print', [id.startsWith('*') ? `?=.id=${id}` : `?name=${id}`], deviceId);
@@ -715,24 +724,33 @@ exports.unisolateSecret = async (req, res) => {
         const realId = secretData[0]['.id'];
 
         // 2. Ambil previous_profile dari database
-        const [rows] = await pool.query(
-            'SELECT previous_profile FROM pppoe_secrets WHERE workspace_id = ? AND device_id = ? AND name = ?',
-            [workspaceId, deviceId, secretName]
-        );
+        let selectQuery = 'SELECT previous_profile FROM pppoe_secrets WHERE workspace_id = ? AND name = ?';
+        let selectParams = [workspaceId, secretName];
+        if (deviceId) {
+            selectQuery += ' AND device_id = ?';
+            selectParams.push(deviceId);
+        }
+
+        const [rows] = await pool.query(selectQuery, selectParams);
 
         let targetProfile = 'default'; // Fallback
         if (rows.length > 0 && rows[0].previous_profile) {
             targetProfile = rows[0].previous_profile;
         }
 
+        console.log(`[Unisolate Secret] Found previous_profile: ${targetProfile} for ${secretName}`);
+
         // 3. Kembalikan profil di MikroTik
         await runCommandForWorkspace(workspaceId, '/ppp/secret/set', [`=.id=${realId}`, `=profile=${targetProfile}`], deviceId);
 
         // 4. Bersihkan previous_profile di database
-        await pool.query(
-            'UPDATE pppoe_secrets SET previous_profile = NULL WHERE workspace_id = ? AND device_id = ? AND name = ?',
-            [workspaceId, deviceId, secretName]
-        );
+        let clearQuery = 'UPDATE pppoe_secrets SET previous_profile = NULL WHERE workspace_id = ? AND name = ?';
+        let clearParams = [workspaceId, secretName];
+        if (deviceId) {
+            clearQuery += ' AND device_id = ?';
+            clearParams.push(deviceId);
+        }
+        await pool.query(clearQuery, clearParams);
 
         // 5. Kick user jika sedang aktif agar profil lama segera diterapkan
         const activeData = await runCommandForWorkspace(workspaceId, '/ppp/active/print', [`?name=${secretName}`], deviceId);

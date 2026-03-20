@@ -261,6 +261,7 @@ const NocManagementTab: React.FC<NocManagementTabProps> = ({ workspaces }) => {
 
         try {
             if (action === 'isolate' || action === 'unisolate') {
+                toast.info(`Memproses ${action} untuk ${secret.name}...`);
                 const encodedId = encodeURIComponent(secret.name);
                 const res = await apiFetch(`${apiUrl}/api/pppoe/secrets/${encodedId}/${action}?workspaceId=${secret.workspace_id}&deviceId=${secret.deviceId}`, {
                     method: 'POST'
