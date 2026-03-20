@@ -323,8 +323,18 @@ const PppoeSecretsTable = ({ refreshTrigger, onActionComplete, initialFilter = '
         });
         
         if (!res.ok) {
-          const errData = await res.json();
-          throw new Error(errData.message || `Gagal melakukan ${action}`);
+          let errorMessage = `Error ${res.status}: ${res.statusText}`;
+          try {
+            const errData = await res.json();
+            errorMessage = errData.message || errorMessage;
+          } catch (e) {
+            // Jika bukan JSON, coba ambil teks mentah
+            try {
+              const textError = await res.text();
+              if (textError) errorMessage = textError.slice(0, 100);
+            } catch (e2) {}
+          }
+          throw new Error(errorMessage);
         }
         
         toast.success(action === 'isolate' ? "User Berhasil Di-Isolir" : "Isolir Berhasil Dibuka", {

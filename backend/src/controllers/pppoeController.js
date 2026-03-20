@@ -647,18 +647,12 @@ exports.isolateSecret = async (req, res) => {
 
     console.log(`[Isolate Secret] Request for: ${id}, workspace: ${workspaceId}, device: ${deviceId}`);
 
+    console.log(`[Isolate Secret] Step 1: Getting secret data for: ${id}`);
     try {
-        // 1. Cek apakah profil "Isolir" tersedia di MikroTik
-        const profiles = await runCommandForWorkspace(workspaceId, '/ppp/profile/print', ['?name=Isolir'], deviceId);
-        if (!profiles || profiles.length === 0) {
-            return res.status(404).json({ 
-                message: 'Profil "Isolir" tidak tersedia di MikroTik. Silakan buat profil dengan nama "Isolir" terlebih dahulu di router Anda.' 
-            });
-        }
-
-        // 2. Ambil data secret saat ini untuk mendapatkan profil lama
+        // 1. Ambil data secret saat ini
         const secretData = await runCommandForWorkspace(workspaceId, '/ppp/secret/print', [id.startsWith('*') ? `?=.id=${id}` : `?name=${id}`], deviceId);
         if (!secretData || secretData.length === 0) {
+            console.error(`[Isolate Secret] Secret ${id} not found`);
             return res.status(404).json({ message: 'Secret tidak ditemukan di router' });
         }
 
@@ -670,6 +664,21 @@ exports.isolateSecret = async (req, res) => {
             return res.status(400).json({ message: 'User sudah dalam status Isolir.' });
         }
 
+        console.log(`[Isolate Secret] Step 2: Attempting to set profile to Isolir for ${secretName}`);
+        // 2. Langsung coba ubah profil ke Isolir. Jika gagal karena profil tidak ada, tangkap error-nya.
+        try {
+            await runCommandForWorkspace(workspaceId, '/ppp/secret/set', [`=.id=${realId}`, '=profile=Isolir'], deviceId);
+        } catch (setErr) {
+            console.error(`[Isolate Secret] Set profile failed: ${setErr.message}`);
+            if (setErr.message?.toLowerCase().includes('profile')) {
+                return res.status(404).json({ 
+                    message: 'Profil "Isolir" tidak tersedia di MikroTik. Silakan buat profil dengan nama "Isolir" terlebih dahulu di router Anda.' 
+                });
+            }
+            throw setErr;
+        }
+
+        console.log(`[Isolate Secret] Step 3: Saving previous_profile: ${currentProfile} to DB`);
         // 3. Simpan profil lama ke database
         let updateQuery = 'UPDATE pppoe_secrets SET previous_profile = ? WHERE workspace_id = ? AND name = ?';
         let updateParams = [currentProfile, workspaceId, secretName];
@@ -677,14 +686,10 @@ exports.isolateSecret = async (req, res) => {
             updateQuery += ' AND device_id = ?';
             updateParams.push(deviceId);
         }
-
         await pool.query(updateQuery, updateParams);
-        console.log(`[Isolate Secret] Saved previous_profile: ${currentProfile} for ${secretName}`);
 
-        // 4. Ubah profil ke Isolir di MikroTik
-        await runCommandForWorkspace(workspaceId, '/ppp/secret/set', [`=.id=${realId}`, '=profile=Isolir'], deviceId);
-
-        // 5. Kick user jika sedang aktif agar profil baru (Isolir) segera diterapkan
+        console.log(`[Isolate Secret] Step 4: Kicking user ${secretName} to apply changes`);
+        // 4. Kick user jika sedang aktif agar profil baru (Isolir) segera diterapkan
         const activeData = await runCommandForWorkspace(workspaceId, '/ppp/active/print', [`?name=${secretName}`], deviceId);
         if (activeData && activeData.length > 0) {
             for (const active of activeData) {
@@ -692,9 +697,8 @@ exports.isolateSecret = async (req, res) => {
             }
         }
 
-        // Trigger refresh agar UI langsung update
         refreshSecretsNow(workspaceId, deviceId);
-
+        console.log(`[Isolate Secret] Success for ${secretName}`);
         res.status(200).json({ message: `User ${secretName} berhasil di-Isolir.` });
     } catch (error) {
         console.error('[Isolate Secret] Error:', error.message);
