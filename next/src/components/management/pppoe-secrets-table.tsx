@@ -307,11 +307,29 @@ const PppoeSecretsTable = ({ refreshTrigger, onActionComplete, initialFilter = '
     return filtered;
   }, [allSecrets, isSecretActive, initialFilter, searchQuery, sortColumn, sortDirection, getUptime]);
 
-  const handleAction = async (action: 'enable' | 'disable' | 'kick', secret: PppoeSecret) => {
+  const handleAction = async (action: 'enable' | 'disable' | 'kick' | 'isolate' | 'unisolate', secret: PppoeSecret) => {
     setIsActionLoading(true);
 
     try {
-      if (action === 'kick') {
+      if (action === 'isolate' || action === 'unisolate') {
+        const encodedId = encodeURIComponent(secret.name);
+        // Prioritaskan deviceId dari secret itu sendiri
+        const targetDeviceId = secret.deviceId || selectedDeviceId;
+        const deviceQuery = targetDeviceId ? `?deviceId=${targetDeviceId}` : '';
+        
+        const res = await apiFetch(`${apiUrl}/api/pppoe/secrets/${encodedId}/${action}${deviceQuery}`, {
+          method: 'POST'
+        });
+        
+        if (!res.ok) {
+          const errData = await res.json();
+          throw new Error(errData.message || `Gagal melakukan ${action}`);
+        }
+        
+        toast.success(action === 'isolate' ? "User Berhasil Di-Isolir" : "Isolir Berhasil Dibuka", {
+          description: action === 'isolate' ? `User ${secret.name} telah dipindahkan ke profil Isolir.` : `Profil user ${secret.name} telah dikembalikan.`
+        });
+      } else if (action === 'kick') {
         // Untuk kick, kita perlu .id dari /ppp/active/print
         // Data sudah di-enrich di backend dengan activeConnectionId
         if (!isSecretActive(secret)) {
@@ -577,7 +595,17 @@ const PppoeSecretsTable = ({ refreshTrigger, onActionComplete, initialFilter = '
                                 <Edit className="mr-2 h-4 w-4" /> Edit
                               </DropdownMenuItem>
                               <DropdownMenuSeparator />
-                              {isActive &&
+                                {user.profile === 'Isolir' ? (
+                                  <DropdownMenuItem onClick={() => handleAction('unisolate', user)}>
+                                    <ZapOff className="mr-2 h-4 w-4 text-green-500" /> Buka Isolir
+                                  </DropdownMenuItem>
+                                ) : (
+                                  <DropdownMenuItem onClick={() => handleAction('isolate', user)}>
+                                    <ZapOff className="mr-2 h-4 w-4 text-orange-500" /> Isolir User
+                                  </DropdownMenuItem>
+                                )}
+                                <DropdownMenuSeparator />
+                                {isActive &&
                                 <DropdownMenuItem onClick={() => handleAction('kick', user)}>
                                   <ZapOff className="mr-2 h-4 w-4" /> Kick User
                                 </DropdownMenuItem>

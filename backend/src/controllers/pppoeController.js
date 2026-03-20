@@ -635,3 +635,119 @@ exports.getUsageHistory = async (req, res) => {
         res.status(500).json({ message: 'Gagal mengambil riwayat pemakaian.' });
     }
 };
+
+exports.isolateSecret = async (req, res) => {
+    const { id } = req.params;
+    let workspaceId = req.user.workspace_id;
+    const deviceId = req.query.deviceId ? parseInt(req.query.deviceId) : null;
+
+    if (req.query.workspaceId && req.user.role === 'admin') {
+        workspaceId = parseInt(req.query.workspaceId);
+    }
+
+    try {
+        // 1. Cek apakah profil "Isolir" tersedia di MikroTik
+        const profiles = await runCommandForWorkspace(workspaceId, '/ppp/profile/print', ['?name=Isolir'], deviceId);
+        if (!profiles || profiles.length === 0) {
+            return res.status(404).json({ 
+                message: 'Profil "Isolir" tidak tersedia di MikroTik. Silakan buat profil dengan nama "Isolir" terlebih dahulu di router Anda.' 
+            });
+        }
+
+        // 2. Ambil data secret saat ini untuk mendapatkan profil lama
+        const secretData = await runCommandForWorkspace(workspaceId, '/ppp/secret/print', [id.startsWith('*') ? `?=.id=${id}` : `?name=${id}`], deviceId);
+        if (!secretData || secretData.length === 0) {
+            return res.status(404).json({ message: 'Secret tidak ditemukan di router' });
+        }
+
+        const currentProfile = secretData[0].profile;
+        const secretName = secretData[0].name;
+        const realId = secretData[0]['.id'];
+
+        if (currentProfile === 'Isolir') {
+            return res.status(400).json({ message: 'User sudah dalam status Isolir.' });
+        }
+
+        // 3. Simpan profil lama ke database
+        await pool.query(
+            'UPDATE pppoe_secrets SET previous_profile = ? WHERE workspace_id = ? AND device_id = ? AND name = ?',
+            [currentProfile, workspaceId, deviceId, secretName]
+        );
+
+        // 4. Ubah profil ke Isolir di MikroTik
+        await runCommandForWorkspace(workspaceId, '/ppp/secret/set', [`=.id=${realId}`, '=profile=Isolir'], deviceId);
+
+        // 5. Kick user jika sedang aktif agar profil baru (Isolir) segera diterapkan
+        const activeData = await runCommandForWorkspace(workspaceId, '/ppp/active/print', [`?name=${secretName}`], deviceId);
+        if (activeData && activeData.length > 0) {
+            for (const active of activeData) {
+                await runCommandForWorkspace(workspaceId, '/ppp/active/remove', [`=.id=${active['.id']}`], deviceId);
+            }
+        }
+
+        // Trigger refresh agar UI langsung update
+        refreshSecretsNow(workspaceId, deviceId);
+
+        res.status(200).json({ message: `User ${secretName} berhasil di-Isolir.` });
+    } catch (error) {
+        console.error('[Isolate Secret] Error:', error.message);
+        res.status(500).json({ message: error.message });
+    }
+};
+
+exports.unisolateSecret = async (req, res) => {
+    const { id } = req.params;
+    let workspaceId = req.user.workspace_id;
+    const deviceId = req.query.deviceId ? parseInt(req.query.deviceId) : null;
+
+    if (req.query.workspaceId && req.user.role === 'admin') {
+        workspaceId = parseInt(req.query.workspaceId);
+    }
+
+    try {
+        // 1. Ambil data secret dari MikroTik
+        const secretData = await runCommandForWorkspace(workspaceId, '/ppp/secret/print', [id.startsWith('*') ? `?=.id=${id}` : `?name=${id}`], deviceId);
+        if (!secretData || secretData.length === 0) {
+            return res.status(404).json({ message: 'Secret tidak ditemukan di router' });
+        }
+
+        const secretName = secretData[0].name;
+        const realId = secretData[0]['.id'];
+
+        // 2. Ambil previous_profile dari database
+        const [rows] = await pool.query(
+            'SELECT previous_profile FROM pppoe_secrets WHERE workspace_id = ? AND device_id = ? AND name = ?',
+            [workspaceId, deviceId, secretName]
+        );
+
+        let targetProfile = 'default'; // Fallback
+        if (rows.length > 0 && rows[0].previous_profile) {
+            targetProfile = rows[0].previous_profile;
+        }
+
+        // 3. Kembalikan profil di MikroTik
+        await runCommandForWorkspace(workspaceId, '/ppp/secret/set', [`=.id=${realId}`, `=profile=${targetProfile}`], deviceId);
+
+        // 4. Bersihkan previous_profile di database
+        await pool.query(
+            'UPDATE pppoe_secrets SET previous_profile = NULL WHERE workspace_id = ? AND device_id = ? AND name = ?',
+            [workspaceId, deviceId, secretName]
+        );
+
+        // 5. Kick user jika sedang aktif agar profil lama segera diterapkan
+        const activeData = await runCommandForWorkspace(workspaceId, '/ppp/active/print', [`?name=${secretName}`], deviceId);
+        if (activeData && activeData.length > 0) {
+            for (const active of activeData) {
+                await runCommandForWorkspace(workspaceId, '/ppp/active/remove', [`=.id=${active['.id']}`], deviceId);
+            }
+        }
+
+        // Trigger refresh agar UI langsung update
+        refreshSecretsNow(workspaceId, deviceId);
+
+        res.status(200).json({ message: `Isolir user ${secretName} berhasil dibuka. Profil dikembalikan ke: ${targetProfile}` });
+    } catch (error) {
+        console.error('[Unisolate Secret] Error:', error.message);
+        res.status(500).json({ message: error.message });
+    }
+};

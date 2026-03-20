@@ -255,12 +255,26 @@ const NocManagementTab: React.FC<NocManagementTabProps> = ({ workspaces }) => {
             .map(([name]) => name);
     }, [secrets]);
 
-    const handleAction = async (action: 'enable' | 'disable' | 'kick', secret: PppoeSecret) => {
+    const handleAction = async (action: 'enable' | 'disable' | 'kick' | 'isolate' | 'unisolate', secret: PppoeSecret) => {
         setIsActionLoading(true);
         const apiUrl = process.env.NEXT_PUBLIC_API_BASE_URL;
 
         try {
-            if (action === 'kick') {
+            if (action === 'isolate' || action === 'unisolate') {
+                const encodedId = encodeURIComponent(secret.name);
+                const res = await apiFetch(`${apiUrl}/api/pppoe/secrets/${encodedId}/${action}?workspaceId=${secret.workspace_id}&deviceId=${secret.deviceId}`, {
+                    method: 'POST'
+                });
+                
+                if (!res.ok) {
+                    const errData = await res.json();
+                    throw new Error(errData.message || `Gagal melakukan ${action}`);
+                }
+                
+                toast.success(action === 'isolate' ? "User Berhasil Di-Isolir" : "Isolir Berhasil Dibuka", {
+                    description: action === 'isolate' ? `User ${secret.name} telah dipindahkan ke profil Isolir.` : `Profil user ${secret.name} telah dikembalikan.`
+                });
+            } else if (action === 'kick') {
                 if (!secret.isActive) {
                     throw new Error("User tidak aktif, tidak bisa di-kick.");
                 }
@@ -471,6 +485,16 @@ const NocManagementTab: React.FC<NocManagementTabProps> = ({ workspaces }) => {
                                                         <DropdownMenuItem onClick={() => { setSecretToEdit(user); setIsEditModalOpen(true); }}>
                                                             <Edit className="mr-2 h-4 w-4" /> Edit
                                                         </DropdownMenuItem>
+                                                        <DropdownMenuSeparator />
+                                                        {user.profile === 'Isolir' ? (
+                                                            <DropdownMenuItem onClick={() => handleAction('unisolate', user)}>
+                                                                <ZapOff className="mr-2 h-4 w-4 text-green-500" /> Buka Isolir
+                                                            </DropdownMenuItem>
+                                                        ) : (
+                                                            <DropdownMenuItem onClick={() => handleAction('isolate', user)}>
+                                                                <ZapOff className="mr-2 h-4 w-4 text-orange-500" /> Isolir User
+                                                            </DropdownMenuItem>
+                                                        )}
                                                         <DropdownMenuSeparator />
                                                         {user.isActive &&
                                                             <DropdownMenuItem onClick={() => handleAction('kick', user)}>

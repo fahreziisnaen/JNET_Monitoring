@@ -11,6 +11,8 @@ router.post('/secrets', authorizeAdmin, pppoeController.addSecret);
 router.get('/profiles', pppoeController.getProfiles);
 router.get('/next-ip', pppoeController.getNextIp);
 router.put('/secrets/:id/status', authorizeAdmin, pppoeController.setSecretStatus);
+router.post('/secrets/:id/isolate', authorizeAdmin, pppoeController.isolateSecret);
+router.post('/secrets/:id/unisolate', authorizeAdmin, pppoeController.unisolateSecret);
 router.post('/active/:id/kick', authorizeAdmin, pppoeController.kickActiveUser);
 router.get('/secrets/:name/sla', pppoeController.getSlaDetails);
 router.get('/secrets/:name/usage', pppoeController.getUsageHistory);
