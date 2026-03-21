@@ -122,10 +122,12 @@ export const DeviceSelector: React.FC<DeviceSelectorProps> = ({
       <DropdownMenuContent align="end" className="w-72 p-0" onCloseAutoFocus={(e) => e.preventDefault()}>
         <div className="p-2 border-b bg-muted/30 flex items-center justify-between gap-2">
             <span className="text-[10px] font-bold uppercase text-muted-foreground ml-1">Pilih MikroTik</span>
+            {!onDeviceChange && (
             <div className="flex gap-1">
                 <Button variant="ghost" size="sm" onClick={selectAll} className="h-6 px-2 text-[10px]">Semua</Button>
                 <Button variant="ghost" size="sm" onClick={deselectAll} className="h-6 px-2 text-[10px]">Bersihkan</Button>
             </div>
+            )}
         </div>
         <div className="max-h-[300px] overflow-y-auto p-1">
             {devices.length === 0 ? (
@@ -142,12 +144,21 @@ export const DeviceSelector: React.FC<DeviceSelectorProps> = ({
                                 isSelected ? "bg-primary/5" : ""
                             )}
                         >
-                            <div className={cn(
-                                "w-4 h-4 rounded border flex items-center justify-center transition-colors",
-                                isSelected ? "bg-primary border-primary text-primary-foreground" : "border-muted-foreground/30 group-hover:border-primary"
-                            )}>
-                                {isSelected && <span className="text-[10px]">✓</span>}
-                            </div>
+                            {onDeviceChange ? (
+                                <div className={cn(
+                                    "w-4 h-4 rounded-full border-2 flex items-center justify-center transition-colors",
+                                    isSelected ? "border-primary" : "border-muted-foreground/30 group-hover:border-primary"
+                                )}>
+                                    {isSelected && <div className="w-2 h-2 rounded-full bg-primary" />}
+                                </div>
+                            ) : (
+                                <div className={cn(
+                                    "w-4 h-4 rounded border flex items-center justify-center transition-colors",
+                                    isSelected ? "bg-primary border-primary text-primary-foreground" : "border-muted-foreground/30 group-hover:border-primary"
+                                )}>
+                                    {isSelected && <span className="text-[10px]">✓</span>}
+                                </div>
+                            )}
                             <div className="flex flex-col gap-0.5 overflow-hidden flex-1">
                                 <span className={cn("font-bold text-sm truncate", isSelected ? "text-primary" : "")}>{device.name}</span>
                                 <div className="flex items-center gap-1 text-[10px] text-muted-foreground uppercase tracking-tight">

@@ -47,7 +47,7 @@ const Navbar = () => {
                         </Link>
                     )
                 })}
-                {(user?.is_super_admin || isNoc) && (
+                {((user?.is_super_admin || isNoc || user?.role === 'admin')) && (
                     <Link
                         key="NOC"
                         href="/noc"

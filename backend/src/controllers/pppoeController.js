@@ -142,7 +142,8 @@ exports.getSecrets = async (req, res) => {
 exports.getNextIp = async (req, res) => {
     const { profile } = req.query;
     let workspace_id = req.user.workspace_id;
-    if (req.query.workspaceId && req.user.role === 'admin') {
+    const isSuper = req.user.is_super_admin === 1 || req.user.is_super_admin === true;
+    if (req.query.workspaceId && (req.user.role === 'admin' || req.user.role === 'noc' || isSuper)) {
         workspace_id = parseInt(req.query.workspaceId);
     }
     var activeUsedIpsSet = new Set();
@@ -235,8 +236,9 @@ exports.getNextIp = async (req, res) => {
 exports.addSecret = async (req, res) => {
     let workspaceId = req.user.workspace_id;
 
-    // Support override for NOC
-    if (req.query.workspaceId && req.user.role === 'admin') {
+    // Support override for NOC / Superadmin
+    const isSuper = req.user.is_super_admin === 1 || req.user.is_super_admin === true;
+    if (req.query.workspaceId && (req.user.role === 'admin' || req.user.role === 'noc' || isSuper)) {
         workspaceId = parseInt(req.query.workspaceId);
     }
 
@@ -387,8 +389,9 @@ exports.setSecretStatus = async (req, res) => {
     let workspaceId = req.user.workspace_id;
     const deviceId = req.query.deviceId ? parseInt(req.query.deviceId) : null;
 
-    // Support override for NOC
-    if (req.query.workspaceId && req.user.role === 'admin') {
+    // Support override for NOC / Superadmin
+    const isSuper = req.user.is_super_admin === 1 || req.user.is_super_admin === true;
+    if (req.query.workspaceId && (req.user.role === 'admin' || req.user.role === 'noc' || isSuper)) {
         workspaceId = parseInt(req.query.workspaceId);
     }
 
@@ -408,8 +411,9 @@ exports.kickActiveUser = async (req, res) => {
     let workspaceId = req.user.workspace_id;
     const deviceId = req.query.deviceId ? parseInt(req.query.deviceId) : null;
 
-    // Support override for NOC
-    if (req.query.workspaceId && req.user.role === 'admin') {
+    // Support override for NOC / Superadmin
+    const isSuper = req.user.is_super_admin === 1 || req.user.is_super_admin === true;
+    if (req.query.workspaceId && (req.user.role === 'admin' || req.user.role === 'noc' || isSuper)) {
         workspaceId = parseInt(req.query.workspaceId);
     }
 
@@ -485,8 +489,9 @@ exports.updateSecret = async (req, res) => {
     let workspace_id = req.user.workspace_id;
     const deviceId = req.query.deviceId || bodyDeviceId || null;
 
-    // Support override for NOC
-    if (req.query.workspaceId && req.user.role === 'admin') {
+    // Support override for NOC / Superadmin
+    const isSuper = req.user.is_super_admin === 1 || req.user.is_super_admin === true;
+    if (req.query.workspaceId && (req.user.role === 'admin' || req.user.role === 'noc' || isSuper)) {
         workspace_id = parseInt(req.query.workspaceId);
     }
     if (!profile) {
@@ -540,8 +545,9 @@ exports.deleteSecret = async (req, res) => {
     const { id } = req.params;
     let workspace_id = req.user.workspace_id;
     
-    // Support override for NOC
-    if (req.query.workspaceId && req.user.role === 'admin') {
+    // Support override for NOC / Superadmin
+    const isSuper = req.user.is_super_admin === 1 || req.user.is_super_admin === true;
+    if (req.query.workspaceId && (req.user.role === 'admin' || req.user.role === 'noc' || isSuper)) {
         workspace_id = parseInt(req.query.workspaceId);
     }
 
@@ -643,7 +649,9 @@ exports.isolateSecret = async (req, res) => {
     let workspaceId = req.user.workspace_id;
     const deviceId = req.query.deviceId ? parseInt(req.query.deviceId) : null;
 
-    if (req.query.workspaceId && req.user.role === 'admin') {
+    // Support override for NOC / Superadmin
+    const isSuper = req.user.is_super_admin === 1 || req.user.is_super_admin === true;
+    if (req.query.workspaceId && (req.user.role === 'admin' || req.user.role === 'noc' || isSuper)) {
         workspaceId = parseInt(req.query.workspaceId);
     }
 
@@ -713,7 +721,9 @@ exports.unisolateSecret = async (req, res) => {
     let workspaceId = req.user.workspace_id;
     const deviceId = req.query.deviceId ? parseInt(req.query.deviceId) : null;
 
-    if (req.query.workspaceId && req.user.role === 'admin') {
+    // Support override for NOC / Superadmin
+    const isSuper = req.user.is_super_admin === 1 || req.user.is_super_admin === true;
+    if (req.query.workspaceId && (req.user.role === 'admin' || req.user.role === 'noc' || isSuper)) {
         workspaceId = parseInt(req.query.workspaceId);
     }
 

@@ -29,12 +29,12 @@ const NocPage = () => {
     useEffect(() => {
         if (user === null) {
             router.push('/login');
-        } else if (user && !user.is_super_admin && user.role !== 'noc') {
+        } else if (user && !user.is_super_admin && user.role !== 'noc' && user.role !== 'admin') {
             router.push('/dashboard');
         }
     }, [user, router]);
 
-    if (!user?.is_super_admin && user?.role !== 'noc') {
+    if (!user?.is_super_admin && user?.role !== 'noc' && user?.role !== 'admin') {
         return (
             <div className="flex items-center justify-center min-h-screen">
                 <p className="text-muted-foreground animate-pulse">Memuat Network Operations Center...</p>

@@ -32,7 +32,7 @@ interface PppoeSecretsTableProps {
 }
 
 const PppoeSecretsTable = ({ refreshTrigger, onActionComplete, initialFilter = 'all' }: PppoeSecretsTableProps) => {
-  const { pppoeSecrets, selectedDeviceId } = useMikrotik() || { pppoeSecrets: [], selectedDeviceId: null };
+  const { pppoeSecrets, selectedDeviceId, getDeviceWorkspaceId } = useMikrotik();
   const [allSecrets, setAllSecrets] = useState<PppoeSecret[]>([]);
   const [loading, setLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -316,7 +316,12 @@ const PppoeSecretsTable = ({ refreshTrigger, onActionComplete, initialFilter = '
         const encodedId = encodeURIComponent(secret.name);
         // Prioritaskan deviceId dari secret itu sendiri
         const targetDeviceId = secret.deviceId || selectedDeviceId;
-        const deviceQuery = targetDeviceId ? `?deviceId=${targetDeviceId}` : '';
+        const targetWorkspaceId = targetDeviceId ? getDeviceWorkspaceId(targetDeviceId) : null;
+        
+        let deviceQuery = targetDeviceId ? `?deviceId=${targetDeviceId}` : '';
+        if (targetWorkspaceId) {
+          deviceQuery += `${deviceQuery ? '&' : '?'}workspaceId=${targetWorkspaceId}`;
+        }
         
         const res = await apiFetch(`${apiUrl}/api/pppoe/secrets/${encodedId}/${action}${deviceQuery}`, {
           method: 'POST'
@@ -356,7 +361,12 @@ const PppoeSecretsTable = ({ refreshTrigger, onActionComplete, initialFilter = '
           const encodedId = encodeURIComponent(secret.activeConnectionId);
           // Prioritaskan deviceId dari secret itu sendiri (untuk akurasi di NOC)
           const targetDeviceId = secret.deviceId || selectedDeviceId;
-          const deviceQuery = targetDeviceId ? `?deviceId=${targetDeviceId}` : '';
+          const targetWorkspaceId = targetDeviceId ? getDeviceWorkspaceId(targetDeviceId) : null;
+          
+          let deviceQuery = targetDeviceId ? `?deviceId=${targetDeviceId}` : '';
+          if (targetWorkspaceId) {
+            deviceQuery += `${deviceQuery ? '&' : '?'}workspaceId=${targetWorkspaceId}`;
+          }
           const res = await apiFetch(`${apiUrl}/api/pppoe/active/${encodedId}/kick${deviceQuery}`, {
             method: 'POST'
           });
@@ -370,7 +380,13 @@ const PppoeSecretsTable = ({ refreshTrigger, onActionComplete, initialFilter = '
       } else if (action === 'disable') {
         // Disable secret terlebih dahulu untuk mencegah reconnect otomatis
         const encodedId = encodeURIComponent(secret.name);
-        const deviceQuery = selectedDeviceId ? `?deviceId=${selectedDeviceId}` : '';
+        const targetWorkspaceId = selectedDeviceId ? getDeviceWorkspaceId(selectedDeviceId) : null;
+        
+        let deviceQuery = selectedDeviceId ? `?deviceId=${selectedDeviceId}` : '';
+        if (targetWorkspaceId) {
+          deviceQuery += `${deviceQuery ? '&' : '?'}workspaceId=${targetWorkspaceId}`;
+        }
+        
         const res = await apiFetch(`${apiUrl}/api/pppoe/secrets/${encodedId}/status${deviceQuery}`, {
           method: 'PUT',
           body: JSON.stringify({ disabled: 'yes' })
@@ -401,7 +417,12 @@ const PppoeSecretsTable = ({ refreshTrigger, onActionComplete, initialFilter = '
       } else {
         // Enable
         const encodedId = encodeURIComponent(secret.name);
-        const deviceQuery = selectedDeviceId ? `?deviceId=${selectedDeviceId}` : '';
+        const targetWorkspaceId = selectedDeviceId ? getDeviceWorkspaceId(selectedDeviceId) : null;
+        
+        let deviceQuery = selectedDeviceId ? `?deviceId=${selectedDeviceId}` : '';
+        if (targetWorkspaceId) {
+          deviceQuery += `${deviceQuery ? '&' : '?'}workspaceId=${targetWorkspaceId}`;
+        }
         const res = await apiFetch(`${apiUrl}/api/pppoe/secrets/${encodedId}/status${deviceQuery}`, {
           method: 'PUT',
           body: JSON.stringify({ disabled: 'no' })
@@ -430,7 +451,12 @@ const PppoeSecretsTable = ({ refreshTrigger, onActionComplete, initialFilter = '
     setIsActionLoading(true);
     try {
       const encodedId = encodeURIComponent(secretToDelete.name);
-      const deviceQuery = selectedDeviceId ? `?deviceId=${selectedDeviceId}` : '';
+      const targetWorkspaceId = selectedDeviceId ? getDeviceWorkspaceId(selectedDeviceId) : null;
+      
+      let deviceQuery = selectedDeviceId ? `?deviceId=${selectedDeviceId}` : '';
+      if (targetWorkspaceId) {
+        deviceQuery += `${deviceQuery ? '&' : '?'}workspaceId=${targetWorkspaceId}`;
+      }
       await apiFetch(`${apiUrl}/api/pppoe/secrets/${encodedId}${deviceQuery}`, { method: 'DELETE' });
       toast.success("Berhasil Menghapus Secret", { description: `Secret untuk ${secretToDelete.name} telah dihapus.` });
       onActionComplete();

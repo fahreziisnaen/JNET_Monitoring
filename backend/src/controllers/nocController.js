@@ -239,13 +239,15 @@ exports.getMyWorkspaces = async (req, res) => {
             return res.json(workspaces);
         }
 
-        // NOC user hanya melihat yang diijinkan
+        // NOC/Admin user: tampilkan workspace utama dia + yang diijinkan melalui noc_permissions
         const [workspaces] = await pool.query(`
+            SELECT id, name FROM workspaces WHERE id = ?
+            UNION
             SELECT w.id, w.name 
             FROM workspaces w
             JOIN noc_permissions np ON w.id = np.workspace_id
             WHERE np.user_id = ?
-        `, [userId]);
+        `, [req.user.workspace_id, userId]);
 
         res.json(workspaces);
     } catch (error) {

@@ -5,6 +5,8 @@ import { motion, AnimatePresence } from "@/components/motion";
 import { X, Zap, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { apiFetch } from "@/utils/api";
+import { useMikrotik } from "@/components/providers/mikrotik-provider";
+import { useAuth } from "@/components/providers/auth-provider";
 import { toast } from "sonner";
 
 interface AddPppoeSecretModalProps {
@@ -20,6 +22,8 @@ const AddPppoeSecretModal = ({
   onSuccess,
   nocWorkspaceId,
 }: AddPppoeSecretModalProps) => {
+  const { getDeviceWorkspaceId } = useMikrotik();
+  const { user } = useAuth();
   const [formData, setFormData] = useState({
     name: "",
     password: "",
@@ -39,11 +43,13 @@ const AddPppoeSecretModal = ({
   // Fetch devices when modal opens
   useEffect(() => {
     if (isOpen) {
-      const targetWorkspaceId = nocWorkspaceId || "";
       const fetchDevices = async () => {
         try {
           setDevicesLoading(true);
-          const devRes = await apiFetch(`${apiUrl}/api/devices?workspaceId=${targetWorkspaceId}`);
+          // Jika nocWorkspaceId ada, gunakan itu. Jika tidak, backend akan otomatis menggunakan workspace user saat ini (untuk admin) 
+          // atau semua device (untuk superadmin).
+          const devParams = nocWorkspaceId ? `?workspaceId=${nocWorkspaceId}` : '';
+          const devRes = await apiFetch(`${apiUrl}/api/devices${devParams}`);
           if (devRes.ok) {
             const devData = await devRes.json();
             setDevices(devData || []);
@@ -78,7 +84,9 @@ const AddPppoeSecretModal = ({
   // Fetch profiles when device changes
   useEffect(() => {
     if (isOpen && selectedDeviceId) {
-      const targetWorkspaceId = nocWorkspaceId || "";
+      const deviceWorkspaceId = getDeviceWorkspaceId(parseInt(selectedDeviceId));
+      const targetWorkspaceId = nocWorkspaceId || deviceWorkspaceId || user?.workspace_id || "";
+      
       const fetchProfiles = async () => {
         try {
           const res = await apiFetch(`${apiUrl}/api/pppoe/profiles?workspaceId=${targetWorkspaceId}&deviceId=${selectedDeviceId}`);
@@ -99,10 +107,11 @@ const AddPppoeSecretModal = ({
 
   const getNextIpForProfile = useCallback(
     async (profileName: string) => {
-      if (!profileName || !useStaticIp) return;
+      if (!profileName || !useStaticIp || !selectedDeviceId) return;
       setError("");
       try {
-        const targetWorkspaceId = nocWorkspaceId || "";
+        const deviceWorkspaceId = getDeviceWorkspaceId(parseInt(selectedDeviceId));
+        const targetWorkspaceId = nocWorkspaceId || deviceWorkspaceId || user?.workspace_id || "";
         const response = await apiFetch(`${apiUrl}/api/pppoe/next-ip?profile=${encodeURIComponent(profileName)}&workspaceId=${targetWorkspaceId}&deviceId=${selectedDeviceId}`);
         const data = await response.json();
         if (!response.ok) throw new Error(data.message);
@@ -148,7 +157,8 @@ const AddPppoeSecretModal = ({
     setLoading(true);
     setError("");
     try {
-      const targetWorkspaceId = nocWorkspaceId || "";
+      const deviceWorkspaceId = selectedDeviceId ? getDeviceWorkspaceId(parseInt(selectedDeviceId)) : null;
+      const targetWorkspaceId = nocWorkspaceId || deviceWorkspaceId || user?.workspace_id || "";
       const res = await apiFetch(`${apiUrl}/api/pppoe/secrets?workspaceId=${targetWorkspaceId}&deviceId=${selectedDeviceId}`, {
         method: "POST",
         body: JSON.stringify({ ...formData, service: "pppoe" }),

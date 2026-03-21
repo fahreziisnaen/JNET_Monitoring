@@ -4,12 +4,6 @@ import React, { createContext, useContext, useState, useEffect, useRef, useMemo,
 import { useAuth } from './auth-provider';
 import { apiFetch, getAuthToken } from '@/utils/api';
 
-const MikrotikContext = createContext<any>(null);
-
-export const useMikrotik = () => {
-    return useContext(MikrotikContext);
-};
-
 interface DeviceData {
     pppoeSecrets: any[];
     resource: any;
@@ -18,6 +12,32 @@ interface DeviceData {
     isConnected: boolean;
     workspaceId?: number;
 }
+
+interface MikrotikContextType {
+    allDevicesData: Record<number, DeviceData>;
+    allStatus: Record<number, { isConnected: boolean }>;
+    selectedDeviceIds: number[];
+    setSelectedDeviceIds: (deviceIds: number[]) => void;
+    selectedDeviceId: number | null;
+    setSelectedDeviceId: (deviceId: number) => void;
+    isLoaded: boolean;
+    pppoeSecrets: any[];
+    resource: any;
+    isConnected: boolean;
+    toggleDeviceId: (deviceId: number) => void;
+    forceRefresh: (deviceId?: number) => void;
+    getDeviceWorkspaceId: (deviceId: number) => number | null;
+}
+
+const MikrotikContext = createContext<MikrotikContextType | null>(null);
+
+export const useMikrotik = () => {
+    const context = useContext(MikrotikContext);
+    if (!context) {
+        throw new Error('useMikrotik must be used within a MikrotikProvider');
+    }
+    return context;
+};
 
 const DEFAULT_DEVICE_DATA: DeviceData = {
     pppoeSecrets: [],
@@ -359,7 +379,11 @@ export const MikrotikProvider = ({ children }: { children: React.ReactNode }) =>
         });
     }, [selectedDeviceIds]);
 
-    const value = {
+    const getDeviceWorkspaceId = useCallback((deviceId: number) => {
+        return deviceDataRef.current.get(deviceId)?.workspaceId || null;
+    }, []);
+
+    const value: MikrotikContextType = {
         allDevicesData: allDevicesData.dataMap,
         allStatus: allDevicesData.allStatus,
         selectedDeviceIds,
@@ -372,6 +396,7 @@ export const MikrotikProvider = ({ children }: { children: React.ReactNode }) =>
         isConnected: selectedDeviceIds[0] ? (allDevicesData.dataMap[selectedDeviceIds[0]]?.isConnected || false) : false,
         toggleDeviceId,
         forceRefresh,
+        getDeviceWorkspaceId,
     };
 
     return <MikrotikContext.Provider value={value}>{children}</MikrotikContext.Provider>;

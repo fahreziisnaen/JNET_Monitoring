@@ -17,7 +17,7 @@ interface EditPppoeSecretModalProps {
 }
 
 const EditPppoeSecretModal = ({ isOpen, onClose, onSuccess, secretToEdit, nocWorkspaceId }: EditPppoeSecretModalProps) => {
-  const { pppoeSecrets } = useMikrotik() || { pppoeSecrets: [] };
+  const { pppoeSecrets, getDeviceWorkspaceId } = useMikrotik();
   const [formData, setFormData] = useState({ name: '', password: '', profile: '' });
   const [profiles, setProfiles] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
@@ -27,8 +27,9 @@ const EditPppoeSecretModal = ({ isOpen, onClose, onSuccess, secretToEdit, nocWor
 
   // Cache key berbasis workspaceId target (per workspace device yang diedit, bukan workspace user yang login)
   const { user } = useAuth();
-  // workspaceId dari secretToEdit (NOC) atau dari props nocWorkspaceId, atau dari user sendiri
-  const targetWorkspaceId = secretToEdit?.workspace_id || nocWorkspaceId || user?.workspace_id || 'default';
+  const deviceWorkspaceId = secretToEdit?.deviceId ? getDeviceWorkspaceId(secretToEdit.deviceId) : null;
+  // workspaceId dari secretToEdit (NOC) atau dari props nocWorkspaceId, atau dari mapping device, atau dari user sendiri
+  const targetWorkspaceId = secretToEdit?.workspace_id || nocWorkspaceId || deviceWorkspaceId || user?.workspace_id || 'default';
   const targetDeviceId = secretToEdit?.deviceId;
   const profilesCacheKey = `pppoe-profiles-ws-${targetWorkspaceId}-dev-${targetDeviceId || 'all'}`;
   const CACHE_TTL = 5 * 60 * 1000; // 5 menit cache
@@ -101,7 +102,7 @@ const EditPppoeSecretModal = ({ isOpen, onClose, onSuccess, secretToEdit, nocWor
       // Cek apakah profile berubah
       const profileChanged = formData.profile !== secretToEdit.profile;
 
-      let queryParams = nocWorkspaceId ? `?workspaceId=${nocWorkspaceId}` : '';
+      let queryParams = targetWorkspaceId && targetWorkspaceId !== 'default' ? `?workspaceId=${targetWorkspaceId}` : '';
       if (secretToEdit.deviceId) {
         queryParams += queryParams ? `&deviceId=${secretToEdit.deviceId}` : `?deviceId=${secretToEdit.deviceId}`;
       }

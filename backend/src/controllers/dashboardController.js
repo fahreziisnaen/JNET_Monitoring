@@ -20,8 +20,8 @@ exports.getSnapshot = async (req, res) => {
             if (isSuper && !req.query.workspaceId) {
                 // Superadmin gets ALL snapshots in the system
                 [snapshots] = await pool.query('SELECT * FROM dashboard_snapshot');
-            } else if (user.role === 'noc' && !req.query.workspaceId) {
-                // NOC get snapshots for authorized workspaces
+            } else if ((user.role === 'noc' || user.role === 'admin') && !req.query.workspaceId) {
+                // NOC/Admin get snapshots for authorized workspaces (including their own)
                 const [perms] = await pool.query('SELECT workspace_id FROM noc_permissions WHERE user_id = ?', [user.id]);
                 const authorizedIds = [user.workspace_id, ...perms.map(p => p.workspace_id)];
                 [snapshots] = await pool.query('SELECT * FROM dashboard_snapshot WHERE workspace_id IN (?)', [authorizedIds]);
