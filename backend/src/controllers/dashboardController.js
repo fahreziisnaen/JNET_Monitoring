@@ -1,4 +1,5 @@
 const pool = require('../config/database');
+const mikrotikStore = require('../utils/mikrotikStore');
 
 /**
  * Get dashboard snapshot untuk instant load
@@ -18,7 +19,7 @@ exports.getSnapshot = async (req, res) => {
         // Jika deviceId tidak diberikan, ambil snapshot batch
         if (!deviceId) {
             let snapshots;
-            const summaryColumns = 'device_id, workspace_id, resource, traffic, updated_at';
+            const summaryColumns = 'device_id, workspace_id, resource, traffic, pppoe_active, updated_at';
             const allColumns = '*';
             const cols = isSummary ? summaryColumns : allColumns;
 
@@ -49,21 +50,41 @@ exports.getSnapshot = async (req, res) => {
                 }
             };
 
-                    const pppoeActive = parseJsonField(s.pppoe_active) || [];
-                    const activeCount = pppoeActive.filter(u => !u.disabled).length;
-                    
-                    const item = {
-                        deviceId: s.device_id,
-                        workspaceId: s.workspace_id,
-                        resource: parseJsonField(s.resource),
-                        traffic: parseJsonField(s.traffic) || {},
-                        pppoeSecrets: isSummary ? [] : pppoeActive,
-                        // Add metadata for fast summaries
-                        totalUsers: pppoeActive.length, // pppoe_active currently contains all secrets in this project's snapshots
-                        activeUsers: activeCount,
-                        activeInterfaces: parseJsonField(s.active_interfaces) || [],
-                        updatedAt: s.updated_at
-                    };
+            const mappedSnapshots = snapshots.map(s => {
+                const pppoeActive = parseJsonField(s.pppoe_active) || [];
+                // MikroTik returns "false" as string, but DB might store as 0 or boolean false
+                let activeCount = pppoeActive.filter(u => 
+                    u.isActive && (u.disabled === 'false' || u.disabled === false || u.disabled === 0 || u.disabled === 'no')
+                ).length;
+                
+                let resource = parseJsonField(s.resource);
+                let traffic = parseJsonField(s.traffic) || {};
+                let totalUsers = pppoeActive.length;
+
+                // OVERRIDE DENGAN DATA LIVE DARI RAM (JIKA ADA)
+                const liveResource = mikrotikStore.getResource(s.workspace_id, s.device_id);
+                if (liveResource && Object.keys(liveResource).length > 0) {
+                    resource = liveResource;
+                    const liveSecrets = mikrotikStore.getSecrets(s.workspace_id, s.device_id);
+                    if (liveSecrets && liveSecrets.length > 0) {
+                        const liveActive = mikrotikStore.getActive(s.workspace_id, s.device_id);
+                        totalUsers = liveSecrets.length;
+                        activeCount = liveActive.length;
+                    }
+                }
+                
+                return {
+                    deviceId: s.device_id,
+                    workspaceId: s.workspace_id,
+                    resource,
+                    traffic,
+                    pppoeSecrets: isSummary ? [] : pppoeActive,
+                    totalUsers,
+                    activeUsers: activeCount,
+                    activeInterfaces: parseJsonField(s.active_interfaces) || [],
+                    updatedAt: s.updated_at
+                };
+            });
 
             return res.json(mappedSnapshots);
         }
