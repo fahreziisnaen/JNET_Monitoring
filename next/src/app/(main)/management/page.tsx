@@ -56,12 +56,20 @@ const ManagementPage = () => {
       setLoading(false);
     } else {
       // Tunggu sebentar sebelum menunjukkan offline, untuk memberi waktu WS konek
+      // Kurangi ke 1 detik agar transisi lebih cepat
       const timer = setTimeout(() => {
         setLoading(false);
-      }, 2000);
+      }, 1000);
       return () => clearTimeout(timer);
     }
   }, [isConnected, forceRefresh]);
+
+  // Set loading true saat ganti device agar UI tidak menampilkan data lama/offline secara instan
+  useEffect(() => {
+    if (selectedDeviceId) {
+      setLoading(true);
+    }
+  }, [selectedDeviceId]);
 
   // Tidak perlu fetchSummary lagi, semua data dari WebSocket
   const fetchSummary = useCallback(async () => {

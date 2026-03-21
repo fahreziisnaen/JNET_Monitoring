@@ -134,6 +134,16 @@ export const MikrotikProvider = ({ children }: { children: React.ReactNode }) =>
                             ws.send(JSON.stringify({ type: 'force-refresh', target: 'secrets' }));
                         }
                     }
+                } else if (message.type === 'connection-status' && message.payload) {
+                    const connected = message.payload.status === 'connected';
+                    updateDeviceData(deviceId, { isConnected: connected });
+                    
+                    // Forward event for toast notifications
+                    if (selectedDeviceIds.includes(deviceId)) {
+                        window.dispatchEvent(new CustomEvent('mikrotik-connection-status', {
+                            detail: message.payload
+                        }));
+                    }
                 } else if (message.type === 'downtime-notification' && message.payload) {
                     window.dispatchEvent(new CustomEvent('downtime-notification', { detail: message.payload }));
                 } else if (message.type === 'reconnect-notification' && message.payload) {
@@ -199,7 +209,7 @@ export const MikrotikProvider = ({ children }: { children: React.ReactNode }) =>
             ? `${apiUrl}/api/dashboard/snapshot` 
             : `${apiUrl}/api/dashboard/snapshot?workspaceId=${user.workspace_id}`;
 
-        // 1. Fetch ALL snapshots for the workspace in ONE request
+        // 1. Fetch ALL snapshots for the workspace for instant data
         apiFetch(snapshotUrl)
             .then(res => res.ok ? res.json() : [])
             .then((snapshots: any[]) => {
@@ -214,10 +224,26 @@ export const MikrotikProvider = ({ children }: { children: React.ReactNode }) =>
                             workspaceId: s.workspace_id,
                         });
                     });
-                    triggerRender();
                 }
                 
-                // 2. Load selected devices from localStorage
+                // 2. Fetch ALL authorized devices to build a reliable Workspace ID mapping
+                // This is crucial for Superadmins when selecting a device from another workspace
+                return apiFetch(`${apiUrl}/api/devices`);
+            })
+            .then(res => res.ok ? res.json() : [])
+            .then((devices: any[]) => {
+                if (Array.isArray(devices)) {
+                    devices.forEach(d => {
+                        const existing = deviceDataRef.current.get(d.id) || { ...DEFAULT_DEVICE_DATA };
+                        deviceDataRef.current.set(d.id, {
+                            ...existing,
+                            workspaceId: d.workspace_id
+                        });
+                    });
+                }
+                triggerRender();
+
+                // 3. Load selected devices from localStorage
                 const saved = localStorage.getItem(`selected-devices-v2-${user.workspace_id}`);
                 if (saved) {
                     try {

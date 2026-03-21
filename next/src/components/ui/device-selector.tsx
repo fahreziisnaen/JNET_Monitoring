@@ -73,6 +73,12 @@ export const DeviceSelector: React.FC<DeviceSelectorProps> = ({
   }, [user?.workspace_id]);
 
   const toggleDevice = (deviceId: number) => {
+    // If we're in single-select mode (onDeviceChange provided)
+    if (onDeviceChange) {
+      onDevicesChange([deviceId]);
+      return;
+    }
+
     const nextIds = selectedDeviceIds.includes(deviceId)
       ? selectedDeviceIds.filter(id => id !== deviceId)
       : [...selectedDeviceIds, deviceId];
