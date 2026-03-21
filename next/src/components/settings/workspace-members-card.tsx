@@ -13,7 +13,7 @@ interface Member {
     id: number;
     username: string;
     display_name: string;
-    role: 'admin' | 'user';
+    role: 'admin' | 'user' | 'noc';
     profile_picture_url: string;
     is_owner: number | boolean;
     workspace_id?: number;
@@ -135,19 +135,24 @@ const WorkspaceMembersCard = () => {
         }
     };
 
-    const handleToggleRoleClick = (member: Member) => {
-        const newRole = member.role === 'admin' ? 'user' : 'admin';
-        const label = newRole === 'admin' ? 'Admin' : 'User';
+    const handleRoleChange = (member: Member, newRole: 'admin' | 'user' | 'noc') => {
+        if (member.role === newRole) return;
+        
+        const labels: Record<string, string> = {
+            'admin': 'Admin',
+            'noc': 'NOC',
+            'user': 'User'
+        };
 
         openConfirm(
             "Ubah Role Anggota",
-            `Ubah role ${member.display_name} menjadi ${label}?`,
+            `Ubah role ${member.display_name} menjadi ${labels[newRole]}?`,
             "Ya, Ubah Role",
             () => executeToggleRole(member, newRole)
         );
     };
 
-    const executeToggleRole = async (member: Member, newRole: 'admin' | 'user') => {
+    const executeToggleRole = async (member: Member, newRole: 'admin' | 'user' | 'noc') => {
         setTogglingRoleId(member.id);
         try {
             const res = await apiFetch(`${apiUrl}/api/workspaces/members/${member.id}/role`, {
@@ -192,6 +197,13 @@ const WorkspaceMembersCard = () => {
             return (
                 <span className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider bg-blue-500/10 text-blue-600 px-2 py-0.5 rounded-full border border-blue-500/20">
                     <ShieldCheck size={10} /> Admin
+                </span>
+            );
+        }
+        if (member.role === 'noc') {
+            return (
+                <span className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider bg-emerald-500/10 text-emerald-600 px-2 py-0.5 rounded-full border border-emerald-500/20">
+                    <ShieldCheck size={10} /> NOC
                 </span>
             );
         }
@@ -247,6 +259,10 @@ const WorkspaceMembersCard = () => {
                         <div className="absolute -bottom-1 -right-1 bg-blue-500 rounded-full p-0.5 text-white border-2 border-background">
                             <ShieldCheck size={8} />
                         </div>
+                    ) : member.role === 'noc' ? (
+                        <div className="absolute -bottom-1 -right-1 bg-emerald-500 rounded-full p-0.5 text-white border-2 border-background">
+                            <ShieldCheck size={8} />
+                        </div>
                     ) : null}
                 </div>
                 <div>
@@ -266,19 +282,19 @@ const WorkspaceMembersCard = () => {
 
             <div className="flex items-center gap-1">
                 {canManageRole(member) && (
-                    <Button
-                        variant="ghost"
-                        size="sm"
-                        className="text-primary hover:text-primary hover:bg-primary/10 opacity-0 group-hover:opacity-100 transition-opacity"
-                        onClick={() => handleToggleRoleClick(member)}
-                        disabled={togglingRoleId === member.id}
-                        title={`Ubah ke ${member.role === 'admin' ? 'User' : 'Admin'}`}
-                    >
-                        {togglingRoleId === member.id ? <Loader2 size={16} className="animate-spin" /> : <ArrowRightLeft size={16} />}
-                        <span className="ml-1 hidden sm:inline text-xs">
-                            {member.role === 'admin' ? '→ User' : '→ Admin'}
-                        </span>
-                    </Button>
+                    <div className="opacity-0 group-hover:opacity-100 transition-opacity flex items-center bg-secondary/50 rounded-md p-1 border">
+                        <select
+                            className="bg-transparent text-[11px] font-medium border-none outline-none pr-1 cursor-pointer"
+                            value={member.role}
+                            onChange={(e) => handleRoleChange(member, e.target.value as any)}
+                            disabled={togglingRoleId === member.id}
+                        >
+                            <option value="user">User</option>
+                            <option value="noc">NOC</option>
+                            <option value="admin">Admin</option>
+                        </select>
+                        {togglingRoleId === member.id && <Loader2 size={12} className="animate-spin ml-1" />}
+                    </div>
                 )}
 
                 {canKick(member) && (

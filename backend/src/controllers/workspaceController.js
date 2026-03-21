@@ -244,8 +244,8 @@ exports.updateMemberRole = async (req, res) => {
     const currentUser = req.user;
 
     // Validasi role
-    if (!['admin', 'user'].includes(newRole)) {
-        return res.status(400).json({ message: 'Role harus "admin" atau "user".' });
+    if (!['admin', 'user', 'noc'].includes(newRole)) {
+        return res.status(400).json({ message: 'Role harus "admin", "noc", atau "user".' });
     }
 
     // Tidak bisa ubah role diri sendiri
@@ -271,12 +271,21 @@ exports.updateMemberRole = async (req, res) => {
             }
 
             await pool.query('UPDATE users SET role = ? WHERE id = ?', [newRole, targetUserId]);
+
+            // Jika diubah ke NOC, berikan izin ke workspace tempat dia berada saat ini (jika ada)
+            if (newRole === 'noc' && targetUsers[0].workspace_id) {
+                await pool.query(
+                    'INSERT IGNORE INTO noc_permissions (user_id, workspace_id, granted_by) VALUES (?, ?, ?)',
+                    [targetUserId, targetUsers[0].workspace_id, currentUser.id]
+                );
+            }
+
             return res.status(200).json({
                 message: `Role ${targetUsers[0].display_name} berhasil diubah menjadi ${newRole}.`
             });
         }
 
-        // Admin biasa: hanya bisa ubah role anggota di workspace sendiri
+        // Admin/Owner: hanya bisa ubah role anggota di workspace sendiri
         const workspaceId = currentUser.workspace_id;
 
         const [targetUsers] = await pool.query(
@@ -294,6 +303,15 @@ exports.updateMemberRole = async (req, res) => {
         }
 
         await pool.query('UPDATE users SET role = ? WHERE id = ?', [newRole, targetUserId]);
+
+        // Jika diubah ke NOC, otomatis berikan izin ke workspace ini
+        if (newRole === 'noc') {
+            await pool.query(
+                'INSERT IGNORE INTO noc_permissions (user_id, workspace_id, granted_by) VALUES (?, ?, ?)',
+                [targetUserId, workspaceId, currentUser.id]
+            );
+        }
+
         res.status(200).json({
             message: `Role ${targetUsers[0].display_name} berhasil diubah menjadi ${newRole}.`
         });
