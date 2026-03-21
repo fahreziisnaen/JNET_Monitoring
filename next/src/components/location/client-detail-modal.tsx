@@ -73,10 +73,13 @@ interface ClientDetailModalProps {
 }
 
 const formatDate = (dateString: string) => {
-  return new Date(dateString).toLocaleString('id-ID', {
-    dateStyle: 'medium',
-    timeStyle: 'short'
-  });
+  return new Date(dateString).toLocaleString('en-GB', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit'
+  }).replace(',', '');
 };
 
 const formatDuration = (totalSeconds: number) => {
