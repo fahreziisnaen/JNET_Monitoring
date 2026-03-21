@@ -16,7 +16,7 @@ interface DeviceData {
 
 interface MikrotikContextType {
     allDevicesData: Record<number, DeviceData>;
-    allStatus: Record<number, { isConnected: boolean }>;
+    allDevicesStatus: Record<number, { isConnected: boolean }>;
     selectedDeviceIds: number[];
     setSelectedDeviceIds: (deviceIds: number[]) => void;
     selectedDeviceId: number | null;
@@ -366,12 +366,12 @@ export const MikrotikProvider = ({ children }: { children: React.ReactNode }) =>
             dataMap[id] = data;
         });
 
-        const allStatus: Record<number, { isConnected: boolean }> = {};
+        const allDevicesStatus: Record<number, { isConnected: boolean }> = {};
         deviceDataRef.current.forEach((data, id) => {
-            allStatus[id] = { isConnected: data.isConnected };
+            allDevicesStatus[id] = { isConnected: data.isConnected };
         });
 
-        return { dataMap, allStatus };
+        return { dataMap, allDevicesStatus };
     }, [tick]);
 
     const forceRefresh = useCallback((deviceId?: number) => {
@@ -390,7 +390,7 @@ export const MikrotikProvider = ({ children }: { children: React.ReactNode }) =>
 
     const value: MikrotikContextType = {
         allDevicesData: allDevicesData.dataMap,
-        allStatus: allDevicesData.allStatus,
+        allDevicesStatus: allDevicesData.allDevicesStatus,
         selectedDeviceIds,
         setSelectedDeviceIds: handleDevicesChange,
         selectedDeviceId: selectedDeviceIds[0] || null,
