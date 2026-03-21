@@ -9,7 +9,7 @@ exports.getAssets = async (req, res) => {
     let workspaceId = req.user.workspace_id;
     
     // Support override for NOC
-    if (req.query.workspaceId && req.user.role === 'admin') {
+    if (req.query.workspaceId && (req.user.role === 'admin' || req.user.role === 'noc')) {
         workspaceId = parseInt(req.query.workspaceId);
     }
 
@@ -577,7 +577,7 @@ exports.getAssetOwners = async (req, res) => {
     let workspaceId = req.user.workspace_id;
     
     // Support override for NOC
-    if (req.query.workspaceId && req.user.role === 'admin') {
+    if (req.query.workspaceId && (req.user.role === 'admin' || req.user.role === 'noc')) {
         workspaceId = parseInt(req.query.workspaceId);
     }
 

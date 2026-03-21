@@ -36,7 +36,7 @@ exports.getClients = async (req, res) => {
     let { workspace_id } = req.user;
     
     // Support override for NOC
-    if (req.query.workspaceId && req.user.role === 'admin') {
+    if (req.query.workspaceId && (req.user.role === 'admin' || req.user.role === 'noc')) {
         workspace_id = parseInt(req.query.workspaceId);
     }
     try {
@@ -186,7 +186,7 @@ exports.getUnlinkedPppoeSecrets = async (req, res) => {
     let { workspace_id } = req.user;
     
     // Support override for NOC
-    if (req.query.workspaceId && req.user.role === 'admin') {
+    if (req.query.workspaceId && (req.user.role === 'admin' || req.user.role === 'noc')) {
         workspace_id = parseInt(req.query.workspaceId);
     }
     
@@ -247,7 +247,7 @@ exports.createClient = async (req, res) => {
     let { workspace_id } = req.user;
 
     // Support override for NOC
-    if (req.query.workspaceId && req.user.role === 'admin') {
+    if (req.query.workspaceId && (req.user.role === 'admin' || req.user.role === 'noc')) {
         workspace_id = parseInt(req.query.workspaceId);
     }
 
@@ -345,7 +345,7 @@ exports.updateClient = async (req, res) => {
     let { workspace_id } = req.user;
 
     // Support override for NOC
-    if (req.query.workspaceId && req.user.role === 'admin') {
+    if (req.query.workspaceId && (req.user.role === 'admin' || req.user.role === 'noc')) {
         workspace_id = parseInt(req.query.workspaceId);
     }
     
@@ -527,7 +527,7 @@ exports.deleteClient = async (req, res) => {
     let { workspace_id } = req.user;
 
     // Support override for NOC
-    if (req.query.workspaceId && req.user.role === 'admin') {
+    if (req.query.workspaceId && (req.user.role === 'admin' || req.user.role === 'noc')) {
         workspace_id = parseInt(req.query.workspaceId);
     }
 
@@ -583,7 +583,7 @@ exports.getClient = async (req, res) => {
     let { workspace_id } = req.user;
 
     // Support override for NOC
-    if (req.query.workspaceId && req.user.role === 'admin') {
+    if (req.query.workspaceId && (req.user.role === 'admin' || req.user.role === 'noc')) {
         workspace_id = parseInt(req.query.workspaceId);
     }
     

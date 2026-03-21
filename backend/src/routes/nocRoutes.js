@@ -1,13 +1,19 @@
 const express = require('express');
 const router = express.Router();
 const nocController = require('../controllers/nocController');
-const { protect, authorizeSuperAdmin } = require('../middleware/authMiddleware');
+const { protect, authorizeNoc, authorizeSuperAdmin, authorizeAdmin } = require('../middleware/authMiddleware');
 
-// Semua route NOC harus diproteksi dan hanya untuk super admin
+// Semua route NOC harus diproteksi
 router.use(protect);
-router.use(authorizeSuperAdmin);
 
-router.post('/map', nocController.getAggregatedMapData);
-router.post('/secrets', nocController.getAggregatedSecrets);
+// Route untuk fungsionalitas NOC (Bisa diakses NOC, Admin, Super Admin)
+router.get('/my-workspaces', authorizeNoc, nocController.getMyWorkspaces);
+router.post('/map', authorizeNoc, nocController.getAggregatedMapData);
+router.post('/secrets', authorizeNoc, nocController.getAggregatedSecrets);
+
+// Route untuk Management Izin NOC (Hanya Admin/Super Admin)
+router.get('/permissions', authorizeAdmin, nocController.getNocUsers);
+router.post('/permissions/grant', authorizeAdmin, nocController.grantNocAccess);
+router.post('/permissions/revoke', authorizeAdmin, nocController.revokeNocAccess);
 
 module.exports = router;

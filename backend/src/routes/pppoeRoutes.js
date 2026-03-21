@@ -7,17 +7,17 @@ router.use(protect);
 
 router.get('/summary', pppoeController.getSummary);
 router.get('/secrets', pppoeController.getSecrets);
-router.post('/secrets', authorizeAdmin, pppoeController.addSecret);
+router.post('/secrets', authorizeNoc, pppoeController.addSecret);
 router.get('/profiles', pppoeController.getProfiles);
 router.get('/next-ip', pppoeController.getNextIp);
-router.put('/secrets/:id/status', authorizeAdmin, pppoeController.setSecretStatus);
-router.post('/secrets/:id/isolate', authorizeAdmin, pppoeController.isolateSecret);
-router.post('/secrets/:id/unisolate', authorizeAdmin, pppoeController.unisolateSecret);
-router.post('/active/:id/kick', authorizeAdmin, pppoeController.kickActiveUser);
+router.put('/secrets/:id/status', authorizeNoc, pppoeController.setSecretStatus);
+router.post('/secrets/:id/isolate', authorizeNoc, pppoeController.isolateSecret);
+router.post('/secrets/:id/unisolate', authorizeNoc, pppoeController.unisolateSecret);
+router.post('/active/:id/kick', authorizeNoc, pppoeController.kickActiveUser);
 router.get('/secrets/:name/sla', pppoeController.getSlaDetails);
 router.get('/secrets/:name/usage', pppoeController.getUsageHistory);
 router.route('/secrets/:id')
-    .put(authorizeAdmin, pppoeController.updateSecret)
-    .delete(authorizeAdmin, pppoeController.deleteSecret);
+    .put(authorizeNoc, pppoeController.updateSecret)
+    .delete(authorizeNoc, pppoeController.deleteSecret);
 
 module.exports = router;

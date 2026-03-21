@@ -69,6 +69,20 @@ CREATE TABLE `workspaces` (
   KEY `idx_whatsapp_group_id` (`whatsapp_group_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+CREATE TABLE `noc_permissions` (
+  `id` INT NOT NULL AUTO_INCREMENT,
+  `user_id` INT NOT NULL,
+  `workspace_id` INT NOT NULL,
+  `granted_by` INT NOT NULL,
+  `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `unique_noc_workspace` (`user_id`,`workspace_id`),
+  KEY `idx_user_id` (`user_id`),
+  KEY `idx_workspace_id` (`workspace_id`),
+  CONSTRAINT `fk_noc_perm_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_noc_perm_workspace` FOREIGN KEY (`workspace_id`) REFERENCES `workspaces` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 CREATE TABLE `api_keys` (
   `id` int NOT NULL AUTO_INCREMENT,
   `workspace_id` int NOT NULL,
@@ -89,7 +103,7 @@ CREATE TABLE `users` (
    `password_hash` varchar(255) NOT NULL,
   `whatsapp_number` varchar(20) DEFAULT NULL,
   `profile_picture_url` varchar(255) DEFAULT NULL,
-  `role` enum('admin','user') DEFAULT 'admin',
+  `role` enum('admin','user','noc') DEFAULT 'admin',
   `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
   UNIQUE KEY `username` (`username`),

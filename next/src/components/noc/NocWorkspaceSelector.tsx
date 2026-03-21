@@ -21,14 +21,15 @@ const NocWorkspaceSelector: React.FC<NocWorkspaceSelectorProps> = ({ selectedWor
     const [isOpen, setIsOpen] = useState(false);
 
     useEffect(() => {
-        if (user?.is_super_admin && token) {
+        if ((user?.is_super_admin || user?.role === 'noc') && token) {
             fetchWorkspaces();
         }
     }, [user, token]);
 
     const fetchWorkspaces = async () => {
         try {
-            const response = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/api/workspaces/all`, {
+            const endpoint = user?.role === 'noc' ? '/api/noc/my-workspaces' : '/api/workspaces/all';
+            const response = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}${endpoint}`, {
                 headers: {
                     'Authorization': `Bearer ${token}`
                 }

@@ -140,17 +140,33 @@ const protect = async (req, res, next) => {
                 role: dbUser.role || 'user',
                 is_owner: dbUser.is_owner,
                 is_super_admin: dbUser.is_super_admin,
+                is_noc: dbUser.role === 'noc',
                 jti: dbUser.jti
             };
 
-            // --- SUPER ADMIN WORKSPACE OVERRIDE ---
-            // If the user is a superadmin, and explicitly passed a workspaceId in the body or query,
-            // temporarily override their active workspace context just for this request.
-            // This enables cross-workspace NOC actions seamlessly.
-            if (req.user.is_super_admin) {
-                const targetWorkspaceId = (req.body && req.body.workspaceId) || (req.query && req.query.workspaceId);
-                if (targetWorkspaceId) {
+            // --- ROLE-BASED WORKSPACE OVERRIDE ---
+            // If the user is a superadmin or NOC, and explicitly passed a workspaceId,
+            // check if they are allowed to access it.
+            const targetWorkspaceId = (req.body && req.body.workspaceId) || (req.query && req.query.workspaceId);
+            if (targetWorkspaceId && targetWorkspaceId != req.user.workspace_id) {
+                if (req.user.is_super_admin) {
+                    // SuperAdmin can access any workspace
                     req.user.workspace_id = parseInt(targetWorkspaceId, 10);
+                } else if (req.user.is_noc) {
+                    // NOC can only access workspaces where they have been granted permission
+                    const [perms] = await pool.query(
+                        'SELECT id FROM noc_permissions WHERE user_id = ? AND workspace_id = ?',
+                        [req.user.id, targetWorkspaceId]
+                    );
+                    if (perms.length > 0) {
+                        req.user.workspace_id = parseInt(targetWorkspaceId, 10);
+                        console.log(`[Auth Middleware] NOC user ${req.user.id} workspace override to ${targetWorkspaceId} SUCCESS`);
+                    } else {
+                        console.warn(`[Auth Middleware] NOC user ${req.user.id} attempted unauthorized access to workspace ${targetWorkspaceId}`);
+                        // Optionally: return 403 here? Or just ignore the override and stay in their default workspace?
+                        // For NOC, if they explicitly sent a workspaceId and don't have permission, 403 is safer.
+                        return res.status(403).json({ message: 'Akses ditolak. Anda tidak memiliki izin untuk workspace ini.' });
+                    }
                 }
             }
 
@@ -199,4 +215,12 @@ const authorizeSuperAdmin = (req, res, next) => {
     }
 };
 
-module.exports = { protect, authorizeAdmin, authorizeSuperAdmin };
+const authorizeNoc = (req, res, next) => {
+    if (req.user && (req.user.role === 'noc' || req.user.role === 'admin' || req.user.is_owner || req.user.is_super_admin)) {
+        next();
+    } else {
+        res.status(403).json({ message: 'Akses ditolak. Fitur ini memerlukan akses NOC atau Admin.' });
+    }
+};
+
+module.exports = { protect, authorizeAdmin, authorizeSuperAdmin, authorizeNoc };

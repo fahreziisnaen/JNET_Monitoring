@@ -25,16 +25,16 @@ const NocPage = () => {
 
     const activeWorkspaces = allWorkspaces.filter(ws => selectedWorkspaceIds.includes(ws.id));
 
-    // Proteksi rute NOC hanya untuk superadmin
+    // Proteksi rute NOC hanya untuk superadmin dan role noc
     useEffect(() => {
         if (user === null) {
             router.push('/login');
-        } else if (user && !user.is_super_admin) {
+        } else if (user && !user.is_super_admin && user.role !== 'noc') {
             router.push('/dashboard');
         }
     }, [user, router]);
 
-    if (!user?.is_super_admin) {
+    if (!user?.is_super_admin && user?.role !== 'noc') {
         return (
             <div className="flex items-center justify-center min-h-screen">
                 <p className="text-muted-foreground animate-pulse">Memuat Network Operations Center...</p>

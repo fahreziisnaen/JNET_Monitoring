@@ -20,6 +20,7 @@ import MapLegend from '@/components/location/map-legend';
 import MapFilterPanel from '@/components/location/map-filter-panel';
 import { apiFetch, getAuthToken } from '@/utils/api';
 import { useMikrotik } from '@/components/providers/mikrotik-provider';
+import { useAuth } from '@/components/providers/auth-provider';
 import { toast } from 'sonner';
 import { usePageTitle } from '@/hooks/usePageTitle';
 
@@ -58,6 +59,9 @@ interface LocationManagerProps {
 }
 
 const LocationManager: React.FC<LocationManagerProps> = ({ isNocMode = false, nocWorkspaces = [] }) => {
+  const { user } = useAuth();
+  const isNocRole = user?.role === 'noc';
+  
   const nocWorkspaceIds = nocWorkspaces.map(w => w.id);
   usePageTitle(isNocMode ? '' : 'Peta Lokasi');
   const [activeFilter, setActiveFilter] = useState('all');
@@ -563,6 +567,10 @@ const LocationManager: React.FC<LocationManagerProps> = ({ isNocMode = false, no
 
   const handleDeleteConfirm = async () => {
     if (!selectedAsset) return;
+    if (isNocRole) {
+      toast.error("Akses Ditolak", { description: "User NOC tidak diperbolehkan menghapus aset infrastruktur." });
+      return;
+    }
     try {
       const apiUrl = process.env.NEXT_PUBLIC_API_BASE_URL;
       const wsParam = (isNocMode && selectedAsset.workspace_id) ? `?workspaceId=${selectedAsset.workspace_id}` : '';
@@ -1307,8 +1315,8 @@ const LocationManager: React.FC<LocationManagerProps> = ({ isNocMode = false, no
             onClose={() => setIsDetailModalOpen(false)}
             asset={selectedAsset}
             onEdit={handleEdit}
-            onDelete={handleDelete}
-            onAddConnection={handleAddConnection}
+            onDelete={isNocRole ? undefined : handleDelete}
+            onAddConnection={isNocRole ? undefined : handleAddConnection}
             onEditPath={(asset: Asset) => handleStartEditPath('asset', asset)}
             nocWorkspaceId={isNocMode ? selectedAsset.workspace_id : undefined}
           />

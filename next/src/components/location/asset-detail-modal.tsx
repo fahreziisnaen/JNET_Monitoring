@@ -31,8 +31,8 @@ interface AssetDetailModalProps {
   asset: Asset | null;
   onClose: () => void;
   onEdit: (_asset: Asset) => void;
-  onDelete: (_asset: Asset) => void;
-  onAddConnection: (_asset: Asset) => void;
+  onDelete?: (_asset: Asset) => void;
+  onAddConnection?: (_asset: Asset) => void;
   onEditPath?: (_asset: Asset) => void;
   nocWorkspaceId?: number;
 }
@@ -250,17 +250,19 @@ const AssetDetailModal = ({
                   >
                     <Edit size={16} />
                   </Button>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={() => onDelete(asset)}
-                    className="text-muted-foreground hover:text-destructive"
-                    title="Hapus Aset"
-                  >
-                    <Trash2 size={16} />
-                  </Button>
+                  {onDelete && (
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => onDelete(asset)}
+                      className="text-muted-foreground hover:text-destructive"
+                      title="Hapus Aset"
+                    >
+                      <Trash2 size={16} />
+                    </Button>
+                  )}
                 </div>
-                {asset.type === "ODP" && (
+                {(asset.type === "ODP" && onAddConnection) && (
                   <Button onClick={() => onAddConnection(asset)}>
                     <PlusCircle size={16} className="mr-2" /> Tambah Koneksi
                   </Button>

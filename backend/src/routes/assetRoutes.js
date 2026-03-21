@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const assetController = require('../controllers/assetController');
-const { protect, authorizeAdmin } = require('../middleware/authMiddleware');
+const { protect, authorizeAdmin, authorizeNoc } = require('../middleware/authMiddleware');
 const uploadAsset = require('../middleware/uploadAsset');
 
 router.use(protect);
@@ -23,8 +23,8 @@ router.route('/:id/connections')
     .post(authorizeAdmin, assetController.addAssetConnection);
 
 router.route('/:id')
-    .put(authorizeAdmin, uploadAsset.single('photo'), assetController.updateAsset)
-    .patch(authorizeAdmin, uploadAsset.single('photo'), assetController.updateAsset)
+    .put(authorizeNoc, uploadAsset.single('photo'), assetController.updateAsset)
+    .patch(authorizeNoc, uploadAsset.single('photo'), assetController.updateAsset)
     .delete(authorizeAdmin, assetController.deleteAsset);
 
 module.exports = router;

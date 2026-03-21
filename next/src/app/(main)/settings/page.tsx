@@ -9,6 +9,7 @@ import ActiveSessionsCard from '@/components/settings/active-sessions-card';
 import WhatsappBotCard from '@/components/settings/whatsapp-bot-card';
 import JoinWorkspaceCard from '@/components/settings/join-workspace-card';
 import WorkspaceMembersCard from '@/components/settings/workspace-members-card';
+import NocAccessCard from '@/components/settings/noc-access-card';
 import BackupRestoreCard from '@/components/settings/backup-restore-card';
 import ApiKeyManagementCard from '@/components/settings/api-key-management-card';
 import { usePageTitle } from '@/hooks/usePageTitle';
@@ -35,6 +36,7 @@ const SettingsPage = () => {
         <DeviceManagementCard />
         <JoinWorkspaceCard />
         <WorkspaceMembersCard />
+        <NocAccessCard />
         <WhatsappBotCard />
         <ApiKeyManagementCard />
         <BackupRestoreCard />

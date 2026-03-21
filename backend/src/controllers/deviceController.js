@@ -6,7 +6,7 @@ exports.listDevices = async (req, res) => {
     let workspaceId = req.user.workspace_id;
     
     // Dukungan override workspaceId untuk NOC
-    if (req.query.workspaceId && req.user.role === 'admin') {
+    if (req.query.workspaceId && (req.user.role === 'admin' || req.user.role === 'noc')) {
         workspaceId = parseInt(req.query.workspaceId);
     }
 
@@ -74,7 +74,7 @@ exports.updateDevice = async (req, res) => {
     let workspaceId = req.user.workspace_id;
     
     // Dukungan override workspaceId untuk NOC
-    if (req.query.workspaceId && req.user.role === 'admin') {
+    if (req.query.workspaceId && (req.user.role === 'admin' || req.user.role === 'noc')) {
         workspaceId = parseInt(req.query.workspaceId);
     }
 
@@ -133,7 +133,7 @@ exports.deleteDevice = async (req, res) => {
     let workspaceId = req.user.workspace_id;
 
     // Dukungan override workspaceId untuk NOC
-    if (req.query.workspaceId && req.user.role === 'admin') {
+    if (req.query.workspaceId && (req.user.role === 'admin' || req.user.role === 'noc')) {
         workspaceId = parseInt(req.query.workspaceId);
     }
 

@@ -228,3 +228,98 @@ exports.getAggregatedSecrets = async (req, res) => {
         res.status(500).json({ message: 'Server error retrieving secrets', error: error.message });
     }
 };
+// Mendapatkan daftar workspace yang diijinkan bagi user NOC
+exports.getMyWorkspaces = async (req, res) => {
+    try {
+        const userId = req.user.id;
+        
+        // Super admin bisa melihat semua workspace
+        if (req.user.is_super_admin) {
+            const [workspaces] = await pool.query('SELECT id, name FROM workspaces');
+            return res.json(workspaces);
+        }
+
+        // NOC user hanya melihat yang diijinkan
+        const [workspaces] = await pool.query(`
+            SELECT w.id, w.name 
+            FROM workspaces w
+            JOIN noc_permissions np ON w.id = np.workspace_id
+            WHERE np.user_id = ?
+        `, [userId]);
+
+        res.json(workspaces);
+    } catch (error) {
+        console.error('[NOC Controller] Error in getMyWorkspaces:', error);
+        res.status(500).json({ message: 'Server error retrieving your workspaces' });
+    }
+};
+
+// Mendapatkan daftar user yang memiliki akses NOC ke suatu workspace (untuk Management UI)
+exports.getNocUsers = async (req, res) => {
+    try {
+        const { workspaceId } = req.query;
+        if (!workspaceId) return res.status(400).json({ message: 'workspaceId is required' });
+
+        const [users] = await pool.query(`
+            SELECT u.id, u.username, u.display_name, u.whatsapp_number, np.created_at
+            FROM users u
+            JOIN noc_permissions np ON u.id = np.user_id
+            WHERE np.workspace_id = ?
+        `, [workspaceId]);
+
+        res.json(users);
+    } catch (error) {
+        console.error('[NOC Controller] Error in getNocUsers:', error);
+        res.status(500).json({ message: 'Server error retrieving NOC users' });
+    }
+};
+
+// Memberikan akses NOC ke user tertentu untuk suatu workspace
+exports.grantNocAccess = async (req, res) => {
+    try {
+        const { username, workspaceId } = req.body;
+        if (!username || !workspaceId) return res.status(400).json({ message: 'username and workspaceId are required' });
+
+        // Cari user berdasarkan username
+        const [users] = await pool.query('SELECT id, role FROM users WHERE username = ? OR whatsapp_number = ?', [username, username]);
+        if (users.length === 0) return res.status(404).json({ message: 'User tidak ditemukan' });
+        
+        const targetUser = users[0];
+
+        // Pastikan role user tersebut adalah 'noc' (opsional: bisa juga otomatis ubah role ke noc?)
+        // Untuk amannya, kita izinkan saja siapapun jadi NOC di workspace ini.
+        
+        await pool.query(
+            'INSERT IGNORE INTO noc_permissions (user_id, workspace_id, granted_by) VALUES (?, ?, ?)',
+            [targetUser.id, workspaceId, req.user.id]
+        );
+
+        // Jika user tersebut tadinya role 'user', kita upgrade ke 'noc' agar bisa melihat menu NOC
+        if (targetUser.role === 'user') {
+            await pool.query('UPDATE users SET role = "noc" WHERE id = ?', [targetUser.id]);
+        }
+
+        res.json({ message: `Berhasil memberikan akses NOC ke ${username}` });
+    } catch (error) {
+        console.error('[NOC Controller] Error in grantNocAccess:', error);
+        res.status(500).json({ message: 'Server error granting NOC access' });
+    }
+};
+
+// Mencabut akses NOC
+exports.revokeNocAccess = async (req, res) => {
+    try {
+        const { userId, workspaceId } = req.body;
+        if (!userId || !workspaceId) return res.status(400).json({ message: 'userId and workspaceId are required' });
+
+        await pool.query(
+            'DELETE FROM noc_permissions WHERE user_id = ? AND workspace_id = ?',
+            [userId, workspaceId]
+        );
+
+        res.json({ message: 'Berhasil mencabut akses NOC' });
+    } catch (error) {
+        console.error('[NOC Controller] Error in revokeNocAccess:', error);
+        res.status(500).json({ message: 'Server error revoking NOC access' });
+    }
+};
