@@ -89,7 +89,6 @@ const DeviceInfoCard = ({ deviceId, data, connected, name }: { deviceId: number,
           <CardTitle className="text-sm font-bold truncate">{name}</CardTitle>
         </div>
         <div className="flex items-center gap-2">
-            <span className="text-[10px] font-bold text-primary px-1.5 py-0.5 bg-primary/10 rounded">{activeSecrets} Act</span>
             {minimized ? <ChevronDown size={14} /> : <ChevronUp size={14} />}
         </div>
       </CardHeader>

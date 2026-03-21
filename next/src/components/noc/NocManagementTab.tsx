@@ -58,7 +58,7 @@ const NocManagementTab: React.FC<NocManagementTabProps> = ({ workspaces }) => {
     const [selectedWorkspaceForAdd, setSelectedWorkspaceForAdd] = useState<number | null>(null);
     const [isNocWorkspaceSelectorOpen, setIsNocWorkspaceSelectorOpen] = useState(false);
 
-    const [lastFetchTime, setLastFetchTime] = useState<number>(0);
+    const lastFetchTimeRef = React.useRef<number>(0);
     const [isInitialLoad, setIsInitialLoad] = useState(true);
     const [uptimeOffset, setUptimeOffset] = useState(0);
     const memoizedSecretToEdit = useMemo(() => {
@@ -108,10 +108,10 @@ const NocManagementTab: React.FC<NocManagementTabProps> = ({ workspaces }) => {
             return;
         }
 
-        // Hindari fetch terlalu sering (debounce manual)
+        // Debounce: hindari fetch terlalu sering
         const now = Date.now();
-        if (now - lastFetchTime < 3000) return;
-        setLastFetchTime(now);
+        if (now - lastFetchTimeRef.current < 2000) return;
+        lastFetchTimeRef.current = now;
 
         // Hanya tampilkan spinner loading pada fetch pertama, bukan saat refresh background
         if (!isBackground) setLoading(true);
@@ -127,13 +127,12 @@ const NocManagementTab: React.FC<NocManagementTabProps> = ({ workspaces }) => {
 
             if (response.ok) {
                 const data = await response.json();
-                // Map device_id (backend) ke deviceId (frontend) untuk konsistensi
                 const mappedSecrets = (data.secrets || []).map((s: any) => ({
                     ...s,
                     deviceId: s.device_id || s.deviceId
                 }));
                 setSecrets(mappedSecrets);
-                setUptimeOffset(0); // Re-sync saat data baru dari server
+                setUptimeOffset(0);
             }
         } catch (error) {
             console.error("Failed to fetch NOC secrets", error);
@@ -141,22 +140,19 @@ const NocManagementTab: React.FC<NocManagementTabProps> = ({ workspaces }) => {
             setLoading(false);
             setIsInitialLoad(false);
         }
-    }, [workspaceIds, token, lastFetchTime]);
+    }, [workspaceIds, token]);
 
-    // Polling data every 5 seconds for NOC view (slower than regular websocket but good enough for multi-workspace)
-    // Reset lastFetchTime when workspaceIds changes so filter switch always triggers a fresh fetch
+    // Reset debounce ref saat workspaceIds berubah agar filter switch langsung fetch
     useEffect(() => {
-        setLastFetchTime(0);
+        lastFetchTimeRef.current = 0;
     }, [workspaceIds.join(',')]);
 
     useEffect(() => {
         fetchSecrets(false); // first load shows spinner
 
         const interval = setInterval(() => {
-            // Reset last fetch time to allow interval to run
-            setLastFetchTime(0);
             fetchSecrets(true); // background refresh — no spinner
-        }, 5000);
+        }, 3000);
 
         return () => clearInterval(interval);
     }, [fetchSecrets]);
