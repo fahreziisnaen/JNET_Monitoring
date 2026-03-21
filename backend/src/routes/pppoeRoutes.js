@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const pppoeController = require('../controllers/pppoeController');
-const { protect, authorizeAdmin } = require('../middleware/authMiddleware');
+const { protect, authorizeAdmin, authorizeNoc } = require('../middleware/authMiddleware');
 
 router.use(protect);
 
