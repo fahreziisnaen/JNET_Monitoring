@@ -193,8 +193,8 @@ export const MikrotikProvider = ({ children }: { children: React.ReactNode }) =>
 
         const apiUrl = process.env.NEXT_PUBLIC_API_BASE_URL;
         
-        // 1. Fetch ALL snapshots for the workspace in ONE request
-        apiFetch(`${apiUrl}/api/dashboard/snapshot?workspaceId=${user.workspace_id}`)
+        // 1. Fetch ALL snapshots for authorized devices (Superadmin gets all, NOC gets permitted)
+        apiFetch(`${apiUrl}/api/dashboard/snapshot`)
             .then(res => res.ok ? res.json() : [])
             .then((snapshots: any[]) => {
                 if (Array.isArray(snapshots)) {
