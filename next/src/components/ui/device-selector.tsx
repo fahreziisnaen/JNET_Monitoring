@@ -22,16 +22,23 @@ interface Device {
 }
 
 interface DeviceSelectorProps {
-  selectedDeviceIds: number[];
-  onDevicesChange: (deviceIds: number[]) => void;
+  selectedDeviceIds?: number[];
+  onDevicesChange?: (deviceIds: number[]) => void;
+  // Backward compatibility
+  selectedDeviceId?: number | null;
+  onDeviceChange?: (deviceId: number) => void;
   className?: string;
 }
 
 export const DeviceSelector: React.FC<DeviceSelectorProps> = ({
-  selectedDeviceIds,
-  onDevicesChange,
+  selectedDeviceIds: propsSelectedDeviceIds,
+  onDevicesChange: propsOnDevicesChange,
+  selectedDeviceId,
+  onDeviceChange,
   className = ''
 }) => {
+  const selectedDeviceIds = propsSelectedDeviceIds || (selectedDeviceId ? [selectedDeviceId] : []);
+  const onDevicesChange = propsOnDevicesChange || (onDeviceChange ? (ids: number[]) => onDeviceChange(ids[0]) : () => {});
   const { user } = useAuth();
   const [devices, setDevices] = useState<Device[]>([]);
   const [loading, setLoading] = useState(true);

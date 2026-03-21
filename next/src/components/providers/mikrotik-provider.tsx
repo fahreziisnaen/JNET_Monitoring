@@ -277,6 +277,11 @@ export const MikrotikProvider = ({ children }: { children: React.ReactNode }) =>
         });
     }, [user?.workspace_id]);
 
+    // setSelectedDeviceId (singular) for backward compatibility
+    const handleDeviceChange = useCallback((deviceId: number) => {
+        handleDevicesChange([deviceId]);
+    }, [handleDevicesChange]);
+
     // Derive aggregated data for context
     const allDevicesData = useMemo(() => {
         // eslint-disable-next-line @typescript-eslint/no-unused-expressions
@@ -310,6 +315,8 @@ export const MikrotikProvider = ({ children }: { children: React.ReactNode }) =>
         allStatus: allDevicesData.allStatus,
         selectedDeviceIds,
         setSelectedDeviceIds: handleDevicesChange,
+        selectedDeviceId: selectedDeviceIds[0] || null,
+        setSelectedDeviceId: handleDeviceChange,
         toggleDeviceId,
         forceRefresh,
     };
