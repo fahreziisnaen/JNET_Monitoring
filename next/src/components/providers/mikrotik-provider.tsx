@@ -72,7 +72,7 @@ export const MikrotikProvider = ({ children }: { children: React.ReactNode }) =>
         const token = getAuthToken();
         if (!token) return;
 
-        const wsUrlWithParams = `${wsUrl}?deviceId=${deviceId}&token=${encodeURIComponent(token)}`;
+        const wsUrlWithParams = `${wsUrl}?deviceId=${deviceId}&workspaceId=${workspaceId}&token=${encodeURIComponent(token)}`;
         let socket: WebSocket;
         try {
             socket = new WebSocket(wsUrlWithParams);
@@ -210,10 +210,10 @@ export const MikrotikProvider = ({ children }: { children: React.ReactNode }) =>
             .then((devices: any[]) => {
                 if (!Array.isArray(devices)) return;
                 devices.forEach((device: any, index: number) => {
-                    if (!device.id) return;
+                    if (!device.id || !device.workspace_id) return;
 
-                    // Load snapshot for instant display (no stagger needed)
-                    apiFetch(`${apiUrl}/api/dashboard/snapshot?deviceId=${device.id}`)
+                    // Load snapshot with explicit workspaceId
+                    apiFetch(`${apiUrl}/api/dashboard/snapshot?deviceId=${device.id}&workspaceId=${device.workspace_id}`)
                         .then(res => res.ok ? res.json() : null)
                         .then(data => {
                             if (!data) return;
@@ -229,10 +229,9 @@ export const MikrotikProvider = ({ children }: { children: React.ReactNode }) =>
                         })
                         .catch(() => {});
 
-                    // Stagger WS connections: 800ms apart to avoid simultaneous
-                    // backend listener initialization race condition
+                    // Connect WS with explicit workspaceId
                     const timer = setTimeout(() => {
-                        if (user) connectDevice(device.id, user.workspace_id!);
+                        if (user) connectDevice(device.id, device.workspace_id);
                     }, index * 800);
                     staggerTimers.push(timer);
                 });

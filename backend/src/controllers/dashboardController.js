@@ -5,11 +5,12 @@ const pool = require('../config/database');
  * Mengembalikan data terbaru yang sudah disimpan di database
  */
 exports.getSnapshot = async (req, res) => {
-    const workspaceId = req.user.workspace_id;
-    const deviceId = req.query.deviceId ? parseInt(req.query.deviceId) : null;
+    // Gunakan workspaceId dari query jika ada (untuk NOC/Superadmin), jika tidak gunakan default dari token
+    let workspaceId = req.query.workspaceId ? parseInt(req.query.workspaceId) : req.user.workspace_id;
+    let deviceId = req.query.deviceId ? parseInt(req.query.deviceId) : null;
     
     try {
-        // Jika deviceId tidak diberikan, gunakan active_device_id (backward compatibility)
+        // Jika deviceId tidak diberikan, cari active_device_id untuk workspace tsb
         if (!deviceId) {
             const [workspaces] = await pool.query('SELECT active_device_id FROM workspaces WHERE id = ?', [workspaceId]);
             if (!workspaces[0]?.active_device_id) {

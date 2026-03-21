@@ -481,8 +481,9 @@ wss.on('connection', (ws, req) => {
             // Cek lagi apakah sudah di-close
             if (checkIfClosed()) return;
 
-            const [users] = await pool.query('SELECT workspace_id FROM users WHERE id = ?', [decoded.id]);
-            if (!users[0]?.workspace_id) {
+            const [users] = await pool.query('SELECT role, workspace_id FROM users WHERE id = ?', [decoded.id]);
+            const userDb = users[0];
+            if (!userDb?.workspace_id) {
                 if (connectionTimeout) {
                     clearTimeout(connectionTimeout);
                     connectionTimeout = null;
@@ -501,7 +502,36 @@ wss.on('connection', (ws, req) => {
             // Cek lagi apakah sudah di-close
             if (checkIfClosed()) return;
 
-            ws.workspaceId = users[0].workspace_id;
+            // Dukungan override workspaceId untuk NOC / Admin / Superadmin
+            let targetWorkspaceId = urlParams.get('workspaceId') ? parseInt(urlParams.get('workspaceId')) : userDb.workspace_id;
+            
+            // Verifikasi izin jika mencoba mengakses workspace lain
+            if (targetWorkspaceId !== userDb.workspace_id) {
+                const { isSuperAdmin } = require('./src/utils/authUtils');
+                const isSuper = isSuperAdmin(decoded.id);
+                
+                if (isSuper) {
+                    // Superadmin bebas
+                } else if (userDb.role === 'noc') {
+                    // NOC butuh izin
+                    const [perms] = await pool.query(
+                        'SELECT id FROM noc_permissions WHERE user_id = ? AND workspace_id = ?',
+                        [decoded.id, targetWorkspaceId]
+                    );
+                    if (perms.length === 0) {
+                        console.warn(`[WebSocket] NOC ${decoded.id} mencoba akses unauthorized workspace ${targetWorkspaceId}`);
+                        if (!checkIfClosed()) ws.close(1008, 'Forbidden: No permission');
+                        return;
+                    }
+                } else {
+                    // Role lain (user biasa) tidak boleh override
+                    console.warn(`[WebSocket] User ${decoded.id} mencoba override workspace tanpa izin.`);
+                    if (!checkIfClosed()) ws.close(1008, 'Forbidden: Unauthorized override');
+                    return;
+                }
+            }
+
+            ws.workspaceId = targetWorkspaceId;
 
             // Parse deviceId dari query string
             const deviceIdParam = urlParams.get('deviceId');

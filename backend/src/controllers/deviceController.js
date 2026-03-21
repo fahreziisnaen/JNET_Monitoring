@@ -3,16 +3,44 @@ const mikrotikStore = require('../utils/mikrotikStore');
 const backgroundMonitor = require('../bot/backgroundMonitor');
 
 exports.listDevices = async (req, res) => {
-    let workspaceId = req.user.workspace_id;
+    const user = req.user;
+    let workspaceId = user.workspace_id;
     
-    // Dukungan override workspaceId untuk NOC
-    if (req.query.workspaceId && (req.user.role === 'admin' || req.user.role === 'noc')) {
+    // Dukungan override workspaceId untuk NOC / Admin (hanya satu workspace)
+    if (req.query.workspaceId && (user.role === 'admin' || user.role === 'noc')) {
         workspaceId = parseInt(req.query.workspaceId);
     }
 
-    if (!workspaceId) return res.json([]);
     try {
-        const [devices] = await pool.query('SELECT id, name, host, user, port FROM mikrotik_devices WHERE workspace_id = ?', [workspaceId]);
+        if (user.role === 'noc' && !req.query.workspaceId) {
+            // Jika NOC dan tidak minta workspace spesifik, tampilkan SEMUA yang diizinkan
+            const [permWorkspaces] = await pool.query(
+                'SELECT workspace_id FROM noc_permissions WHERE user_id = ?',
+                [user.id]
+            );
+            const authorizedIds = [user.workspace_id, ...permWorkspaces.map(p => p.workspace_id)];
+            
+            // Ambil detail device beserta nama workspacenya agar mudah dibedakan di UI
+            const [devices] = await pool.query(`
+                SELECT d.id, d.name, d.host, d.user, d.port, d.workspace_id, w.name as workspace_name 
+                FROM mikrotik_devices d
+                JOIN workspaces w ON d.workspace_id = w.id
+                WHERE d.workspace_id IN (?)
+            `, [authorizedIds]);
+            
+            return res.status(200).json(devices);
+        }
+
+        if (!workspaceId) return res.json([]);
+
+        // Default: Ambil device untuk satu workspace tertentu
+        const [devices] = await pool.query(`
+            SELECT d.id, d.name, d.host, d.user, d.port, d.workspace_id, w.name as workspace_name
+            FROM mikrotik_devices d
+            JOIN workspaces w ON d.workspace_id = w.id
+            WHERE d.workspace_id = ?
+        `, [workspaceId]);
+        
         res.status(200).json(devices);
     } catch (error) {
         console.error('[Device Controller] Error listDevices:', error);
