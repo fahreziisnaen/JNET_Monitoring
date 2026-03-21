@@ -145,25 +145,11 @@ export const MikrotikProvider = ({ children }: { children: React.ReactNode }) =>
                     });
                 } else if (message.type === 'pppoe-update' && message.payload) {
                     const newSecrets = message.payload.pppoeSecrets || [];
+                    // Only update pppoeSecrets — pppoe-update never carries a status field,
+                    // so do NOT read message.payload.status here (it would always be falsy → isConnected: false).
+                    // isConnected is managed exclusively by connection-status messages.
                     if (JSON.stringify(newSecrets) !== JSON.stringify(prev.pppoeSecrets)) {
-                        updateDeviceData(deviceId, { pppoeSecrets: newSecrets, isConnected: true });
-                    }
-                    const connected = message.payload.status === 'connected';
-                    updateDeviceData(deviceId, { isConnected: connected });
-
-                    // Forward event for toast notifications (if device is selected)
-                    if (selectedDeviceIdsRef.current.includes(deviceId)) {
-                        window.dispatchEvent(new CustomEvent('mikrotik-connection-status', {
-                            detail: message.payload
-                        }));
-                    }
-
-                    // Force refresh on reconnect
-                    if (connected) {
-                        const ws = wsPoolRef.current.get(deviceId);
-                        if (ws && ws.readyState === WebSocket.OPEN) {
-                            ws.send(JSON.stringify({ type: 'force-refresh', target: 'secrets' }));
-                        }
+                        updateDeviceData(deviceId, { pppoeSecrets: newSecrets });
                     }
                 } else if (message.type === 'connection-status' && message.payload) {
                     const connected = message.payload.status === 'connected';
