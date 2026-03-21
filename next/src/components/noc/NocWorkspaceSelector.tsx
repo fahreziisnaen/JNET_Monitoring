@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { ArrowRightLeft, Check, ChevronDown, CheckCircle2, ChevronUp } from 'lucide-react';
+import { ArrowRightLeft, Check, ChevronDown, CheckCircle2, ChevronUp, Loader2 } from 'lucide-react';
 import { useAuth } from '../providers/auth-provider';
 
 interface Workspace {
@@ -19,6 +19,7 @@ const NocWorkspaceSelector: React.FC<NocWorkspaceSelectorProps> = ({ selectedWor
     const { token, user } = useAuth();
     const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
     const [isOpen, setIsOpen] = useState(false);
+    const [isLoading, setIsLoading] = useState(false);
 
     useEffect(() => {
         if ((user?.is_super_admin || user?.role === 'noc' || user?.role === 'admin') && token) {
@@ -27,6 +28,7 @@ const NocWorkspaceSelector: React.FC<NocWorkspaceSelectorProps> = ({ selectedWor
     }, [user, token]);
 
     const fetchWorkspaces = async () => {
+        setIsLoading(true);
         try {
             const endpoint = (user?.role === 'noc' || user?.role === 'admin') ? '/api/noc/my-workspaces' : '/api/workspaces/all';
             const response = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}${endpoint}`, {
@@ -46,6 +48,8 @@ const NocWorkspaceSelector: React.FC<NocWorkspaceSelectorProps> = ({ selectedWor
             }
         } catch (error) {
             console.error("Failed to fetch workspaces", error);
+        } finally {
+            setIsLoading(false);
         }
     };
 
@@ -74,7 +78,7 @@ const NocWorkspaceSelector: React.FC<NocWorkspaceSelectorProps> = ({ selectedWor
                 className="w-full bg-card border border-border rounded-lg p-2 sm:p-3 flex justify-between items-center cursor-pointer hover:border-primary/50 transition-colors h-[40px] sm:h-[44px]"
             >
                 <div className="flex items-center gap-1.5 sm:gap-2 overflow-hidden">
-                    <ArrowRightLeft className="text-muted-foreground w-4 h-4 sm:w-5 sm:h-5 shrink-0" />
+                    {isLoading ? <Loader2 className="animate-spin text-primary w-4 h-4 sm:w-5 sm:h-5 shrink-0" /> : <ArrowRightLeft className="text-muted-foreground w-4 h-4 sm:w-5 sm:h-5 shrink-0" />}
                     <span className="font-medium text-xs sm:text-sm truncate">
                         {selectedWorkspaceIds.length === workspaces.length
                             ? 'Semua'

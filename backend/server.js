@@ -134,17 +134,21 @@ const wss = new WebSocket.Server({ server, path: "/ws" });
 function broadcastToWorkspace(workspaceId, deviceId, data) {
     let sentCount = 0;
     wss.clients.forEach((client) => {
-        const isDeviceMatch = !deviceId || client.deviceId == deviceId;
-        if (client.workspaceId == workspaceId && isDeviceMatch && client.readyState === WebSocket.OPEN) {
+        // Standard match: client is in this workspace and device matches (if provided)
+        const isStandardMatch = client.workspaceId == workspaceId && (!deviceId || client.deviceId == deviceId);
+        
+        // NOC match: client has isNoc flag and this workspace is in their monitored list
+        const isNocMatch = client.isNoc && client.monitoredWorkspaceIds?.includes(Number(workspaceId));
+
+        if ((isStandardMatch || isNocMatch) && client.readyState === WebSocket.OPEN) {
             try {
                 client.send(JSON.stringify(data));
                 sentCount++;
             } catch (error) {
-                // Log WS monitoring disabled
+                // Ignore send errors
             }
         }
     });
-    // Log WS monitoring disabled
 }
 
 function stopWorkspaceMonitoring(connectionKey, reason = 'Koneksi terputus') {
@@ -689,6 +693,17 @@ wss.on('connection', (ws, req) => {
                                 payload: { pppoeSecrets: enrichedSecrets }
                             }));
                         }
+                    } else if (data.type === 'subscribe-noc') {
+                        // Dukungan Mode NOC: Satu koneksi memantau banyak workspace
+                        ws.isNoc = true;
+                        ws.monitoredWorkspaceIds = Array.isArray(data.workspaceIds) ? data.workspaceIds.map(Number) : [];
+                        console.log(`[WebSocket] Client beralih ke MODE NOC (Monitoring ${ws.monitoredWorkspaceIds.length} workspace)`);
+                        
+                        // Kirim konfirmasi
+                        ws.send(JSON.stringify({
+                            type: 'noc-ready',
+                            payload: { monitoredWorkspaces: ws.monitoredWorkspaceIds.length }
+                        }));
                     }
                 } catch (e) {
                     // Ignore non-JSON messages

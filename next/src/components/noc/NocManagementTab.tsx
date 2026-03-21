@@ -39,7 +39,7 @@ interface NocManagementTabProps {
 }
 
 const NocManagementTab: React.FC<NocManagementTabProps> = ({ workspaces }) => {
-    const workspaceIds = workspaces.map(w => w.id);
+    const workspaceIds = useMemo(() => workspaces.map(w => w.id), [workspaces]);
     const { token } = useAuth();
     const [secrets, setSecrets] = useState<PppoeSecret[]>([]);
     const [loading, setLoading] = useState(false);
@@ -61,6 +61,7 @@ const NocManagementTab: React.FC<NocManagementTabProps> = ({ workspaces }) => {
     const lastFetchTimeRef = React.useRef<number>(0);
     const [isInitialLoad, setIsInitialLoad] = useState(true);
     const [uptimeOffset, setUptimeOffset] = useState(0);
+    const wsRef = React.useRef<WebSocket | null>(null);
     const memoizedSecretToEdit = useMemo(() => {
         if (!secretToEdit) return null;
         return { ...secretToEdit, disabled: secretToEdit.disabled === 'true' };
@@ -110,7 +111,8 @@ const NocManagementTab: React.FC<NocManagementTabProps> = ({ workspaces }) => {
 
         // Debounce: hindari fetch terlalu sering
         const now = Date.now();
-        if (now - lastFetchTimeRef.current < 2000) return;
+        // Gunakan threshold 1 detik saja untuk responsivitas awal
+        if (now - lastFetchTimeRef.current < 1000) return;
         lastFetchTimeRef.current = now;
 
         // Hanya tampilkan spinner loading pada fetch pertama, bukan saat refresh background
@@ -131,6 +133,7 @@ const NocManagementTab: React.FC<NocManagementTabProps> = ({ workspaces }) => {
                     ...s,
                     deviceId: s.device_id || s.deviceId
                 }));
+                // Batalkan loading SEGERA setelah data didapat
                 setSecrets(mappedSecrets);
                 setUptimeOffset(0);
             }
@@ -145,17 +148,96 @@ const NocManagementTab: React.FC<NocManagementTabProps> = ({ workspaces }) => {
     // Reset debounce ref saat workspaceIds berubah agar filter switch langsung fetch
     useEffect(() => {
         lastFetchTimeRef.current = 0;
-    }, [workspaceIds.join(',')]);
+        fetchSecrets(false);
+
+        // Update WebSocket subscription when workspaces change
+        if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN && workspaceIds.length > 0) {
+            wsRef.current.send(JSON.stringify({
+                type: 'subscribe-noc',
+                workspaceIds: workspaceIds
+            }));
+        }
+    }, [workspaceIds, fetchSecrets]);
 
     useEffect(() => {
-        fetchSecrets(false); // first load shows spinner
+        if (!token || workspaceIds.length === 0) return;
 
-        const interval = setInterval(() => {
-            fetchSecrets(true); // background refresh — no spinner
-        }, 3000);
+        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const host = process.env.NEXT_PUBLIC_WS_BASE_URL || `${protocol}//${window.location.host}/ws`;
+        const wsUrl = `${host}?token=${token}`;
 
-        return () => clearInterval(interval);
-    }, [fetchSecrets]);
+        const connect = () => {
+            console.log("[NOC WS] Connecting to", wsUrl);
+            const ws = new WebSocket(wsUrl);
+            wsRef.current = ws;
+
+            ws.onopen = () => {
+                console.log("[NOC WS] Connected, subscribing to workspaces:", workspaceIds);
+                ws.send(JSON.stringify({
+                    type: 'subscribe-noc',
+                    workspaceIds: workspaceIds
+                }));
+            };
+
+            ws.onmessage = (event) => {
+                try {
+                    const data = JSON.parse(event.data);
+                    
+                    if (data.type === 'pppoe-update' || data.type === 'batch-update') {
+                        const newSecrets = data.payload?.pppoeSecrets || data.payload?.secrets;
+                        if (newSecrets && Array.isArray(newSecrets)) {
+                            setSecrets(prev => {
+                                // Create a map of incoming updates for faster lookup
+                                const updates = new Map();
+                                newSecrets.forEach((s: any) => {
+                                    const key = `${s.workspace_id}_${s.name}`;
+                                    updates.set(key, {
+                                        ...s,
+                                        deviceId: s.device_id || s.deviceId
+                                    });
+                                });
+
+                                // Merge updates into existing state
+                                return prev.map(oldSecret => {
+                                    const key = `${oldSecret.workspace_id}_${oldSecret.name}`;
+                                    if (updates.has(key)) {
+                                        const updated = updates.get(key);
+                                        updates.delete(key); // Mark as consumed
+                                        return { ...oldSecret, ...updated };
+                                    }
+                                    return oldSecret;
+                                }).concat(Array.from(updates.values())); // Append any new secrets not in current list
+                            });
+                            setUptimeOffset(0);
+                        }
+                    }
+                } catch (e) {
+                    console.error("[NOC WS] Error processing message:", e);
+                }
+            };
+
+            ws.onclose = () => {
+                console.log("[NOC WS] Disconnected, retrying in 3s...");
+                setTimeout(() => {
+                    if (wsRef.current === ws) connect();
+                }, 3000);
+            };
+
+            ws.onerror = (err) => {
+                console.error("[NOC WS] Error:", err);
+                ws.close();
+            };
+        };
+
+        connect();
+
+        return () => {
+            if (wsRef.current) {
+                wsRef.current.close();
+                wsRef.current = null;
+            }
+        };
+    }, [token, workspaceIds]); // Only re-connect if token or workspaces list changes
 
     const handleSort = (column: string) => {
         if (sortColumn === column) {
