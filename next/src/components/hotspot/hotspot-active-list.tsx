@@ -27,22 +27,8 @@ const formatDataSize = (bytes: string | number = 0) => {
 };
 
 const formatUptime = (uptimeStr: string = '') => {
-    if (!uptimeStr) return '...';
-    
-    const parts = [];
-    const weekMatch = uptimeStr.match(/(\d+)w/);
-    const dayMatch = uptimeStr.match(/(\d+)d/);
-    const hourMatch = uptimeStr.match(/(\d+)h/);
-    const minuteMatch = uptimeStr.match(/(\d+)m/);
-    const secondMatch = uptimeStr.match(/(\d+)s/);
-
-    if (weekMatch) parts.push(`${weekMatch[1]} week${parseInt(weekMatch[1]) > 1 ? 's' : ''}`);
-    if (dayMatch) parts.push(`${dayMatch[1]} day${parseInt(dayMatch[1]) > 1 ? 's' : ''}`);
-    if (hourMatch) parts.push(`${hourMatch[1]} hour${parseInt(hourMatch[1]) > 1 ? 's' : ''}`);
-    if (minuteMatch) parts.push(`${minuteMatch[1]} minute${parseInt(minuteMatch[1]) > 1 ? 's' : ''}`);
-    if (secondMatch) parts.push(`${secondMatch[1]} second${parseInt(secondMatch[1]) > 1 ? 's' : ''}`);
-
-    return parts.join(' ') || 'Baru saja aktif';
+  if (!uptimeStr) return '...';
+  return uptimeStr;
 };
 
 const HotspotActiveList = () => {

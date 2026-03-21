@@ -20,20 +20,9 @@ const formatBytes = (bytes: number, decimals = 2) => {
   return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
 }
 
-const formatUptime = (uptimeStr: string) => {
+const formatUptime = (uptimeStr: string): string => {
   if (!uptimeStr) return '...';
-  const parts = [];
-  const weekMatch = uptimeStr.match(/(\d+)w/);
-  const dayMatch = uptimeStr.match(/(\d+)d/);
-  const hourMatch = uptimeStr.match(/(\d+)h/);
-  const minuteMatch = uptimeStr.match(/(\d+)m/);
-
-  if (weekMatch) parts.push(`${weekMatch[1]} week`);
-  if (dayMatch) parts.push(`${dayMatch[1]} day`);
-  if (hourMatch) parts.push(`${hourMatch[1]} hours`);
-  if (minuteMatch) parts.push(`${minuteMatch[1]} minute`);
-  
-  return parts.join(' ') || 'Baru saja aktif';
+  return uptimeStr;
 };
 
 const DeviceInfoCard = ({ deviceId, data, connected, name }: { deviceId: number, data: any, connected: boolean, name: string }) => {
