@@ -629,11 +629,10 @@ wss.on('connection', (ws, req) => {
                     if (checkIfClosed()) return;
                     await startWorkspaceMonitoring(ws.workspaceId, connectionKey, finalDeviceId);
                     if (checkIfClosed()) return;
-                    connection = getConnection(connectionKey);
                 }
-                if (connection) connection.userCount = (connection.userCount || 0) + 1;
             }
 
+            // Single unified userCount increment for ALL connection paths
             let connection = getConnection(connectionKey);
             if (connection) {
                 connection.userCount = (connection.userCount || 0) + 1;

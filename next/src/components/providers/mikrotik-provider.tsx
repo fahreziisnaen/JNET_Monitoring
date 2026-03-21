@@ -64,10 +64,17 @@ export const MikrotikProvider = ({ children }: { children: React.ReactNode }) =>
     const reconnectTimersRef = useRef<Map<number, any>>(new Map());
     // Per-device reconnect attempt counters
     const reconnectAttemptsRef = useRef<Map<number, number>>(new Map());
+    // Ref to selectedDeviceIds so callbacks don't need it as a dep (prevents reconnect loops)
+    const selectedDeviceIdsRef = useRef<number[]>([]);
 
     // Tick counter: increment to trigger re-render when device data changes
     const [tick, setTick] = useState(0);
     const triggerRender = useCallback(() => setTick(t => t + 1), []);
+
+    // Keep selectedDeviceIdsRef in sync
+    useEffect(() => {
+        selectedDeviceIdsRef.current = selectedDeviceIds;
+    }, [selectedDeviceIds]);
 
     // handleDeviceData: update internal ref and trigger render
     const updateDeviceData = useCallback((deviceId: number, data: Partial<DeviceData>) => {
@@ -145,7 +152,7 @@ export const MikrotikProvider = ({ children }: { children: React.ReactNode }) =>
                     updateDeviceData(deviceId, { isConnected: connected });
 
                     // Forward event for toast notifications (if device is selected)
-                    if (selectedDeviceIds.includes(deviceId)) {
+                    if (selectedDeviceIdsRef.current.includes(deviceId)) {
                         window.dispatchEvent(new CustomEvent('mikrotik-connection-status', {
                             detail: message.payload
                         }));
@@ -163,7 +170,7 @@ export const MikrotikProvider = ({ children }: { children: React.ReactNode }) =>
                     updateDeviceData(deviceId, { isConnected: connected });
                     
                     // Forward event for toast notifications
-                    if (selectedDeviceIds.includes(deviceId)) {
+                    if (selectedDeviceIdsRef.current.includes(deviceId)) {
                         window.dispatchEvent(new CustomEvent('mikrotik-connection-status', {
                             detail: message.payload
                         }));
@@ -180,24 +187,34 @@ export const MikrotikProvider = ({ children }: { children: React.ReactNode }) =>
 
         socket.onclose = (event) => {
             clearTimeout(connTimeout);
-            const prev = deviceDataRef.current.get(deviceId) || { ...DEFAULT_DEVICE_DATA };
-            updateDeviceData(deviceId, { isConnected: false });
             wsPoolRef.current.delete(deviceId);
 
-            // Forward disconnect if device is selected
-            if (selectedDeviceIds.includes(deviceId)) {
+            // Only update state & notify if device is still selected (avoid stale updates for deselected devices)
+            const isStillSelected = selectedDeviceIdsRef.current.includes(deviceId);
+            if (isStillSelected) {
+                updateDeviceData(deviceId, { isConnected: false });
                 window.dispatchEvent(new CustomEvent('mikrotik-connection-status', {
                     detail: { status: 'disconnected', message: event.reason || 'Koneksi terputus', code: event.code }
                 }));
             }
 
-            // Auto reconnect (if not intentional close like logout)
+            // Auto reconnect only if device is still selected, user is still logged in,
+            // and the close was not intentional (code 1000=normal, 1008=policy/auth)
             const attempts = reconnectAttemptsRef.current.get(deviceId) || 0;
             const maxAttempts = 5;
-            if (user && attempts < maxAttempts && event.code !== 1008 && event.code !== 1003 && event.code !== 1000) {
+            if (
+                isStillSelected &&
+                user &&
+                attempts < maxAttempts &&
+                event.code !== 1008 &&
+                event.code !== 1003 &&
+                event.code !== 1000
+            ) {
                 reconnectAttemptsRef.current.set(deviceId, attempts + 1);
                 const timer = setTimeout(() => {
-                    if (user) connectDevice(deviceId, workspaceId);
+                    if (user && selectedDeviceIdsRef.current.includes(deviceId)) {
+                        connectDevice(deviceId, workspaceId);
+                    }
                 }, 3000);
                 reconnectTimersRef.current.set(deviceId, timer);
             }
@@ -206,11 +223,13 @@ export const MikrotikProvider = ({ children }: { children: React.ReactNode }) =>
         socket.onerror = () => {
             clearTimeout(connTimeout);
             if (socket.readyState === WebSocket.CLOSING || socket.readyState === WebSocket.CLOSED) return;
-            const prev = deviceDataRef.current.get(deviceId) || { ...DEFAULT_DEVICE_DATA };
-            updateDeviceData(deviceId, { isConnected: false });
+            // Only update state if device is still selected
+            if (selectedDeviceIdsRef.current.includes(deviceId)) {
+                updateDeviceData(deviceId, { isConnected: false });
+            }
         };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [updateDeviceData, user, selectedDeviceIds]);
+    }, [updateDeviceData, user])
 
     // Initial load: Fetch all snapshots for the workspace at once
     useEffect(() => {
