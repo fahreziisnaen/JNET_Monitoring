@@ -187,39 +187,49 @@ const WorkspaceMembersCard = () => {
     };
 
     const getRoleBadge = (member: Member) => {
+        const badges = [];
+        
         if (member.is_super_admin) {
-            return (
-                <span className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider bg-purple-500/10 text-purple-600 px-2 py-0.5 rounded-full border border-purple-500/20">
+            badges.push(
+                <span key="superadmin" className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider bg-purple-500/10 text-purple-600 px-2 py-0.5 rounded-full border border-purple-500/20">
                     <ShieldAlert size={10} /> Superadmin
                 </span>
             );
         }
+        
         if (member.is_owner) {
-            return (
-                <span className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider bg-amber-500/10 text-amber-600 px-2 py-0.5 rounded-full border border-amber-500/20">
+            badges.push(
+                <span key="owner" className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider bg-amber-500/10 text-amber-600 px-2 py-0.5 rounded-full border border-amber-500/20">
                     <ShieldAlert size={10} /> Owner
                 </span>
             );
         }
-        if (member.role === 'admin') {
-            return (
-                <span className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider bg-blue-500/10 text-blue-600 px-2 py-0.5 rounded-full border border-blue-500/20">
+        
+        if (member.role === 'admin' && !member.is_super_admin) {
+            badges.push(
+                <span key="admin" className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider bg-blue-500/10 text-blue-600 px-2 py-0.5 rounded-full border border-blue-500/20">
                     <ShieldCheck size={10} /> Admin
                 </span>
             );
         }
+        
         if (member.role === 'noc') {
-            return (
-                <span className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider bg-emerald-500/10 text-emerald-600 px-2 py-0.5 rounded-full border border-emerald-500/20">
+            badges.push(
+                <span key="noc" className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider bg-emerald-500/10 text-emerald-600 px-2 py-0.5 rounded-full border border-emerald-500/20">
                     <ShieldCheck size={10} /> NOC
                 </span>
             );
         }
-        return (
-            <span className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider bg-slate-500/10 text-slate-600 px-2 py-0.5 rounded-full border border-slate-500/20">
-                <Shield size={10} /> User
-            </span>
-        );
+
+        if (badges.length === 0) {
+            badges.push(
+                <span key="user" className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider bg-slate-500/10 text-slate-600 px-2 py-0.5 rounded-full border border-slate-500/20">
+                    <Shield size={10} /> User
+                </span>
+            );
+        }
+
+        return <div className="flex gap-1 items-center flex-wrap">{badges}</div>;
     };
 
     const canManageRole = (member: Member) => {
@@ -255,7 +265,16 @@ const WorkspaceMembersCard = () => {
                             (e.target as HTMLImageElement).src = `${apiUrl}/public/uploads/avatars/default.jpg`;
                         }}
                     />
-                    {member.is_super_admin ? (
+                    {member.is_super_admin && member.is_owner ? (
+                        <div className="absolute -bottom-1 -right-1 flex -space-x-1">
+                            <div className="bg-purple-500 rounded-full p-0.5 text-white border-2 border-background z-10">
+                                <ShieldAlert size={8} />
+                            </div>
+                            <div className="bg-amber-500 rounded-full p-0.5 text-white border-2 border-background">
+                                <ShieldAlert size={8} />
+                            </div>
+                        </div>
+                    ) : member.is_super_admin ? (
                         <div className="absolute -bottom-1 -right-1 bg-purple-500 rounded-full p-0.5 text-white border-2 border-background">
                             <ShieldAlert size={8} />
                         </div>
