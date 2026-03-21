@@ -1,11 +1,19 @@
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { Users, UserMinus, Shield, ShieldCheck, ShieldAlert, Loader2, ArrowRightLeft, Globe } from 'lucide-react';
+import { Users, UserMinus, Shield, ShieldCheck, ShieldAlert, Loader2, ArrowRightLeft, Globe, ChevronDown, Check } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
 import ConfirmModal from '@/components/ui/confirm-modal';
+import { 
+    DropdownMenu, 
+    DropdownMenuTrigger, 
+    DropdownMenuContent, 
+    DropdownMenuItem, 
+    DropdownMenuLabel, 
+    DropdownMenuSeparator 
+} from '@/components/ui/dropdown-menu';
 import { apiFetch } from '@/utils/api';
 import { useAuth } from '../providers/auth-provider';
 
@@ -280,33 +288,54 @@ const WorkspaceMembersCard = () => {
                 </div>
             </div>
 
-            <div className="flex items-center gap-1">
+            <div className="flex items-center gap-1 sm:gap-2">
                 {canManageRole(member) && (
-                    <div className="flex items-center bg-secondary rounded px-1.5 py-0.5 border border-border">
-                        <select
-                            className="bg-transparent text-[11px] font-bold text-foreground cursor-pointer focus:outline-none"
-                            value={member.role}
-                            onChange={(e) => handleRoleChange(member, e.target.value as any)}
-                            disabled={togglingRoleId === member.id}
-                        >
-                            <option value="user" className="text-black bg-white">User</option>
-                            <option value="noc" className="text-black bg-white">NOC</option>
-                            <option value="admin" className="text-black bg-white">Admin</option>
-                        </select>
-                        {togglingRoleId === member.id && <Loader2 size={12} className="animate-spin ml-1" />}
-                    </div>
+                    <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                className="h-8 text-[11px] font-bold border-primary/20 bg-secondary/30 hover:bg-secondary/50 flex items-center gap-1 px-2"
+                                disabled={togglingRoleId === member.id}
+                            >
+                                {togglingRoleId === member.id ? (
+                                    <Loader2 size={12} className="animate-spin" />
+                                ) : (
+                                    <ArrowRightLeft size={12} className="text-primary" />
+                                )}
+                                <span className="uppercase">
+                                    {member.role === 'admin' ? 'Admin' : member.role === 'noc' ? 'NOC' : 'User'}
+                                </span>
+                                <ChevronDown size={10} className="opacity-50" />
+                            </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end" className="w-[120px]">
+                            <DropdownMenuLabel className="text-[10px] uppercase text-muted-foreground font-bold">Ubah Role</DropdownMenuLabel>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem onClick={() => handleRoleChange(member, 'user')} className="text-xs flex justify-between">
+                                User {member.role === 'user' && <Check size={12} className="text-primary" />}
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => handleRoleChange(member, 'noc')} className="text-xs flex justify-between">
+                                NOC {member.role === 'noc' && <Check size={12} className="text-primary" />}
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => handleRoleChange(member, 'admin')} className="text-xs flex justify-between">
+                                Admin {member.role === 'admin' && <Check size={12} className="text-primary" />}
+                            </DropdownMenuItem>
+                        </DropdownMenuContent>
+                    </DropdownMenu>
                 )}
 
                 {canKick(member) && (
                     <Button
                         variant="ghost"
                         size="sm"
-                        className="text-destructive hover:text-destructive hover:bg-destructive/10 opacity-0 group-hover:opacity-100 transition-opacity"
+                        className="h-8 text-destructive hover:text-destructive hover:bg-destructive/10 px-2 sm:px-3"
                         onClick={() => handleKickClick(member)}
                         disabled={kickingId === member.id}
+                        title="Keluarkan dari Workspace"
                     >
-                        {kickingId === member.id ? <Loader2 size={16} className="animate-spin" /> : <UserMinus size={16} />}
-                        <span className="ml-2 hidden sm:inline">Keluarkan</span>
+                        {kickingId === member.id ? <Loader2 size={14} className="animate-spin" /> : <UserMinus size={14} />}
+                        <span className="ml-2 hidden sm:inline text-xs font-bold uppercase">Keluarkan</span>
                     </Button>
                 )}
             </div>
