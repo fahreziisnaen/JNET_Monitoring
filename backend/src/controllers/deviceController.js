@@ -12,6 +12,16 @@ exports.listDevices = async (req, res) => {
     }
 
     try {
+        if (user.role === 'superadmin') {
+            // Superadmin can see ALL devices in ALL workspaces
+            const [devices] = await pool.query(`
+                SELECT d.id, d.name, d.host, d.user, d.port, d.workspace_id, w.name as workspace_name 
+                FROM mikrotik_devices d
+                JOIN workspaces w ON d.workspace_id = w.id
+            `);
+            return res.status(200).json(devices);
+        }
+
         if (user.role === 'noc' && !req.query.workspaceId) {
             // Jika NOC dan tidak minta workspace spesifik, tampilkan SEMUA yang diizinkan
             const [permWorkspaces] = await pool.query(

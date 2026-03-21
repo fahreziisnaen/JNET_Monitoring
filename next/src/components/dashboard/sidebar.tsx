@@ -92,39 +92,46 @@ const DeviceInfoCard = ({ deviceId, data, connected, name }: { deviceId: number,
         </div>
       </CardHeader>
       {!minimized && (
-        <CardContent className="p-4 space-y-4 animate-in fade-in slide-in-from-top-1 duration-200">
-            <div className="grid grid-cols-2 gap-2 text-[10px]">
-                <div className="bg-secondary/50 p-2 rounded">
-                    <p className="text-muted-foreground uppercase font-bold">Board</p>
-                    <p className="truncate font-semibold">{resource['board-name'] || '...'}</p>
+        <CardContent className="p-4 space-y-5 animate-in fade-in slide-in-from-top-1 duration-200">
+            <div className="grid grid-cols-2 gap-3 text-xs">
+                <div className="bg-secondary/50 p-2.5 rounded-lg border border-primary/5">
+                    <p className="text-muted-foreground uppercase font-bold text-[9px]">Board Name</p>
+                    <p className="truncate font-bold text-foreground">{resource['board-name'] || '...'}</p>
                 </div>
-                <div className="bg-secondary/50 p-2 rounded">
-                    <p className="text-muted-foreground uppercase font-bold">Uptime</p>
-                    <p className="truncate font-semibold">{formatUptime(resource.uptime)}</p>
+                <div className="bg-secondary/50 p-2.5 rounded-lg border border-primary/5">
+                    <p className="text-muted-foreground uppercase font-bold text-[9px]">Uptime</p>
+                    <p className="truncate font-bold text-foreground">{formatUptime(resource.uptime)}</p>
                 </div>
             </div>
 
-            <div className="grid grid-cols-3 gap-2">
+            <div className="grid grid-cols-3 gap-3">
                 <div className="text-center">
-                    <p className="text-[9px] font-bold text-muted-foreground mb-1 uppercase">CPU</p>
-                    <div className="relative h-12 w-12 mx-auto">
+                    <p className="text-[10px] font-bold text-muted-foreground mb-2 uppercase tracking-wider">CPU</p>
+                    <div className="relative h-16 w-16 mx-auto">
                         <Doughnut data={cpuChartData} options={chartOptions} />
-                        <div className="absolute inset-0 flex items-center justify-center font-bold text-[10px]">{cpuLoad}%</div>
+                        <div className="absolute inset-0 flex items-center justify-center font-black text-xs">{cpuLoad}%</div>
                     </div>
                 </div>
                 <div className="text-center">
-                    <p className="text-[9px] font-bold text-muted-foreground mb-1 uppercase">RAM</p>
-                    <div className="relative h-12 w-12 mx-auto">
+                    <p className="text-[10px] font-bold text-muted-foreground mb-2 uppercase tracking-wider">RAM</p>
+                    <div className="relative h-16 w-16 mx-auto">
                         <Doughnut data={ramChartData} options={chartOptions} />
-                        <div className="absolute inset-0 flex items-center justify-center font-bold text-[10px]">{ramUsage}%</div>
+                        <div className="absolute inset-0 flex items-center justify-center font-black text-xs">{ramUsage}%</div>
                     </div>
                 </div>
                 <div className="text-center">
-                    <p className="text-[9px] font-bold text-muted-foreground mb-1 uppercase">Disk</p>
-                    <div className="relative h-12 w-12 mx-auto">
+                    <p className="text-[10px] font-bold text-muted-foreground mb-2 uppercase tracking-wider">Disk</p>
+                    <div className="relative h-16 w-16 mx-auto">
                         <Doughnut data={diskChartData} options={chartOptions} />
-                        <div className="absolute inset-0 flex items-center justify-center font-bold text-[10px]">{diskUsage}%</div>
+                        <div className="absolute inset-0 flex items-center justify-center font-black text-xs">{diskUsage}%</div>
                     </div>
+                </div>
+            </div>
+            
+            <div className="pt-1 border-t border-primary/5">
+                <div className="flex justify-between items-center text-[10px] text-muted-foreground">
+                    <span>RAM: {formatBytes(usedMemory)} / {formatBytes(totalMemory)}</span>
+                    <span className="font-medium text-foreground/70">OS: {resource.version || '...'}</span>
                 </div>
             </div>
         </CardContent>

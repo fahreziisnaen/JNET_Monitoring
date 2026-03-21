@@ -272,6 +272,7 @@ const SortableInterfaceCard = ({ id, etherId, currentTraffic, index, itemCount, 
 };
 
 const MainContent = () => {
+  const { user } = useAuth();
   const { allDevicesData, allStatus, selectedDeviceIds } = useMikrotik() || { allDevicesData: {}, allStatus: {}, selectedDeviceIds: [] };
   const [selectedInterfaces, setSelectedInterfaces] = useState<Set<string>>(new Set()); // format: "deviceId:interfaceName"
   const [showFilter, setShowFilter] = useState(false);
@@ -291,19 +292,19 @@ const MainContent = () => {
       }
     }
 
-    const savedSelection = localStorage.getItem('dashboard-selected-interfaces');
+    const selectionKey = user?.workspace_id ? `selected-interfaces-v2-${user.workspace_id}` : 'dashboard-selected-interfaces';
+    const savedSelection = localStorage.getItem(selectionKey);
     if (savedSelection !== null) {
-      // savedSelection exists (even if empty array), meaning user has made a selection before
       try {
         const parsed = JSON.parse(savedSelection);
         setSelectedInterfaces(new Set(parsed));
-        setHasUserSelection(true); // User has made a selection before
+        setHasUserSelection(true);
       } catch (e) {
         console.error('Failed to load selected interfaces:', e);
       }
     }
     setHasLoadedSavedSelection(true);
-  }, []);
+  }, [user?.workspace_id]);
 
   const sensors = useSensors(
     useSensor(PointerSensor),
@@ -367,12 +368,43 @@ const MainContent = () => {
   // DISABLED: auto-select logic
 
   // Tampilkan interface yang dipilih dan punya traffic data
+  // Cleanup selectedInterfaces when devices are unchecked
+  useEffect(() => {
+    if (!hasLoadedSavedSelection) return;
+    
+    setSelectedInterfaces(prev => {
+        const next = new Set(prev);
+        let changed = false;
+        
+        prev.forEach(key => {
+            const deviceId = parseInt(key.split(':')[0]);
+            if (!selectedDeviceIds.includes(deviceId)) {
+                next.delete(key);
+                changed = true;
+            }
+        });
+        
+        if (changed) {
+            if (user?.workspace_id) {
+                const selectionKey = `selected-interfaces-v2-${user.workspace_id}`;
+                localStorage.setItem(selectionKey, JSON.stringify(Array.from(next)));
+            }
+            return next;
+        }
+        return prev;
+    });
+  }, [selectedDeviceIds, hasLoadedSavedSelection, user?.workspace_id]);
+
   const displayedInterfaces = useMemo(() => {
     const filtered: string[] = [];
 
     selectedInterfaces.forEach(key => {
         const [deviceIdStr, ifaceName] = key.split(':');
         const deviceId = parseInt(deviceIdStr);
+        
+        // Skip if device is not selected
+        if (!selectedDeviceIds.includes(deviceId)) return;
+
         const deviceData = allDevicesData[deviceId];
         
         if (deviceData && deviceData.traffic && deviceData.traffic[ifaceName]) {
@@ -391,7 +423,7 @@ const MainContent = () => {
     }
 
     return filtered.sort();
-  }, [allDevicesData, selectedInterfaces, interfaceOrder]);
+  }, [allDevicesData, selectedInterfaces, interfaceOrder, selectedDeviceIds]);
 
   // Update order when displayedInterfaces changes (add new interfaces to end)
   const displayedInterfacesString = displayedInterfaces.join(',');
