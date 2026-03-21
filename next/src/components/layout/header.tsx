@@ -286,37 +286,42 @@ const Header = () => {
                         </button>
 
                         {/* Nested Dropdown for Workspaces - Responsive positioning */}
-                        <div className={`
-                          ${isWorkspaceDropdownOpen ? 'opacity-100 visible' : 'opacity-0 invisible pointer-events-none'}
-                          transition-all duration-200 z-50 bg-card rounded-lg shadow-lg border
-                          sm:absolute sm:right-full sm:top-0 sm:mr-1 sm:w-60
-                          relative w-full mt-1 border-primary/20 bg-secondary/20
-                        `}>
-                          <div className="p-2 border-b bg-muted/30 rounded-t-lg sm:block hidden">
-                            <p className="text-xs font-semibold flex items-center gap-1.5">
-                              Pilih Workspace
-                            </p>
-                          </div>
-                          <div className="max-h-60 overflow-y-auto space-y-0.5 custom-scrollbar p-1">
-                            {workspaces.map(ws => (
-                              <button
-                                key={ws.id}
-                                onClick={() => handleSwitchWorkspace(ws.id)}
-                                disabled={isSwitching || user.workspace_id === ws.id}
-                                className={`w-full text-left px-2 py-2 text-xs rounded-sm flex items-center justify-between transition-colors ${user.workspace_id === ws.id ? 'bg-primary/20 text-primary font-bold cursor-default' : 'hover:bg-secondary text-foreground'}`}
-                              >
-                                <span className="truncate mr-2 flex-1">{ws.name}</span>
-                                {user.workspace_id === ws.id ? <CheckCircle2 size={14} className="flex-shrink-0 text-primary" /> : null}
-                              </button>
-                            ))}
-                            {isSwitching && (
-                              <div className="flex items-center justify-center py-3 text-primary bg-secondary/30 rounded-sm">
-                                <Loader2 size={16} className="animate-spin" />
-                                <span className="ml-2 text-xs">Mengganti...</span>
+                        <AnimatePresence>
+                          {isWorkspaceDropdownOpen && (
+                            <motion.div
+                              initial={{ height: 0, opacity: 0 }}
+                              animate={{ height: 'auto', opacity: 1 }}
+                              exit={{ height: 0, opacity: 0 }}
+                              transition={{ duration: 0.2 }}
+                              className="sm:absolute sm:right-full sm:top-0 sm:mr-1 sm:w-60 relative w-full mt-1 border border-primary/20 bg-secondary/20 sm:bg-card shadow-lg rounded-lg overflow-hidden z-50"
+                            >
+                              <div className="p-2 border-b bg-muted/30 rounded-t-lg sm:block hidden">
+                                <p className="text-xs font-semibold flex items-center gap-1.5">
+                                  Pilih Workspace
+                                </p>
                               </div>
-                            )}
-                          </div>
-                        </div>
+                              <div className="max-h-60 overflow-y-auto space-y-0.5 custom-scrollbar p-1">
+                                {workspaces.map(ws => (
+                                  <button
+                                    key={ws.id}
+                                    onClick={() => handleSwitchWorkspace(ws.id)}
+                                    disabled={isSwitching || user.workspace_id === ws.id}
+                                    className={`w-full text-left px-2 py-2 text-xs rounded-sm flex items-center justify-between transition-colors ${user.workspace_id === ws.id ? 'bg-primary/20 text-primary font-bold cursor-default' : 'hover:bg-secondary text-foreground'}`}
+                                  >
+                                    <span className="truncate mr-2 flex-1">{ws.name}</span>
+                                    {user.workspace_id === ws.id ? <CheckCircle2 size={14} className="flex-shrink-0 text-primary" /> : null}
+                                  </button>
+                                ))}
+                                {isSwitching && (
+                                  <div className="flex items-center justify-center py-3 text-primary bg-secondary/30 rounded-sm">
+                                    <Loader2 size={16} className="animate-spin" />
+                                    <span className="ml-2 text-xs">Mengganti...</span>
+                                  </div>
+                                )}
+                              </div>
+                            </motion.div>
+                          )}
+                        </AnimatePresence>
                       </div>
                     </div>
                   )}
