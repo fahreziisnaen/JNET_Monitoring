@@ -50,6 +50,7 @@ exports.getSnapshot = async (req, res) => {
                 resource: parseJsonField(s.resource),
                 traffic: parseJsonField(s.traffic) || {},
                 pppoeSecrets: parseJsonField(s.pppoe_active) || [],
+                hotspotActive: [], // Placeholder to prevent build errors
                 activeInterfaces: parseJsonField(s.active_interfaces) || [],
                 updatedAt: s.updated_at
             }));
@@ -68,6 +69,7 @@ exports.getSnapshot = async (req, res) => {
                 resource: null,
                 traffic: {},
                 pppoeSecrets: [],
+                hotspotActive: [],
                 activeInterfaces: []
             });
         }
@@ -108,6 +110,7 @@ exports.getSnapshot = async (req, res) => {
             resource,
             traffic,
             pppoeSecrets: pppoeActive,
+            hotspotActive: [], // Placeholder
             activeInterfaces,
             updatedAt: snapshot.updated_at
         });
@@ -118,6 +121,7 @@ exports.getSnapshot = async (req, res) => {
             resource: null,
             traffic: {},
             pppoeSecrets: [],
+            hotspotActive: [],
             activeInterfaces: []
         });
     }

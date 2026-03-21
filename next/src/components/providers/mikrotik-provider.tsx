@@ -6,6 +6,7 @@ import { apiFetch, getAuthToken } from '@/utils/api';
 
 interface DeviceData {
     pppoeSecrets: any[];
+    hotspotActive: any[];
     resource: any;
     activeInterfaces: Array<{ name: string; type: string; running: boolean }>;
     traffic: any;
@@ -22,6 +23,7 @@ interface MikrotikContextType {
     setSelectedDeviceId: (deviceId: number) => void;
     isLoaded: boolean;
     pppoeSecrets: any[];
+    hotspotActive: any[];
     resource: any;
     isConnected: boolean;
     toggleDeviceId: (deviceId: number) => void;
@@ -41,6 +43,7 @@ export const useMikrotik = () => {
 
 const DEFAULT_DEVICE_DATA: DeviceData = {
     pppoeSecrets: [],
+    hotspotActive: [],
     resource: null,
     activeInterfaces: [],
     traffic: {},
@@ -127,6 +130,7 @@ export const MikrotikProvider = ({ children }: { children: React.ReactNode }) =>
 
                     updateDeviceData(deviceId, {
                         pppoeSecrets: payload.pppoeSecrets || [],
+                        hotspotActive: payload.hotspotActive || [],
                         resource: hasResource ? payload.resource : prev.resource,
                         activeInterfaces: hasInterfaces ? payload.activeInterfaces : prev.activeInterfaces,
                         traffic: hasTraffic ? payload.traffic : prev.traffic,
@@ -237,6 +241,7 @@ export const MikrotikProvider = ({ children }: { children: React.ReactNode }) =>
                     snapshots.forEach(s => {
                         deviceDataRef.current.set(s.deviceId, {
                             pppoeSecrets: s.pppoeSecrets || [],
+                            hotspotActive: s.hotspotActive || [],
                             resource: s.resource,
                             activeInterfaces: s.activeInterfaces || [],
                             traffic: s.traffic || {},
@@ -392,6 +397,7 @@ export const MikrotikProvider = ({ children }: { children: React.ReactNode }) =>
         setSelectedDeviceId: handleDeviceChange,
         isLoaded,
         pppoeSecrets: selectedDeviceIds[0] ? (allDevicesData.dataMap[selectedDeviceIds[0]]?.pppoeSecrets || []) : [],
+        hotspotActive: selectedDeviceIds[0] ? (allDevicesData.dataMap[selectedDeviceIds[0]]?.hotspotActive || []) : [],
         resource: selectedDeviceIds[0] ? (allDevicesData.dataMap[selectedDeviceIds[0]]?.resource || null) : null,
         isConnected: selectedDeviceIds[0] ? (allDevicesData.dataMap[selectedDeviceIds[0]]?.isConnected || false) : false,
         toggleDeviceId,
