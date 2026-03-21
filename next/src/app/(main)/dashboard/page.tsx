@@ -13,7 +13,7 @@ import { usePageTitle } from '@/hooks/usePageTitle';
 const DashboardPage = () => {
   usePageTitle('Dashboard');
   const { user } = useAuth();
-  const { selectedDeviceId, setSelectedDeviceId } = useMikrotik() || {};
+  const { selectedDeviceIds, setSelectedDeviceIds } = useMikrotik() || { selectedDeviceIds: [], setSelectedDeviceIds: () => {} };
   const [hasDevices, setHasDevices] = useState<boolean | null>(null);
 
   useEffect(() => {
@@ -51,8 +51,8 @@ const DashboardPage = () => {
             </p>
           </div>
           <DeviceSelector
-            selectedDeviceId={selectedDeviceId}
-            onDeviceChange={setSelectedDeviceId}
+            selectedDeviceIds={selectedDeviceIds}
+            onDevicesChange={setSelectedDeviceIds}
           />
         </div>
         <div className="flex items-center justify-center min-h-[400px]">
@@ -75,8 +75,8 @@ const DashboardPage = () => {
             </p>
           </div>
           <DeviceSelector
-            selectedDeviceId={selectedDeviceId}
-            onDeviceChange={setSelectedDeviceId}
+            selectedDeviceIds={selectedDeviceIds}
+            onDevicesChange={setSelectedDeviceIds}
           />
         </div>
         <NoDeviceMessage />
@@ -96,8 +96,8 @@ const DashboardPage = () => {
           </p>
         </div>
         <DeviceSelector
-          selectedDeviceId={selectedDeviceId}
-          onDeviceChange={setSelectedDeviceId}
+          selectedDeviceIds={selectedDeviceIds}
+          onDevicesChange={setSelectedDeviceIds}
         />
       </div>
       <div className="flex flex-col lg:flex-row gap-6">

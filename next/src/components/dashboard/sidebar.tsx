@@ -3,9 +3,11 @@
 import React from 'react';
 import { useMikrotik } from '@/components/providers/mikrotik-provider';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
-import { Loader2 } from 'lucide-react';
+import { Loader2, ChevronDown, ChevronUp, Activity } from 'lucide-react';
 import { Doughnut } from 'react-chartjs-2';
 import { Chart as ChartJS, ArcElement, Tooltip } from 'chart.js';
+import { cn } from '@/lib/utils';
+import { apiFetch } from '@/utils/api';
 
 ChartJS.register(ArcElement, Tooltip);
 
@@ -34,26 +36,26 @@ const formatUptime = (uptimeStr: string) => {
   return parts.join(' ') || 'Baru saja aktif';
 };
 
-const Sidebar = () => {
-  const { resource, pppoeSecrets, isConnected } = useMikrotik() || { resource: null, pppoeSecrets: [], isConnected: false };
-  
-  // Filter hanya yang aktif
-  const activeCount = pppoeSecrets.filter((secret: any) => secret.isActive === true).length;
-  
-  if (!isConnected || !resource) {
+const DeviceInfoCard = ({ deviceId, data, connected, name }: { deviceId: number, data: any, connected: boolean, name: string }) => {
+  const [minimized, setMinimized] = React.useState(false);
+  const resource = data?.resource;
+
+  if (!connected || !resource) {
     return (
-        <aside className="w-full lg:w-80 lg:flex-shrink-0">
-            <Card className="h-full">
-                <CardContent className="p-6 h-full flex items-center justify-center">
-                    <div className="text-center text-muted-foreground space-y-2">
-                        <Loader2 className="mx-auto h-8 w-8 animate-spin" />
-                        <p>Menunggu Data Perangkat...</p>
-                    </div>
-                </CardContent>
-            </Card>
-        </aside>
+      <Card className="mb-4">
+        <CardHeader className="py-3 flex flex-row items-center justify-between">
+          <div className="flex items-center gap-2">
+            <div className="w-2 h-2 rounded-full bg-red-500" />
+            <CardTitle className="text-sm font-bold">{name}</CardTitle>
+          </div>
+          <span className="text-[10px] text-muted-foreground uppercase">Terputus</span>
+        </CardHeader>
+      </Card>
     );
   }
+
+  const pppoeSecrets = data?.pppoeSecrets || [];
+  const activeCount = pppoeSecrets.filter((secret: { isActive: boolean }) => secret.isActive === true).length;
   
   const cpuLoad = parseInt(resource['cpu-load'] || '0', 10);
   const totalMemory = parseInt(resource['total-memory'] || '1', 10);
@@ -66,68 +68,122 @@ const Sidebar = () => {
   const usedDisk = totalDisk - freeDisk;
   const diskUsage = totalDisk > 0 ? Math.round((usedDisk / totalDisk) * 100) : 0;
   
-  const chartOptions: any = { responsive: true, maintainAspectRatio: false, cutout: '75%', plugins: { tooltip: { enabled: false } } };
+  const chartOptions: any = { responsive: true, maintainAspectRatio: false, cutout: '75%', plugins: { tooltip: { enabled: false }, legend: { display: false } } };
   const cpuChartData = { datasets: [{ data: [cpuLoad, 100 - cpuLoad], backgroundColor: ['#8b5cf6', '#374151'], borderWidth: 0 }] };
   const ramChartData = { datasets: [{ data: [ramUsage, 100 - ramUsage], backgroundColor: ['#3b82f6', '#374151'], borderWidth: 0 }] };
   const diskChartData = { datasets: [{ data: [diskUsage, 100 - diskUsage], backgroundColor: ['#10b981', '#374151'], borderWidth: 0 }] };
 
   return (
-    <aside className="w-full lg:w-80 lg:flex-shrink-0">
-      <Card className="h-full">
-        <CardHeader><CardTitle>Info Perangkat</CardTitle></CardHeader>
-        <CardContent className="space-y-6">
-            <div className="text-center">
-              <p className="text-sm text-muted-foreground">Board Name</p>
-              <p className="font-semibold text-foreground">{resource['board-name'] || '...'}</p>
+    <Card className="mb-4 overflow-hidden border-primary/10">
+      <CardHeader 
+        className={cn(
+            "py-3 flex flex-row items-center justify-between cursor-pointer hover:bg-muted/50 transition-colors",
+            minimized ? "bg-muted/30" : "bg-muted/50"
+        )}
+        onClick={() => setMinimized(!minimized)}
+      >
+        <div className="flex items-center gap-2 overflow-hidden flex-1">
+          <div className="w-2 h-2 rounded-full bg-green-500 shrink-0" />
+          <CardTitle className="text-sm font-bold truncate">{name}</CardTitle>
+        </div>
+        <div className="flex items-center gap-2">
+            <span className="text-[10px] font-bold text-primary px-1.5 py-0.5 bg-primary/10 rounded">{activeCount} Act</span>
+            {minimized ? <ChevronDown size={14} /> : <ChevronUp size={14} />}
+        </div>
+      </CardHeader>
+      {!minimized && (
+        <CardContent className="p-4 space-y-4 animate-in fade-in slide-in-from-top-1 duration-200">
+            <div className="grid grid-cols-2 gap-2 text-[10px]">
+                <div className="bg-secondary/50 p-2 rounded">
+                    <p className="text-muted-foreground uppercase font-bold">Board</p>
+                    <p className="truncate font-semibold">{resource['board-name'] || '...'}</p>
+                </div>
+                <div className="bg-secondary/50 p-2 rounded">
+                    <p className="text-muted-foreground uppercase font-bold">Uptime</p>
+                    <p className="truncate font-semibold">{formatUptime(resource.uptime)}</p>
+                </div>
             </div>
-            <div className="text-center">
-              <p className="text-sm text-muted-foreground">OS Version</p>
-              <p className="font-semibold text-foreground">{resource.version || '...'}</p>
-            </div>
-            <div className="text-center">
-              <p className="text-sm text-muted-foreground">Uptime</p>
-              <p className="font-semibold text-foreground">{formatUptime(resource.uptime)}</p>
-            </div>
-            
-            <div className="space-y-4 pt-4">
-                {/* Statistik PPPoE */}
-                <div className="bg-secondary rounded-lg p-4">
-                    <h4 className="font-semibold text-muted-foreground mb-2 text-center">PPPoE Active Users</h4>
-                    <div className="text-center">
-                        <p className="text-3xl font-bold text-primary">{activeCount}</p>
-                        <p className="text-xs text-muted-foreground mt-1">Pengguna Aktif</p>
+
+            <div className="grid grid-cols-3 gap-2">
+                <div className="text-center">
+                    <p className="text-[9px] font-bold text-muted-foreground mb-1 uppercase">CPU</p>
+                    <div className="relative h-12 w-12 mx-auto">
+                        <Doughnut data={cpuChartData} options={chartOptions} />
+                        <div className="absolute inset-0 flex items-center justify-center font-bold text-[10px]">{cpuLoad}%</div>
                     </div>
                 </div>
-
-                {/* Resource Usage */}
-                <div className="grid grid-cols-1 gap-6 text-center">
-                    <div>
-                        <h4 className="font-semibold text-muted-foreground mb-2">CPU Load</h4>
-                        <div className="relative h-28 w-28 mx-auto">
-                            <Doughnut data={cpuChartData} options={chartOptions} />
-                            <div className="absolute inset-0 flex items-center justify-center font-bold text-xl">{cpuLoad}%</div>
-                        </div>
+                <div className="text-center">
+                    <p className="text-[9px] font-bold text-muted-foreground mb-1 uppercase">RAM</p>
+                    <div className="relative h-12 w-12 mx-auto">
+                        <Doughnut data={ramChartData} options={chartOptions} />
+                        <div className="absolute inset-0 flex items-center justify-center font-bold text-[10px]">{ramUsage}%</div>
                     </div>
-                    <div>
-                        <h4 className="font-semibold text-muted-foreground">RAM Usage</h4>
-                        <p className="text-xs text-muted-foreground -mt-1 mb-2">{formatBytes(usedMemory)} / {formatBytes(totalMemory)}</p>
-                        <div className="relative h-28 w-28 mx-auto">
-                            <Doughnut data={ramChartData} options={chartOptions} />
-                            <div className="absolute inset-0 flex items-center justify-center font-bold text-xl">{ramUsage}%</div>
-                        </div>
-                    </div>
-                    <div>
-                        <h4 className="font-semibold text-muted-foreground">Disk Usage</h4>
-                         <p className="text-xs text-muted-foreground -mt-1 mb-2">{formatBytes(usedDisk)} / {formatBytes(totalDisk)}</p>
-                        <div className="relative h-28 w-28 mx-auto">
-                            <Doughnut data={diskChartData} options={chartOptions} />
-                            <div className="absolute inset-0 flex items-center justify-center font-bold text-xl">{diskUsage}%</div>
-                        </div>
+                </div>
+                <div className="text-center">
+                    <p className="text-[9px] font-bold text-muted-foreground mb-1 uppercase">Disk</p>
+                    <div className="relative h-12 w-12 mx-auto">
+                        <Doughnut data={diskChartData} options={chartOptions} />
+                        <div className="absolute inset-0 flex items-center justify-center font-bold text-[10px]">{diskUsage}%</div>
                     </div>
                 </div>
             </div>
         </CardContent>
-      </Card>
+      )}
+    </Card>
+  );
+};
+
+const Sidebar = () => {
+  const { allDevicesData, allStatus, selectedDeviceIds } = useMikrotik() || { allDevicesData: {}, allStatus: {}, selectedDeviceIds: [] };
+  const [deviceNames, setDeviceNames] = React.useState<Record<number, string>>({});
+
+  React.useEffect(() => {
+    const fetchDeviceNames = async () => {
+        try {
+            const apiUrl = process.env.NEXT_PUBLIC_API_BASE_URL;
+            const res = await apiFetch(`${apiUrl}/api/devices`);
+            if (res.ok) {
+                const data = await res.json();
+                const names: Record<number, string> = {};
+                data.forEach((d: any) => names[d.id] = d.name);
+                setDeviceNames(names);
+            }
+        } catch (e) {
+            console.error('Failed to fetch device names:', e);
+        }
+    };
+    fetchDeviceNames();
+  }, []);
+
+  if (selectedDeviceIds.length === 0) {
+    return (
+        <aside className="w-full lg:w-80 lg:flex-shrink-0">
+            <Card className="border-dashed">
+                <CardContent className="p-10 flex flex-col items-center justify-center text-center gap-3">
+                    <Activity className="h-8 w-8 text-muted-foreground opacity-20" />
+                    <p className="text-sm text-muted-foreground">Pilih perangkat untuk melihat statistik resource.</p>
+                </CardContent>
+            </Card>
+        </aside>
+    );
+  }
+
+  return (
+    <aside className="w-full lg:w-80 lg:flex-shrink-0 space-y-4">
+      <div className="flex items-center gap-2 mb-2 px-1">
+          <Activity size={16} className="text-primary" />
+          <h3 className="font-bold text-sm tracking-tight uppercase">Statistik Perangkat</h3>
+      </div>
+      
+      {selectedDeviceIds.map((id: number) => (
+        <DeviceInfoCard 
+            key={id}
+            deviceId={id}
+            name={deviceNames[id] || `Device ${id}`}
+            data={allDevicesData[id]}
+            connected={allStatus[id]?.isConnected}
+        />
+      ))}
     </aside>
   );
 };

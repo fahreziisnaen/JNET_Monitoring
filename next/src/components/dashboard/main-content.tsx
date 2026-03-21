@@ -6,7 +6,7 @@ import { Chart as ChartJS, CategoryScale, LinearScale, PointElement, LineElement
 import { useMikrotik } from '@/components/providers/mikrotik-provider';
 import { useAuth } from '@/components/providers/auth-provider';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
-import { Loader2, Filter, GripVertical } from 'lucide-react';
+import { Loader2, Filter, GripVertical, ChevronDown, ChevronUp, Cpu, HardDrive, Activity } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { apiFetch } from '@/utils/api';
@@ -31,7 +31,8 @@ ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, T
 const EtherChart = ({ trafficData, interfaceName, deviceId }: { trafficData: any; interfaceName: string; deviceId: number | null }) => {
   const { user } = useAuth();
   const workspaceId = user?.workspace_id || 'default';
-  const storageKey = `chart-data-${workspaceId}-${interfaceName}`;
+  // Use a more unique key including deviceId
+  const storageKey = `chart-data-${workspaceId}-${deviceId}-${interfaceName}`;
   // Tidak ada batasan waktu - data grafik tetap tersimpan meskipun logout lama
   // Polling cron job tetap berjalan di background untuk update dashboard_snapshot
 
@@ -271,10 +272,10 @@ const SortableInterfaceCard = ({ id, etherId, currentTraffic, index, itemCount, 
 };
 
 const MainContent = () => {
-  const mikrotikContext = useMikrotik() || { traffic: {}, activeInterfaces: [], isConnected: false, selectedDeviceId: null };
-  const { traffic, activeInterfaces: availableInterfaces, isConnected, selectedDeviceId } = mikrotikContext;
-  const [selectedInterfaces, setSelectedInterfaces] = useState<Set<string>>(new Set());
+  const { allDevicesData, allStatus, selectedDeviceIds } = useMikrotik() || { allDevicesData: {}, allStatus: {}, selectedDeviceIds: [] };
+  const [selectedInterfaces, setSelectedInterfaces] = useState<Set<string>>(new Set()); // format: "deviceId:interfaceName"
   const [showFilter, setShowFilter] = useState(false);
+  const [minimizedDevices, setMinimizedDevices] = useState<Set<number>>(new Set());
   const [interfaceOrder, setInterfaceOrder] = useState<string[]>([]);
   const [hasLoadedSavedSelection, setHasLoadedSavedSelection] = useState(false);
   const [hasUserSelection, setHasUserSelection] = useState(false); // Track if user has ever made a selection
@@ -311,63 +312,76 @@ const MainContent = () => {
     })
   );
 
-  // Dapatkan semua interface yang tersedia (dari activeInterfaces atau dari traffic keys)
-  // Exclude interface PPPoE - HARUS dipanggil sebelum conditional return
-  const allAvailableInterfaces = useMemo(() => {
-    const fromTraffic = traffic ? Object.keys(traffic) : [];
-    const fromList = availableInterfaces?.map((iface: any) => iface.name) || [];
-    const allInterfaces = Array.from(new Set([...fromTraffic, ...fromList]));
-
-    // Filter out PPPoE interfaces
-    return allInterfaces
-      .filter(ifaceName => {
-        const ifaceInfo = availableInterfaces?.find((i: any) => i.name === ifaceName);
-        const type = (ifaceInfo?.type || '').toLowerCase();
-        // Exclude PPPoE interfaces
-        return !type.includes('pppoe');
-      })
-      .sort();
-  }, [traffic, availableInterfaces]);
-
-  // Auto-select semua interface yang punya traffic data saat pertama kali (exclude PPPoE)
-  // Hanya berjalan jika belum pernah ada user selection dan sudah selesai load dari localStorage
+  // Get all available devices info (names)
+  const [deviceNames, setDeviceNames] = useState<Record<number, string>>({});
   useEffect(() => {
-    if (hasLoadedSavedSelection && !hasUserSelection && traffic && Object.keys(traffic).length > 0 && selectedInterfaces.size === 0) {
-      const interfacesWithTraffic = Object.keys(traffic).filter(key => {
-        const currentTraffic = traffic[key];
-        // Exclude PPPoE interfaces
-        const ifaceInfo = availableInterfaces?.find((i: any) => i.name === key);
-        const type = (ifaceInfo?.type || '').toLowerCase();
-        if (type.includes('pppoe')) return false;
-
-        return currentTraffic && (currentTraffic['tx-bits-per-second'] || currentTraffic['rx-bits-per-second']);
-      });
-      if (interfacesWithTraffic.length > 0) {
-        const newSelection = new Set(interfacesWithTraffic);
-        setSelectedInterfaces(newSelection);
-        setHasUserSelection(true); // Mark that selection has been made
-        // Save auto-selected interfaces to localStorage
+    const fetchDeviceNames = async () => {
         try {
-          localStorage.setItem('dashboard-selected-interfaces', JSON.stringify(Array.from(newSelection)));
+            const apiUrl = process.env.NEXT_PUBLIC_API_BASE_URL;
+            const res = await apiFetch(`${apiUrl}/api/devices`);
+            if (res.ok) {
+                const data = await res.json();
+                const names: Record<number, string> = {};
+                data.forEach((d: any) => names[d.id] = d.name);
+                setDeviceNames(names);
+            }
         } catch (e) {
-          console.error('Failed to save auto-selected interfaces:', e);
+            console.error('Failed to fetch device names:', e);
         }
-      }
-    }
-  }, [traffic, selectedInterfaces.size, availableInterfaces, hasLoadedSavedSelection, hasUserSelection]);
+    };
+    fetchDeviceNames();
+  }, []);
+
+  // Aggregated interfaces across all selected devices
+  const groupedAvailableInterfaces = useMemo(() => {
+    const groups: Record<number, string[]> = {};
+    
+    selectedDeviceIds.forEach((deviceId: number) => {
+        const deviceData = allDevicesData[deviceId];
+        if (!deviceData) return;
+
+        const fromTraffic = deviceData.traffic ? Object.keys(deviceData.traffic) : [];
+        const fromList = deviceData.activeInterfaces?.map((iface: any) => iface.name) || [];
+        const allInterfaces = Array.from(new Set([...fromTraffic, ...fromList]));
+
+        groups[deviceId] = allInterfaces
+            .filter(ifaceName => {
+                const ifaceInfo = deviceData.activeInterfaces?.find((i: { name: string, type: string }) => i.name === ifaceName);
+                const type = (ifaceInfo?.type || '').toLowerCase();
+                return !type.includes('pppoe');
+            })
+            .sort();
+    });
+
+    return groups;
+  }, [allDevicesData, selectedDeviceIds]);
+
+  const allAvailableInterfacesList = useMemo(() => {
+    const list: string[] = [];
+    Object.entries(groupedAvailableInterfaces).forEach(([deviceId, interfaces]) => {
+        interfaces.forEach(iface => list.push(`${deviceId}:${iface}`));
+    });
+    return list;
+  }, [groupedAvailableInterfaces]);
+
+  // DISABLED: auto-select logic
 
   // Tampilkan interface yang dipilih dan punya traffic data
   const displayedInterfaces = useMemo(() => {
-    if (!traffic) return [];
+    const filtered: string[] = [];
 
-    const filtered = Object.keys(traffic)
-      .filter(key => {
-        const currentTraffic = traffic[key];
-        // Tampilkan jika dipilih dan ada data traffic
-        return selectedInterfaces.has(key) &&
-          currentTraffic &&
-          (currentTraffic['tx-bits-per-second'] || currentTraffic['rx-bits-per-second']);
-      });
+    selectedInterfaces.forEach(key => {
+        const [deviceIdStr, ifaceName] = key.split(':');
+        const deviceId = parseInt(deviceIdStr);
+        const deviceData = allDevicesData[deviceId];
+        
+        if (deviceData && deviceData.traffic && deviceData.traffic[ifaceName]) {
+            const currentTraffic = deviceData.traffic[ifaceName];
+            if (currentTraffic && (currentTraffic['tx-bits-per-second'] || currentTraffic['rx-bits-per-second'])) {
+                filtered.push(key);
+            }
+        }
+    });
 
     // Apply saved order if available
     if (interfaceOrder.length > 0) {
@@ -377,7 +391,7 @@ const MainContent = () => {
     }
 
     return filtered.sort();
-  }, [traffic, selectedInterfaces, interfaceOrder]);
+  }, [allDevicesData, selectedInterfaces, interfaceOrder]);
 
   // Update order when displayedInterfaces changes (add new interfaces to end)
   const displayedInterfacesString = displayedInterfaces.join(',');
@@ -427,22 +441,35 @@ const MainContent = () => {
     }
   };
 
-  const toggleInterface = (interfaceName: string) => {
+  const toggleInterface = (key: string) => {
     setSelectedInterfaces(prev => {
       const newSet = new Set(prev);
-      if (newSet.has(interfaceName)) {
-        newSet.delete(interfaceName);
+      if (newSet.has(key)) {
+        newSet.delete(key);
       } else {
-        newSet.add(interfaceName);
+        newSet.add(key);
       }
-      setHasUserSelection(true); // Mark that user has made a selection
-      // Save to localStorage
-      try {
-        localStorage.setItem('dashboard-selected-interfaces', JSON.stringify(Array.from(newSet)));
-      } catch (e) {
-        console.error('Failed to save selected interfaces:', e);
-      }
+      setHasUserSelection(true);
       return newSet;
+    });
+  };
+
+  const selectAll = () => {
+    setSelectedInterfaces(new Set(allAvailableInterfacesList));
+    setHasUserSelection(true);
+  };
+
+  const deselectAll = () => {
+    setSelectedInterfaces(new Set());
+    setHasUserSelection(true);
+  };
+
+  const toggleMinimize = (deviceId: number) => {
+    setMinimizedDevices(prev => {
+        const next = new Set(prev);
+        if (next.has(deviceId)) next.delete(deviceId);
+        else next.add(deviceId);
+        return next;
     });
   };
 
@@ -465,13 +492,7 @@ const MainContent = () => {
   const itemCount = displayedInterfaces.length;
   const gridLayoutClass = itemCount >= 3 ? 'md:grid-cols-2' : 'md:grid-cols-1';
 
-  if (!isConnected) {
-    return (
-      <div className="md:col-span-2 flex items-center justify-center bg-secondary rounded-xl p-10 h-full">
-        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-      </div>
-    );
-  }
+  const isConnected = selectedDeviceIds.length > 0 && selectedDeviceIds.some((id: number) => allStatus[id]?.isConnected);
 
   return (
     <div className="flex-grow space-y-4">
@@ -481,7 +502,7 @@ const MainContent = () => {
           <div className="flex items-center justify-between">
             <CardTitle className="text-lg flex items-center gap-2">
               <Filter size={18} />
-              Pilih Interface ({selectedInterfaces.size}/{allAvailableInterfaces.length})
+              Pilih Interface ({selectedInterfaces.size}/{allAvailableInterfacesList.length})
             </CardTitle>
             <Button
               variant="ghost"
@@ -493,35 +514,71 @@ const MainContent = () => {
           </div>
         </CardHeader>
         {showFilter && (
-          <CardContent>
-            <div className="flex flex-wrap gap-2">
-              {allAvailableInterfaces.length > 0 ? (
-                allAvailableInterfaces.map((ifaceName) => {
-                  const ifaceInfo = availableInterfaces?.find((i: any) => i.name === ifaceName);
-                  const hasTraffic = traffic && traffic[ifaceName];
-                  const isSelected = selectedInterfaces.has(ifaceName);
+          <CardContent className="space-y-4">
+            <div className="flex gap-2 pb-2 border-b">
+              <Button variant="outline" size="sm" onClick={selectAll} className="text-xs h-8 px-3">Pilih Semua</Button>
+              <Button variant="outline" size="sm" onClick={deselectAll} className="text-xs h-8 px-3">Hapus Semua</Button>
+            </div>
+            
+            <div className="space-y-4 pt-2">
+              {selectedDeviceIds.length > 0 ? (
+                selectedDeviceIds.map((deviceId: number) => {
+                    const interfaces = groupedAvailableInterfaces[deviceId] || [];
+                    const isMinimized = minimizedDevices.has(deviceId);
+                    const deviceName = deviceNames[deviceId] || `Device ${deviceId}`;
+                    const connected = allStatus[deviceId]?.isConnected;
 
-                  return (
-                    <button
-                      key={ifaceName}
-                      onClick={() => toggleInterface(ifaceName)}
-                      className={cn(
-                        "px-3 py-1.5 rounded-md text-sm border transition-all",
-                        isSelected
-                          ? "bg-primary text-primary-foreground border-primary"
-                          : "bg-secondary text-secondary-foreground border-border hover:bg-secondary/80",
-                        !hasTraffic && "opacity-50"
-                      )}
-                    >
-                      {ifaceName.toUpperCase()}
-                      {ifaceInfo?.type && (
-                        <span className="ml-1 text-xs opacity-75">({ifaceInfo.type})</span>
-                      )}
-                    </button>
-                  );
+                    return (
+                        <div key={deviceId} className="border rounded-lg overflow-hidden">
+                            <div 
+                                onClick={() => toggleMinimize(deviceId)}
+                                className={cn(
+                                    "flex items-center justify-between px-3 py-2 cursor-pointer transition-colors",
+                                    isMinimized ? "bg-muted/30" : "bg-muted/50"
+                                )}
+                            >
+                                <div className="flex items-center gap-2">
+                                    <div className={cn("w-2 h-2 rounded-full", connected ? "bg-green-500" : "bg-red-500")} />
+                                    <span className="font-bold text-sm">{deviceName}</span>
+                                    <span className="text-[10px] text-muted-foreground uppercase">{interfaces.length} Interface</span>
+                                </div>
+                                {isMinimized ? <ChevronDown size={16} /> : <ChevronUp size={16} />}
+                            </div>
+                            {!isMinimized && (
+                                <div className="p-3 flex flex-wrap gap-2 animate-in fade-in slide-in-from-top-1 duration-200">
+                                    {interfaces.map(ifaceName => {
+                                        const key = `${deviceId}:${ifaceName}`;
+                                        const isSelected = selectedInterfaces.has(key);
+                                        const deviceData = allDevicesData[deviceId];
+                                        const hasTraffic = deviceData?.traffic && deviceData.traffic[ifaceName];
+                                        const ifaceInfo = deviceData?.activeInterfaces?.find((i: { name: string, type: string }) => i.name === ifaceName);
+
+                                        return (
+                                            <button
+                                                key={key}
+                                                onClick={() => toggleInterface(key)}
+                                                className={cn(
+                                                    "px-3 py-1.5 rounded-md text-xs border transition-all flex items-center gap-1",
+                                                    isSelected
+                                                        ? "bg-primary text-primary-foreground border-primary"
+                                                        : "bg-secondary text-secondary-foreground border-border hover:bg-secondary/80",
+                                                    !hasTraffic && "opacity-50"
+                                                )}
+                                            >
+                                                {ifaceName.toUpperCase()}
+                                                {ifaceInfo?.type && (
+                                                    <span className="opacity-75 text-[10px]">({ifaceInfo.type})</span>
+                                                )}
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+                            )}
+                        </div>
+                    );
                 })
               ) : (
-                <p className="text-sm text-muted-foreground">Belum ada interface yang terdeteksi.</p>
+                <p className="text-sm text-muted-foreground text-center py-4 italic">Pilih perangkat terlebih dahulu.</p>
               )}
             </div>
           </CardContent>
@@ -539,18 +596,28 @@ const MainContent = () => {
         >
           <div className={cn("grid grid-cols-1 gap-6 traffic-grid", gridLayoutClass)}>
             {displayedInterfaces.length > 0 ? (
-              displayedInterfaces.map((etherId, index) => {
-                const currentTraffic = traffic[etherId];
+              displayedInterfaces.map((key, index) => {
+                const [deviceIdStr, ifaceName] = key.split(':');
+                const deviceId = parseInt(deviceIdStr);
+                const deviceData = allDevicesData[deviceId];
+                const currentTraffic = deviceData?.traffic ? deviceData.traffic[ifaceName] : null;
+                const deviceName = deviceNames[deviceId] || `Device ${deviceId}`;
+
                 return (
-                  <SortableInterfaceCard
-                    key={etherId}
-                    id={etherId}
-                    etherId={etherId}
-                    currentTraffic={currentTraffic}
-                    index={index}
-                    itemCount={itemCount}
-                    deviceId={selectedDeviceId}
-                  />
+                  <div key={key} className="relative group">
+                    <div className="absolute -top-3 left-4 px-2 py-0.5 bg-primary text-[10px] font-bold text-primary-foreground rounded-full z-10 shadow-sm opacity-80 group-hover:opacity-100 transition-opacity flex items-center gap-1">
+                        <Activity size={10} />
+                        {deviceName}
+                    </div>
+                    <SortableInterfaceCard
+                        id={key}
+                        etherId={ifaceName}
+                        currentTraffic={currentTraffic}
+                        index={index}
+                        itemCount={itemCount}
+                        deviceId={deviceId}
+                    />
+                  </div>
                 );
               })
             ) : (
@@ -561,7 +628,7 @@ const MainContent = () => {
                       ? "Pilih interface yang ingin ditampilkan dari filter di atas."
                       : "Belum ada data traffic untuk interface yang dipilih."}
                   </p>
-                  {allAvailableInterfaces.length === 0 && (
+                  {allAvailableInterfacesList.length === 0 && (
                     <p className="text-xs text-muted-foreground">Pastikan interface aktif dan terhubung ke Mikrotik.</p>
                   )}
                 </div>
