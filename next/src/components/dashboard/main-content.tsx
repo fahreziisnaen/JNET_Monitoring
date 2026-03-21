@@ -183,7 +183,45 @@ const EtherChart = ({ trafficData, interfaceName, deviceId }: { trafficData: any
     }
   }, [trafficData, storageKey]);
 
-  const chartOptions: any = { responsive: true, maintainAspectRatio: false, animation: { duration: 400 }, scales: { y: { beginAtZero: true, ticks: { callback: (value: number) => `${value} Mbps` } } }, plugins: { legend: { position: 'top' as const } } };
+  const chartOptions: any = { 
+    responsive: true, 
+    maintainAspectRatio: false, 
+    animation: { duration: 400 }, 
+    interaction: {
+        mode: 'index' as const,
+        intersect: false,
+    },
+    scales: { 
+        y: { 
+            beginAtZero: true, 
+            ticks: { callback: (value: number) => `${value} Mbps` } 
+        } 
+    }, 
+    plugins: { 
+        legend: { position: 'top' as const },
+        tooltip: {
+            backgroundColor: 'rgba(0, 0, 0, 0.8)',
+            padding: 12,
+            titleFont: { size: 14, weight: 'bold' },
+            bodyFont: { size: 13 },
+            callbacks: {
+                label: (context: any) => {
+                    let label = context.dataset.label || '';
+                    if (label) label = label.split(' (')[0] + ': ';
+                    if (context.parsed.y !== null) {
+                        const val = context.parsed.y;
+                        if (val >= 1000) {
+                            label += `${(val / 1000).toFixed(2)} Gbps`;
+                        } else {
+                            label += `${val.toFixed(2)} Mbps`;
+                        }
+                    }
+                    return label;
+                }
+            }
+        }
+    } 
+  };
 
   return <Line data={chartData} options={chartOptions} />;
 };
