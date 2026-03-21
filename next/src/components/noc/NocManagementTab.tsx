@@ -326,7 +326,7 @@ const NocManagementTab: React.FC<NocManagementTabProps> = ({ workspaces }) => {
             }
 
             toast.success("Aksi Berhasil", { description: `Perintah ${action} selesai dieksekusi.` });
-            setLastFetchTime(0);
+            lastFetchTimeRef.current = 0;
             fetchSecrets();
         } catch (error: any) {
             toast.error(`Gagal Melakukan Aksi`, { description: error.message });
@@ -346,7 +346,7 @@ const NocManagementTab: React.FC<NocManagementTabProps> = ({ workspaces }) => {
             if (!res.ok) throw new Error("Gagal Menghapus Secret");
 
             toast.success("Berhasil Menghapus Secret", { description: `Secret untuk ${secretToDelete.name} telah dihapus.` });
-            setLastFetchTime(0);
+            lastFetchTimeRef.current = 0;
             fetchSecrets();
         } catch (error: any) {
             toast.error("Gagal Menghapus Secret", { description: error.message || "Terjadi kesalahan saat menghapus data." });
@@ -537,7 +537,7 @@ const NocManagementTab: React.FC<NocManagementTabProps> = ({ workspaces }) => {
                     onClose={() => setIsEditModalOpen(false)}
                     secretToEdit={memoizedSecretToEdit}
                     onSuccess={() => {
-                        setLastFetchTime(0);
+                        lastFetchTimeRef.current = 0;
                         fetchSecrets();
                     }}
                     nocWorkspaceId={secretToEdit.workspace_id}
