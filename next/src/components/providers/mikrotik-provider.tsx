@@ -3,6 +3,7 @@
 import React, { createContext, useContext, useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { useAuth } from './auth-provider';
 import { apiFetch, getAuthToken } from '@/utils/api';
+import { usePathname } from 'next/navigation';
 
 interface DeviceData {
     pppoeSecrets: any[];
@@ -53,6 +54,7 @@ const DEFAULT_DEVICE_DATA: DeviceData = {
 
 export const MikrotikProvider = ({ children }: { children: React.ReactNode }) => {
     const { user } = useAuth();
+    const pathname = usePathname();
     const [dashboardDeviceIds, setDashboardDeviceIds] = useState<number[]>([]);
     const [activeDeviceId, setActiveDeviceId] = useState<number | null>(null);
     const [isLoaded, setIsLoaded] = useState(false);
@@ -310,6 +312,17 @@ export const MikrotikProvider = ({ children }: { children: React.ReactNode }) =>
     useEffect(() => {
         if (!isLoaded || !user?.workspace_id) return;
 
+        // JIKA DI HALAMAN NOC: Matikan semua koneksi individual untuk menghemat bandwidth
+        // NOC menggunakan koneksinya sendiri di NocManagementTab
+        if (pathname === '/noc') {
+            wsPoolRef.current.forEach((ws) => ws.close(1000, 'NOC Mode Active'));
+            wsPoolRef.current.clear();
+            reconnectTimersRef.current.forEach(t => clearTimeout(t));
+            reconnectTimersRef.current.clear();
+            reconnectAttemptsRef.current.clear();
+            return;
+        }
+
         const currentSelected = new Set(effectiveSelectedIds);
         const activeTimers: any[] = [];
         
@@ -339,7 +352,7 @@ export const MikrotikProvider = ({ children }: { children: React.ReactNode }) =>
         });
 
         return () => activeTimers.forEach(t => clearTimeout(t));
-    }, [effectiveSelectedIds, isLoaded, user?.workspace_id, connectDevice]);
+    }, [effectiveSelectedIds, isLoaded, user?.workspace_id, connectDevice, pathname]);
 
     // Setters for Dashboard (Multiple)
     const handleDashboardChange = useCallback((deviceIds: number[]) => {
