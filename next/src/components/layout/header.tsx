@@ -285,9 +285,14 @@ const Header = () => {
                           <span className={`text-muted-foreground transition-transform duration-200 text-[10px] ${isWorkspaceDropdownOpen ? 'rotate-90' : ''}`}>▶</span>
                         </button>
 
-                        {/* Nested Dropdown for Workspaces */}
-                        <div className={`absolute right-full top-0 mr-1 w-60 bg-card rounded-lg shadow-lg border z-50 transition-all duration-200 ${isWorkspaceDropdownOpen ? 'opacity-100 visible' : 'opacity-0 invisible pointer-events-none'}`}>
-                          <div className="p-2 border-b bg-muted/50 rounded-t-lg">
+                        {/* Nested Dropdown for Workspaces - Responsive positioning */}
+                        <div className={`
+                          ${isWorkspaceDropdownOpen ? 'opacity-100 visible' : 'opacity-0 invisible pointer-events-none'}
+                          transition-all duration-200 z-50 bg-card rounded-lg shadow-lg border
+                          sm:absolute sm:right-full sm:top-0 sm:mr-1 sm:w-60
+                          relative w-full mt-1 border-primary/20 bg-secondary/20
+                        `}>
+                          <div className="p-2 border-b bg-muted/30 rounded-t-lg sm:block hidden">
                             <p className="text-xs font-semibold flex items-center gap-1.5">
                               Pilih Workspace
                             </p>
@@ -298,7 +303,7 @@ const Header = () => {
                                 key={ws.id}
                                 onClick={() => handleSwitchWorkspace(ws.id)}
                                 disabled={isSwitching || user.workspace_id === ws.id}
-                                className={`w-full text-left px-2 py-2 text-xs rounded-sm flex items-center justify-between transition-colors ${user.workspace_id === ws.id ? 'bg-primary/10 text-primary font-medium cursor-default' : 'hover:bg-secondary text-foreground'}`}
+                                className={`w-full text-left px-2 py-2 text-xs rounded-sm flex items-center justify-between transition-colors ${user.workspace_id === ws.id ? 'bg-primary/20 text-primary font-bold cursor-default' : 'hover:bg-secondary text-foreground'}`}
                               >
                                 <span className="truncate mr-2 flex-1">{ws.name}</span>
                                 {user.workspace_id === ws.id ? <CheckCircle2 size={14} className="flex-shrink-0 text-primary" /> : null}
