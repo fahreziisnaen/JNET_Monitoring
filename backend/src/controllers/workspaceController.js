@@ -271,13 +271,19 @@ exports.updateMemberRole = async (req, res) => {
             }
 
             await pool.query('UPDATE users SET role = ? WHERE id = ?', [newRole, targetUserId]);
-
-            // Jika diubah ke NOC, berikan izin ke workspace tempat dia berada saat ini (jika ada)
-            if (newRole === 'noc' && targetUsers[0].workspace_id) {
-                await pool.query(
-                    'INSERT IGNORE INTO noc_permissions (user_id, workspace_id, granted_by) VALUES (?, ?, ?)',
-                    [targetUserId, targetUsers[0].workspace_id, currentUser.id]
-                );
+            
+            // Sync NOC permissions
+            if (newRole === 'noc') {
+                // Jika diubah ke NOC, berikan izin ke workspace tempat dia berada saat ini (jika ada)
+                if (targetUsers[0].workspace_id) {
+                    await pool.query(
+                        'INSERT IGNORE INTO noc_permissions (user_id, workspace_id, granted_by) VALUES (?, ?, ?)',
+                        [targetUserId, targetUsers[0].workspace_id, currentUser.id]
+                    );
+                }
+            } else {
+                // Jika diubah dari NOC ke role lain, hapus semua izin NOC miliknya
+                await pool.query('DELETE FROM noc_permissions WHERE user_id = ?', [targetUserId]);
             }
 
             return res.status(200).json({

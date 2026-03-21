@@ -176,6 +176,9 @@ const WorkspaceMembersCard = () => {
                     setAllUsers(prev => prev.map(m => m.id === member.id ? { ...m, role: newRole } : m));
                 }
                 toast.success("Role Berhasil Diubah", { description: `Role ${member.display_name} diubah menjadi ${newRole}.` });
+                
+                // Beri tahu komponen lain (seperti NocAccessCard) untuk refresh
+                window.dispatchEvent(new CustomEvent('noc-access-update'));
             } else {
                 throw new Error(data.message);
             }

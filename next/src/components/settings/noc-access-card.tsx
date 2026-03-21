@@ -47,6 +47,12 @@ const NocAccessCard = () => {
 
     useEffect(() => {
         fetchNocUsers();
+        
+        // Listen for external updates (e.g. from WorkspaceMembersCard)
+        const handleRefresh = () => fetchNocUsers();
+        window.addEventListener('noc-access-update', handleRefresh);
+        
+        return () => window.removeEventListener('noc-access-update', handleRefresh);
     }, [fetchNocUsers]);
 
     const handleGrantAccess = async (e: React.FormEvent) => {
