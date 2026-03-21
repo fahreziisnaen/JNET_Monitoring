@@ -28,11 +28,11 @@ import {
 import { CSS } from '@dnd-kit/utilities';
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend);
-const EtherChart = ({ trafficData, interfaceName, deviceId }: { trafficData: any; interfaceName: string; deviceId: number | null }) => {
+const EtherChart = ({ trafficData, interfaceName, deviceId, workspaceId, historyHours = 3 }: { trafficData: any; interfaceName: string; deviceId: number | null; workspaceId?: number; historyHours?: number }) => {
   const { user } = useAuth();
-  const workspaceId = user?.workspace_id || 'default';
+  const userWorkspaceId = user?.workspace_id || 'default';
   // Use a more unique key including deviceId
-  const storageKey = `chart-data-${workspaceId}-${deviceId}-${interfaceName}`;
+  const storageKey = `chart-data-${userWorkspaceId}-${deviceId}-${interfaceName}`;
   // Tidak ada batasan waktu - data grafik tetap tersimpan meskipun logout lama
   // Polling cron job tetap berjalan di background untuk update dashboard_snapshot
 
@@ -78,7 +78,7 @@ const EtherChart = ({ trafficData, interfaceName, deviceId }: { trafficData: any
         try {
           // Fetch dari database menggunakan apiFetch (otomatis handle auth_token)
           const apiUrl = process.env.NEXT_PUBLIC_API_BASE_URL;
-          const res = await apiFetch(`${apiUrl}/api/devices/${deviceId}/traffic-history?interface=${interfaceName}`);
+          const res = await apiFetch(`${apiUrl}/api/devices/${deviceId}/traffic-history?interface=${interfaceName}&hours=${historyHours}${workspaceId ? `&workspaceId=${workspaceId}` : ''}`);
           
           if (res.ok) {
             const data = await res.json();
@@ -94,8 +94,8 @@ const EtherChart = ({ trafficData, interfaceName, deviceId }: { trafficData: any
             const historyTx = data.map((r: any) => parseFloat((r.tx_bps / 1000000).toFixed(2)));
             const historyRx = data.map((r: any) => parseFloat((r.rx_bps / 1000000).toFixed(2)));
             
-            // Limit to max 200 data points agar browser tidak berat
-            const maxLength = 200;
+            // Limit to appropriate number of data points
+            const maxLength = historyHours * 60; // 1 data point per minute
             const sliceLabels = historyLabels.slice(-maxLength);
             const sliceTx = historyTx.slice(-maxLength);
             const sliceRx = historyRx.slice(-maxLength);
@@ -142,7 +142,44 @@ const EtherChart = ({ trafficData, interfaceName, deviceId }: { trafficData: any
 
       fetchHistory();
     }
-  }, [deviceId, interfaceName, storageKey]);
+    // Re-fetch when range changes
+    if (isInitializedRef.current && deviceId) {
+        // Redo fetch if historyHours changed
+        const redoFetch = async () => {
+            try {
+                const apiUrl = process.env.NEXT_PUBLIC_API_BASE_URL;
+                const res = await apiFetch(`${apiUrl}/api/devices/${deviceId}/traffic-history?interface=${interfaceName}&hours=${historyHours}${workspaceId ? `&workspaceId=${workspaceId}` : ''}`);
+                if (res.ok) {
+                    const data = await res.json();
+                    if (data && data.length > 0) {
+                        const historyLabels = data.map((r: any) => new Date(r.timestamp).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }));
+                        const historyTx = data.map((r: any) => parseFloat((r.tx_bps / 1000000).toFixed(2)));
+                        const historyRx = data.map((r: any) => parseFloat((r.rx_bps / 1000000).toFixed(2)));
+                        const maxLength = historyHours * 60;
+                        const sliceLabels = historyLabels.slice(-maxLength);
+                        const sliceTx = historyTx.slice(-maxLength);
+                        const sliceRx = historyRx.slice(-maxLength);
+                        while (sliceLabels.length < 30) {
+                            sliceLabels.unshift('');
+                            sliceTx.unshift(0);
+                            sliceRx.unshift(0);
+                        }
+                        setChartData({
+                            labels: sliceLabels,
+                            datasets: [
+                                { label: 'Upload (Mbps)', data: sliceTx, borderColor: '#ef4444', backgroundColor: '#ef444433', tension: 0.4, pointRadius: 0 },
+                                { label: 'Download (Mbps)', data: sliceRx, borderColor: '#3b82f6', backgroundColor: '#3b82f633', tension: 0.4, pointRadius: 0 },
+                            ]
+                        });
+                    }
+                }
+            } catch (e) {
+                console.warn('Failed to re-fetch history:', e);
+            }
+        };
+        redoFetch();
+    }
+  }, [deviceId, interfaceName, storageKey, historyHours]);
 
   useEffect(() => {
     if (trafficData && isInitializedRef.current) {
@@ -234,9 +271,11 @@ interface SortableInterfaceCardProps {
   index: number;
   itemCount: number;
   deviceId: number | null;
+  workspaceId?: number;
 }
 
-const SortableInterfaceCard = ({ id, etherId, currentTraffic, index, itemCount, deviceId }: SortableInterfaceCardProps) => {
+const SortableInterfaceCard = ({ id, etherId, currentTraffic, index, itemCount, deviceId, workspaceId }: SortableInterfaceCardProps) => {
+  const [historyHours, setHistoryHours] = useState(3);
   const {
     attributes,
     listeners,
@@ -287,7 +326,25 @@ const SortableInterfaceCard = ({ id, etherId, currentTraffic, index, itemCount, 
           <GripVertical size={18} className="text-muted-foreground" />
         </div>
         <CardHeader>
-          <CardTitle className="mb-2">{etherId.toUpperCase()}</CardTitle>
+          <div className="flex justify-between items-start mb-2 pr-8">
+            <CardTitle>{etherId.toUpperCase()}</CardTitle>
+            <div className="flex bg-secondary/50 p-0.5 rounded-lg border border-border">
+                {[1, 3, 6, 24].map((h) => (
+                    <button
+                        key={h}
+                        onClick={() => setHistoryHours(h)}
+                        className={cn(
+                            "px-2 py-0.5 text-[10px] uppercase font-bold rounded transition-all",
+                            historyHours === h 
+                                ? "bg-primary text-primary-foreground shadow-sm"
+                                : "text-muted-foreground hover:text-foreground"
+                        )}
+                    >
+                        {h}H
+                    </button>
+                ))}
+            </div>
+          </div>
           <div className="flex items-center gap-4 text-sm">
             <div className="flex items-center gap-2">
               <div className="w-3 h-3 rounded-full bg-red-500"></div>
@@ -302,7 +359,7 @@ const SortableInterfaceCard = ({ id, etherId, currentTraffic, index, itemCount, 
           </div>
         </CardHeader>
         <CardContent className="h-80">
-          <EtherChart trafficData={currentTraffic} interfaceName={etherId} deviceId={deviceId} />
+          <EtherChart trafficData={currentTraffic} interfaceName={etherId} deviceId={deviceId} workspaceId={workspaceId} historyHours={historyHours} />
         </CardContent>
       </Card>
     </div>
@@ -311,7 +368,7 @@ const SortableInterfaceCard = ({ id, etherId, currentTraffic, index, itemCount, 
 
 const MainContent = () => {
   const { user } = useAuth();
-  const { allDevicesData, allStatus, selectedDeviceIds } = useMikrotik() || { allDevicesData: {}, allStatus: {}, selectedDeviceIds: [] };
+  const { allDevicesData, allStatus, selectedDeviceIds, isLoaded: devicesLoaded } = useMikrotik() || { allDevicesData: {}, allStatus: {}, selectedDeviceIds: [], isLoaded: false };
   const [selectedInterfaces, setSelectedInterfaces] = useState<Set<string>>(new Set()); // format: "deviceId:interfaceName"
   const [showFilter, setShowFilter] = useState(false);
   const [minimizedDevices, setMinimizedDevices] = useState<Set<number>>(new Set());
@@ -352,7 +409,7 @@ const MainContent = () => {
   );
 
   // Get all available devices info (names)
-  const [deviceNames, setDeviceNames] = useState<Record<number, string>>({});
+  const [deviceMetas, setDeviceMetas] = useState<Record<number, {name: string, workspace_id: number}>>({});
   useEffect(() => {
     const fetchDeviceNames = async () => {
         try {
@@ -360,12 +417,12 @@ const MainContent = () => {
             const res = await apiFetch(`${apiUrl}/api/devices`);
             if (res.ok) {
                 const data = await res.json();
-                const names: Record<number, string> = {};
-                data.forEach((d: any) => names[d.id] = d.name);
-                setDeviceNames(names);
+                const metas: Record<number, {name: string, workspace_id: number}> = {};
+                data.forEach((d: any) => metas[d.id] = { name: d.name, workspace_id: d.workspace_id });
+                setDeviceMetas(metas);
             }
         } catch (e) {
-            console.error('Failed to fetch device names:', e);
+            console.error('Failed to fetch device metas:', e);
         }
     };
     fetchDeviceNames();
@@ -408,7 +465,7 @@ const MainContent = () => {
   // Tampilkan interface yang dipilih dan punya traffic data
   // Cleanup selectedInterfaces when devices are unchecked
   useEffect(() => {
-    if (!hasLoadedSavedSelection) return;
+    if (!hasLoadedSavedSelection || !devicesLoaded) return;
     
     setSelectedInterfaces(prev => {
         const next = new Set(prev);
@@ -431,7 +488,7 @@ const MainContent = () => {
         }
         return prev;
     });
-  }, [selectedDeviceIds, hasLoadedSavedSelection, user?.workspace_id]);
+  }, [selectedDeviceIds, hasLoadedSavedSelection, devicesLoaded, user?.workspace_id]);
 
   const displayedInterfaces = useMemo(() => {
     const filtered: string[] = [];
@@ -595,7 +652,7 @@ const MainContent = () => {
                 selectedDeviceIds.map((deviceId: number) => {
                     const interfaces = groupedAvailableInterfaces[deviceId] || [];
                     const isMinimized = minimizedDevices.has(deviceId);
-                    const deviceName = deviceNames[deviceId] || `Device ${deviceId}`;
+                    const deviceName = deviceMetas[deviceId]?.name || `Device ${deviceId}`;
                     const connected = allStatus[deviceId]?.isConnected;
 
                     return (
@@ -671,8 +728,10 @@ const MainContent = () => {
                 const deviceId = parseInt(deviceIdStr);
                 const deviceData = allDevicesData[deviceId];
                 const currentTraffic = deviceData?.traffic ? deviceData.traffic[ifaceName] : null;
-                const deviceName = deviceNames[deviceId] || `Device ${deviceId}`;
-
+                const deviceMeta = deviceMetas[deviceId];
+                const deviceName = deviceMeta?.name || `Device ${deviceId}`;
+                const workspaceIdForDevice = deviceMeta?.workspace_id;
+                
                 return (
                   <div key={key} className="relative group">
                     <div className="absolute -top-3 left-4 px-2 py-0.5 bg-primary text-[10px] font-bold text-primary-foreground rounded-full z-10 shadow-sm opacity-80 group-hover:opacity-100 transition-opacity flex items-center gap-1">
@@ -686,6 +745,7 @@ const MainContent = () => {
                         index={index}
                         itemCount={itemCount}
                         deviceId={deviceId}
+                        workspaceId={workspaceIdForDevice}
                     />
                   </div>
                 );

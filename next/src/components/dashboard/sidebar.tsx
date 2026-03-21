@@ -55,7 +55,9 @@ const DeviceInfoCard = ({ deviceId, data, connected, name }: { deviceId: number,
   }
 
   const pppoeSecrets = data?.pppoeSecrets || [];
-  const activeCount = pppoeSecrets.filter((secret: { isActive: boolean }) => secret.isActive === true).length;
+  const totalSecrets = pppoeSecrets.length;
+  const activeSecrets = pppoeSecrets.filter((secret: { isActive: boolean }) => secret.isActive === true).length;
+  const inactiveSecrets = totalSecrets - activeSecrets;
   
   const cpuLoad = parseInt(resource['cpu-load'] || '0', 10);
   const totalMemory = parseInt(resource['total-memory'] || '1', 10);
@@ -87,7 +89,7 @@ const DeviceInfoCard = ({ deviceId, data, connected, name }: { deviceId: number,
           <CardTitle className="text-sm font-bold truncate">{name}</CardTitle>
         </div>
         <div className="flex items-center gap-2">
-            <span className="text-[10px] font-bold text-primary px-1.5 py-0.5 bg-primary/10 rounded">{activeCount} Act</span>
+            <span className="text-[10px] font-bold text-primary px-1.5 py-0.5 bg-primary/10 rounded">{activeSecrets} Act</span>
             {minimized ? <ChevronDown size={14} /> : <ChevronUp size={14} />}
         </div>
       </CardHeader>
@@ -101,6 +103,21 @@ const DeviceInfoCard = ({ deviceId, data, connected, name }: { deviceId: number,
                 <div className="bg-secondary/50 p-2.5 rounded-lg border border-primary/5">
                     <p className="text-muted-foreground uppercase font-bold text-[9px]">Uptime</p>
                     <p className="truncate font-bold text-foreground">{formatUptime(resource.uptime)}</p>
+                </div>
+            </div>
+
+            <div className="grid grid-cols-3 gap-2 py-1 text-[10px] font-bold uppercase tracking-tight">
+                <div className="bg-blue-500/10 border border-blue-500/20 p-2 rounded-lg text-center">
+                    <p className="text-blue-500/70 mb-0.5">Total Secret</p>
+                    <p className="text-blue-500 text-sm">{totalSecrets}</p>
+                </div>
+                <div className="bg-green-500/10 border border-green-500/20 p-2 rounded-lg text-center">
+                    <p className="text-green-500/70 mb-0.5">Aktif</p>
+                    <p className="text-green-500 text-sm">{activeSecrets}</p>
+                </div>
+                <div className="bg-red-500/10 border border-red-500/20 p-2 rounded-lg text-center">
+                    <p className="text-red-500/70 mb-0.5">Tidak Aktif</p>
+                    <p className="text-red-500 text-sm">{inactiveSecrets}</p>
                 </div>
             </div>
 

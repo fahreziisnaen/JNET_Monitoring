@@ -29,6 +29,7 @@ const DEFAULT_DEVICE_DATA: DeviceData = {
 export const MikrotikProvider = ({ children }: { children: React.ReactNode }) => {
     const { user } = useAuth();
     const [selectedDeviceIds, setSelectedDeviceIds] = useState<number[]>([]);
+    const [isLoaded, setIsLoaded] = useState(false);
 
     // Per-device data stored in ref to avoid excessive re-renders
     const deviceDataRef = useRef<Map<number, DeviceData>>(new Map());
@@ -60,6 +61,9 @@ export const MikrotikProvider = ({ children }: { children: React.ReactNode }) =>
                     console.error('Failed to parse saved device IDs:', e);
                 }
             }
+            setIsLoaded(true);
+        } else {
+            setIsLoaded(false);
         }
     }, [user]);
 
@@ -317,6 +321,7 @@ export const MikrotikProvider = ({ children }: { children: React.ReactNode }) =>
         setSelectedDeviceIds: handleDevicesChange,
         selectedDeviceId: selectedDeviceIds[0] || null,
         setSelectedDeviceId: handleDeviceChange,
+        isLoaded,
         pppoeSecrets: selectedDeviceIds[0] ? (allDevicesData.dataMap[selectedDeviceIds[0]]?.pppoeSecrets || []) : [],
         resource: selectedDeviceIds[0] ? (allDevicesData.dataMap[selectedDeviceIds[0]]?.resource || null) : null,
         isConnected: selectedDeviceIds[0] ? (allDevicesData.dataMap[selectedDeviceIds[0]]?.isConnected || false) : false,
