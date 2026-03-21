@@ -282,18 +282,18 @@ const WorkspaceMembersCard = () => {
 
             <div className="flex items-center gap-1">
                 {canManageRole(member) && (
-                    <div className="opacity-0 group-hover:opacity-100 transition-opacity flex items-center bg-secondary/50 rounded-md p-1 border">
+                    <div className="opacity-0 group-hover:opacity-100 transition-opacity flex items-center bg-background rounded-md p-1 border border-primary/30 shadow-sm">
                         <select
-                            className="bg-transparent text-[11px] font-medium border-none outline-none pr-1 cursor-pointer"
+                            className="bg-transparent text-[11px] font-semibold text-foreground border-none outline-none pr-1 cursor-pointer appearance-none"
                             value={member.role}
                             onChange={(e) => handleRoleChange(member, e.target.value as any)}
                             disabled={togglingRoleId === member.id}
                         >
-                            <option value="user">User</option>
-                            <option value="noc">NOC</option>
-                            <option value="admin">Admin</option>
+                            <option value="user" className="bg-background text-foreground">User</option>
+                            <option value="noc" className="bg-background text-foreground text-emerald-500">NOC</option>
+                            <option value="admin" className="bg-background text-foreground text-blue-500">Admin</option>
                         </select>
-                        {togglingRoleId === member.id && <Loader2 size={12} className="animate-spin ml-1" />}
+                        {togglingRoleId === member.id && <Loader2 size={12} className="animate-spin ml-1 text-primary" />}
                     </div>
                 )}
 

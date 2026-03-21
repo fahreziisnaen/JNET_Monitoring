@@ -39,7 +39,7 @@ const Navbar = () => {
                         <Link
                             key={item.label}
                             href={item.href}
-                            className={`group flex flex-col items-center transition-colors duration-300 ${isActive ? 'text-primary' : 'text-muted-foreground hover:text-foreground'
+                            className={`group flex flex-col items-center transition-colors duration-300 ${isActive ? 'text-primary' : 'text-foreground/60 hover:text-foreground'
                                 }`}
                         >
                             <div className="transition-transform duration-300 group-hover:-translate-y-1"><Icon className="h-5 w-5 sm:h-6 sm:w-6" /></div>
@@ -51,7 +51,7 @@ const Navbar = () => {
                     <Link
                         key="NOC"
                         href="/noc"
-                        className={`group flex flex-col items-center transition-colors duration-300 ${pathname === '/noc' ? 'text-primary' : 'text-muted-foreground hover:text-foreground'
+                        className={`group flex flex-col items-center transition-colors duration-300 ${pathname === '/noc' ? 'text-primary' : 'text-foreground/60 hover:text-foreground'
                             }`}
                     >
                         <div className="transition-transform duration-300 group-hover:-translate-y-1">
