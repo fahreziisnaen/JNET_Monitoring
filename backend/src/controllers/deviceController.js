@@ -12,7 +12,7 @@ exports.listDevices = async (req, res) => {
     }
 
     try {
-        if (user.role === 'superadmin') {
+        if (user.is_super_admin) {
             // Superadmin can see ALL devices in ALL workspaces
             const [devices] = await pool.query(`
                 SELECT d.id, d.name, d.host, d.user, d.port, d.workspace_id, w.name as workspace_name 
