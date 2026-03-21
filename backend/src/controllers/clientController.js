@@ -35,8 +35,9 @@ function parseRateToBps(rateStr) {
 exports.getClients = async (req, res) => {
     let { workspace_id } = req.user;
     
-    // Support override for NOC
-    if (req.query.workspaceId && (req.user.role === 'admin' || req.user.role === 'noc')) {
+    // Support override for NOC / Admin / Superadmin
+    const isSuper = req.user.is_super_admin === 1 || req.user.is_super_admin === true;
+    if (req.query.workspaceId && (req.user.role === 'admin' || req.user.role === 'noc' || isSuper)) {
         workspace_id = parseInt(req.query.workspaceId);
     }
     try {

@@ -92,9 +92,6 @@ async function checkAlarms(workspaceId, device, broadcastCallback = null) {
         if (deviceStatus === 'connected') {
             if (state.isOffline) {
                 // Transmit 'connected' broadcast to UI to dismiss failure Toast instantly
-                // DEPRECATED: This causes excessive noise in production every 3s.
-                // The frontend now handles de-duplication and backgroundMonitor covers status changes.
-                /*
                 if (broadcastCallback) {
                     console.error(`[Notifikasi] Perangkat ${device.name} KEMBALI ONLINE`);
                     broadcastCallback(workspaceId, device.id, {
@@ -107,7 +104,6 @@ async function checkAlarms(workspaceId, device, broadcastCallback = null) {
                         }
                     });
                 }
-                */
 
                 if (state.offlineCooldown !== 0) {
                     const message = `✅ *PERANGKAT ONLINE* ✅\n\nKoneksi ke perangkat *${device.name}* telah pulih.`;

@@ -147,11 +147,14 @@ function broadcastToWorkspace(workspaceId, deviceId, data) {
     // Log WS monitoring disabled
 }
 
-function stopWorkspaceMonitoring(connectionKey, reason = 'Koneksi terputus', forceBroadcast = false) {
+function stopWorkspaceMonitoring(connectionKey, reason = 'Koneksi terputus') {
     const connection = getConnection(connectionKey);
     if (connection) {
+        // Broadcast notifikasi disconnect ke workspace
+        // Extract workspaceId from connectionKey (format: ws-{workspaceId}-{deviceId})
+        // Tapi kita tidak punya workspaceId langsung di parameter, jadi kita ambil dari connectionKey
         const parts = connectionKey.split('-');
-        if (parts.length >= 2 && forceBroadcast) {
+        if (parts.length >= 2) {
             const workspaceId = parseInt(parts[1], 10);
             const deviceId = parts[2] ? parseInt(parts[2], 10) : null;
 
@@ -203,27 +206,24 @@ async function startWorkspaceMonitoring(workspaceId, connectionKey, deviceId = n
 
         // Tentukan status koneksi berdasarkan store yang di-\update oleh dataLogger
         const currentDeviceStatus = mikrotikStore.getDeviceStatus(workspaceId, deviceId);
-        // Only broadcast if status is NOT 'connected' (to notify about failures immediately)
-        // 'connected' status is already implied by the fact that WS is open,
-        // but we send it personally to the requester in the wss.on('connection') handler.
-        if (currentDeviceStatus !== 'connected') {
-            broadcastToWorkspace(workspaceId, deviceId, {
-                type: 'connection-status',
-                payload: {
-                    status: currentDeviceStatus,
-                    deviceId: deviceId,
-                    message: `Koneksi ke perangkat Mikrotik terputus`,
-                    timestamp: Date.now()
-                }
-            });
-        }
+
+        // Broadcast status
+        broadcastToWorkspace(workspaceId, deviceId, {
+            type: 'connection-status',
+            payload: {
+                status: currentDeviceStatus,
+                deviceId: deviceId,
+                message: currentDeviceStatus === 'connected' ? 'Terhubung ke perangkat Mikrotik' : 'Koneksi ke perangkat Mikrotik terputus',
+                timestamp: Date.now()
+            }
+        });
 
         // Tambahkan error handler pada client untuk menangkap error yang tidak terduga
         if (client && client.on) {
             client.on('error', (error) => {
                 // Log WS monitoring disabled
-                // Hapus koneksi dari cache jika terjadi error, dan broadcast kegagalan
-                stopWorkspaceMonitoring(connectionKey, `Error pada koneksi: ${error.message || 'Unknown error'}`, true);
+                // Hapus koneksi dari cache jika terjadi error
+                stopWorkspaceMonitoring(connectionKey, `Error pada koneksi: ${error.message || 'Unknown error'}`);
             });
         }
 

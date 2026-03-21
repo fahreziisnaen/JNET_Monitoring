@@ -29,7 +29,6 @@ const DEFAULT_DEVICE_DATA: DeviceData = {
 export const MikrotikProvider = ({ children }: { children: React.ReactNode }) => {
     const { user } = useAuth();
     const [selectedDeviceIds, setSelectedDeviceIds] = useState<number[]>([]);
-    const selectedDeviceIdsRef = useRef<number[]>([]);
     const [isLoaded, setIsLoaded] = useState(false);
 
     // Per-device data stored in ref to avoid excessive re-renders
@@ -40,8 +39,6 @@ export const MikrotikProvider = ({ children }: { children: React.ReactNode }) =>
     const reconnectTimersRef = useRef<Map<number, any>>(new Map());
     // Per-device reconnect attempt counters
     const reconnectAttemptsRef = useRef<Map<number, number>>(new Map());
-    // Tracks the last status broadcasted to UI via CustomEvent to prevent redundant toasts
-    const lastBroadcastedStatusRef = useRef<Map<number, string>>(new Map());
 
     // Tick counter: increment to trigger re-render when device data changes
     const [tick, setTick] = useState(0);
@@ -111,23 +108,18 @@ export const MikrotikProvider = ({ children }: { children: React.ReactNode }) =>
                         resource: hasResource ? payload.resource : prev.resource,
                         activeInterfaces: hasInterfaces ? payload.activeInterfaces : prev.activeInterfaces,
                         traffic: hasTraffic ? payload.traffic : prev.traffic,
-                        isConnected: true,
+                        isConnected: true, // Pastikan connected jika ada data batch
                     });
                 } else if (message.type === 'pppoe-update' && message.payload) {
                     const newSecrets = message.payload.pppoeSecrets || [];
                     if (JSON.stringify(newSecrets) !== JSON.stringify(prev.pppoeSecrets)) {
                         updateDeviceData(deviceId, { pppoeSecrets: newSecrets, isConnected: true });
                     }
-                } else if (message.type === 'connection-status' && message.payload) {
-                    const status = message.payload.status;
-                    const connected = status === 'connected';
+                    const connected = message.payload.status === 'connected';
                     updateDeviceData(deviceId, { isConnected: connected });
 
-                    // DE-DUPLICATION: Only dispatch event if status actually changed
-                    const lastStatus = lastBroadcastedStatusRef.current.get(deviceId);
-                    if (lastStatus !== status && selectedDeviceIdsRef.current.includes(deviceId)) {
-                        console.log(`[WS Pool] Status transition for ${deviceId}: ${lastStatus || 'unknown'} -> ${status}`);
-                        lastBroadcastedStatusRef.current.set(deviceId, status);
+                    // Forward event for toast notifications (if device is selected)
+                    if (selectedDeviceIds.includes(deviceId)) {
                         window.dispatchEvent(new CustomEvent('mikrotik-connection-status', {
                             detail: message.payload
                         }));
@@ -152,55 +144,39 @@ export const MikrotikProvider = ({ children }: { children: React.ReactNode }) =>
 
         socket.onclose = (event) => {
             clearTimeout(connTimeout);
-            console.warn(`[WS Pool] Connection closed for device ${deviceId}. Code: ${event.code}, Reason: ${event.reason}`);
+            const prev = deviceDataRef.current.get(deviceId) || { ...DEFAULT_DEVICE_DATA };
+            updateDeviceData(deviceId, { isConnected: false });
             wsPoolRef.current.delete(deviceId);
-            
-            // Do NOT immediately update isConnected=false or dispatch toast
-            // This prevents "Connection Lost" toasts during quick network flickers
-            
-            const attempts = reconnectAttemptsRef.current.get(deviceId) || 0;
-            const maxAttempts = 10;
 
+            // Forward disconnect if device is selected
+            if (selectedDeviceIds.includes(deviceId)) {
+                window.dispatchEvent(new CustomEvent('mikrotik-connection-status', {
+                    detail: { status: 'disconnected', message: event.reason || 'Koneksi terputus', code: event.code }
+                }));
+            }
+
+            // Auto reconnect (if not intentional close like logout)
+            const attempts = reconnectAttemptsRef.current.get(deviceId) || 0;
+            const maxAttempts = 5;
             if (user && attempts < maxAttempts && event.code !== 1008 && event.code !== 1003 && event.code !== 1000) {
-                const delay = Math.min(1000 * Math.pow(2, attempts), 10000);
-                console.log(`[WS Pool] Reconnecting device ${deviceId} in ${delay}ms (Attempt ${attempts + 1})`);
-                
-                const timer = setTimeout(() => {
-                    if (selectedDeviceIdsRef.current.includes(deviceId)) {
-                        connectDevice(deviceId, workspaceId);
-                    }
-                }, delay);
-                
-                reconnectTimersRef.current.set(deviceId, timer);
                 reconnectAttemptsRef.current.set(deviceId, attempts + 1);
-            } else if (event.code !== 1000) {
-                // Permanent failure or manual close
-                updateDeviceData(deviceId, { isConnected: false });
-                
-                // Only broadcast 'disconnected' if we were previously 'connected'
-                const lastStatus = lastBroadcastedStatusRef.current.get(deviceId);
-                if (lastStatus !== 'disconnected') {
-                    lastBroadcastedStatusRef.current.set(deviceId, 'disconnected');
-                    window.dispatchEvent(new CustomEvent('mikrotik-connection-status', {
-                        detail: { 
-                            status: 'disconnected', 
-                            deviceId, 
-                            message: 'Gagal terhubung ke server real-time perangkat ini.' 
-                        }
-                    }));
-                }
+                const timer = setTimeout(() => {
+                    if (user) connectDevice(deviceId, workspaceId);
+                }, 3000);
+                reconnectTimersRef.current.set(deviceId, timer);
             }
         };
 
         socket.onerror = () => {
             clearTimeout(connTimeout);
             if (socket.readyState === WebSocket.CLOSING || socket.readyState === WebSocket.CLOSED) return;
+            const prev = deviceDataRef.current.get(deviceId) || { ...DEFAULT_DEVICE_DATA };
             updateDeviceData(deviceId, { isConnected: false });
         };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [updateDeviceData, user]);
+    }, [updateDeviceData, user, selectedDeviceIds]);
 
-    // Initial load: Fetch all snapshots for authorized devices
+    // Initial load: Fetch all snapshots for the workspace at once
     useEffect(() => {
         if (!user?.workspace_id) {
             setIsLoaded(false);
@@ -216,9 +192,13 @@ export const MikrotikProvider = ({ children }: { children: React.ReactNode }) =>
         }
 
         const apiUrl = process.env.NEXT_PUBLIC_API_BASE_URL;
-        
-        // 1. Fetch ALL snapshots for authorized devices
-        apiFetch(`${apiUrl}/api/dashboard/snapshot`)
+        const isSuper = user.is_super_admin === 1 || user.is_super_admin === true;
+        const snapshotUrl = isSuper 
+            ? `${apiUrl}/api/dashboard/snapshot` 
+            : `${apiUrl}/api/dashboard/snapshot?workspaceId=${user.workspace_id}`;
+
+        // 1. Fetch ALL snapshots for the workspace in ONE request
+        apiFetch(snapshotUrl)
             .then(res => res.ok ? res.json() : [])
             .then((snapshots: any[]) => {
                 if (Array.isArray(snapshots)) {
@@ -241,10 +221,8 @@ export const MikrotikProvider = ({ children }: { children: React.ReactNode }) =>
                         const ids = JSON.parse(saved);
                         if (Array.isArray(ids)) {
                             setSelectedDeviceIds(ids.filter(id => !isNaN(id)));
-                            selectedDeviceIdsRef.current = ids.filter(id => !isNaN(id));
                         } else if (typeof ids === 'number') {
                             setSelectedDeviceIds([ids]);
-                            selectedDeviceIdsRef.current = [ids];
                         }
                     } catch (e) { console.error('Failed to parse saved device IDs:', e); }
                 }
@@ -252,7 +230,7 @@ export const MikrotikProvider = ({ children }: { children: React.ReactNode }) =>
             })
             .catch(err => {
                 console.error('[MikrotikProvider] Error fetching initial snapshots:', err);
-                setIsLoaded(true);
+                setIsLoaded(true); // Still mark as loaded to let UI proceed
             });
     }, [user?.workspace_id, triggerRender]);
 
@@ -261,6 +239,7 @@ export const MikrotikProvider = ({ children }: { children: React.ReactNode }) =>
         if (!isLoaded || !user?.workspace_id) return;
 
         const currentSelected = new Set(selectedDeviceIds);
+        const activeTimers: any[] = [];
         
         // 1. Close connections for unselected devices
         wsPoolRef.current.forEach((ws, deviceId) => {
@@ -269,28 +248,34 @@ export const MikrotikProvider = ({ children }: { children: React.ReactNode }) =>
                 wsPoolRef.current.delete(deviceId);
                 const timer = reconnectTimersRef.current.get(deviceId);
                 if (timer) clearTimeout(timer);
-                reconnectTimersRef.current.delete(deviceId);
-                reconnectAttemptsRef.current.delete(deviceId);
+                reconnectTimersRef.current.delete(deviceId); // Clear any pending reconnect timers
+                reconnectAttemptsRef.current.delete(deviceId); // Reset attempts
             }
         });
 
         // 2. Open connections for newly selected devices (staggered)
         selectedDeviceIds.forEach((id, index) => {
             if (!wsPoolRef.current.has(id)) {
+                // Stagger connections
                 const timer = setTimeout(() => {
-                    if (user?.workspace_id && selectedDeviceIdsRef.current.includes(id)) {
+                    if (user?.workspace_id) { // Ensure user is still logged in
                         connectDevice(id, user.workspace_id);
                     }
-                }, index * 300);
-                reconnectTimersRef.current.set(id, timer);
+                }, index * 300); // 300ms stagger is enough for lazy load
+                reconnectTimersRef.current.set(id, timer); // Store timer to clear if device becomes unselected
+                activeTimers.push(timer);
             }
         });
+
+        return () => {
+            // Clear any timers that were set in this effect run
+            activeTimers.forEach(t => clearTimeout(t));
+        };
     }, [selectedDeviceIds, isLoaded, user?.workspace_id, connectDevice]);
 
     // handleDeviceChange: handle array of deviceIds
     const handleDevicesChange = useCallback((deviceIds: number[]) => {
         setSelectedDeviceIds(deviceIds);
-        selectedDeviceIdsRef.current = deviceIds;
         if (user?.workspace_id) {
             localStorage.setItem(`selected-devices-v2-${user.workspace_id}`, JSON.stringify(deviceIds));
         }
@@ -302,7 +287,6 @@ export const MikrotikProvider = ({ children }: { children: React.ReactNode }) =>
                 ? prev.filter(id => id !== deviceId)
                 : [...prev, deviceId];
             
-            selectedDeviceIdsRef.current = next;
             if (user?.workspace_id) {
                 localStorage.setItem(`selected-devices-v2-${user.workspace_id}`, JSON.stringify(next));
             }
@@ -310,6 +294,7 @@ export const MikrotikProvider = ({ children }: { children: React.ReactNode }) =>
         });
     }, [user?.workspace_id]);
 
+    // setSelectedDeviceId (singular) for backward compatibility
     const handleDeviceChange = useCallback((deviceId: number) => {
         handleDevicesChange([deviceId]);
     }, [handleDevicesChange]);
@@ -317,7 +302,7 @@ export const MikrotikProvider = ({ children }: { children: React.ReactNode }) =>
     // Derive aggregated data for context
     const allDevicesData = useMemo(() => {
         // eslint-disable-next-line @typescript-eslint/no-unused-expressions
-        tick;
+        tick; // depend on tick so useMemo re-runs when device data updates
         
         const dataMap: Record<number, DeviceData> = {};
         deviceDataRef.current.forEach((data, id) => {

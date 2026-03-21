@@ -51,6 +51,7 @@ async function startPhysicalMonitor(group, broadcastCallback) {
         cachedSecrets: [],
         lastCycleTime: 0,
         lastTrafficLog: 0,
+        failCount: 0,
         group: group, // Menyimpan list {workspace_id, id}
         broadcastCallback: broadcastCallback,
     };
@@ -82,6 +83,7 @@ async function startPhysicalMonitor(group, broadcastCallback) {
             // Update status untuk SEMUA instance yang menggunakan router ini
             for (const inst of group.devices) {
                 if (pppoeActive !== null) {
+                    state.failCount = 0; // Reset on success
                     mikrotikStore.setActive(inst.workspace_id, inst.id, pppoeActive);
                     mikrotikStore.setDeviceStatus(inst.workspace_id, inst.id, 'connected');
                     mikrotikStore.setResource(inst.workspace_id, inst.id, resource);
@@ -92,8 +94,12 @@ async function startPhysicalMonitor(group, broadcastCallback) {
                         [resource['cpu-load'] || 0, resource['uptime'] || 'unknown', pppoeActive.length, inst.id]
                     ).catch(() => {});
                 } else {
-                    mikrotikStore.setDeviceStatus(inst.workspace_id, inst.id, 'disconnected');
-                    pool.query('UPDATE mikrotik_devices SET last_status_update = NOW() WHERE id = ?', [inst.id]).catch(() => {});
+                    state.failCount++;
+                    // Hanya set disconnected jika gagal lebih dari 2 kali (sekitar 30 detik jika interval 15s)
+                    if (state.failCount >= 2) {
+                        mikrotikStore.setDeviceStatus(inst.workspace_id, inst.id, 'disconnected');
+                        pool.query('UPDATE mikrotik_devices SET last_status_update = NOW() WHERE id = ?', [inst.id]).catch(() => {});
+                    }
                 }
             }
 

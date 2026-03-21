@@ -6,68 +6,64 @@ const pool = require('../config/database');
  */
 exports.getSnapshot = async (req, res) => {
     // Gunakan workspaceId dari query jika ada (untuk NOC/Superadmin), jika tidak gunakan default dari token
-    let workspaceId = req.query.workspaceId ? parseInt(req.query.workspaceId) : req.user.workspace_id;
+    const user = req.user;
+    let workspaceId = req.query.workspaceId ? parseInt(req.query.workspaceId) : user.workspace_id;
     let deviceId = req.query.deviceId ? parseInt(req.query.deviceId) : null;
+
+    // Superadmin bypass: If no workspaceId provided, they might want ALL authorized snapshots
+    const isSuper = user.is_super_admin === 1 || user.is_super_admin === true;
     
     try {
-        // Helper function untuk parse JSON field
-        const parseJsonField = (field) => {
-            if (!field) return null;
-            if (typeof field === 'object' && !Array.isArray(field)) return field;
-            if (Array.isArray(field)) return field;
-            if (typeof field === 'string') {
+        // Jika deviceId tidak diberikan, ambil snapshot batch
+        if (!deviceId) {
+            let snapshots;
+            if (isSuper && !req.query.workspaceId) {
+                // Superadmin gets ALL snapshots in the system
+                [snapshots] = await pool.query('SELECT * FROM dashboard_snapshot');
+            } else if (user.role === 'noc' && !req.query.workspaceId) {
+                // NOC get snapshots for authorized workspaces
+                const [perms] = await pool.query('SELECT workspace_id FROM noc_permissions WHERE user_id = ?', [user.id]);
+                const authorizedIds = [user.workspace_id, ...perms.map(p => p.workspace_id)];
+                [snapshots] = await pool.query('SELECT * FROM dashboard_snapshot WHERE workspace_id IN (?)', [authorizedIds]);
+            } else {
+                // Regular user or specific workspaceId override
+                [snapshots] = await pool.query(
+                    'SELECT * FROM dashboard_snapshot WHERE workspace_id = ?',
+                    [workspaceId]
+                );
+            }
+            
+            // Helper function untuk parse JSON field
+            const parseJsonField = (field) => {
+                if (!field) return null;
+                if (typeof field === 'object') return field;
                 try {
                     return JSON.parse(field);
                 } catch (e) {
                     return null;
                 }
-            }
-            return field;
-        };
+            };
 
-        const processSnapshots = (snapshots) => snapshots.map(s => ({
-            deviceId: s.device_id,
-            workspaceId: s.workspace_id,
-            resource: parseJsonField(s.resource),
-            traffic: parseJsonField(s.traffic) || {},
-            pppoeSecrets: parseJsonField(s.pppoe_active) || [],
-            activeInterfaces: parseJsonField(s.active_interfaces) || [],
-            updatedAt: s.updated_at
-        }));
+            const mappedSnapshots = snapshots.map(s => ({
+                deviceId: s.device_id,
+                workspaceId: s.workspace_id,
+                resource: parseJsonField(s.resource),
+                traffic: parseJsonField(s.traffic) || {},
+                pppoeSecrets: parseJsonField(s.pppoe_active) || [],
+                activeInterfaces: parseJsonField(s.active_interfaces) || [],
+                updatedAt: s.updated_at
+            }));
 
-        // Jika deviceId tidak diberikan DAN workspaceId tidak diberikan secara eksplisit, 
-        // cek apakah Superadmin/NOC butuh semua data teragregasi
-        if (!deviceId && !req.query.workspaceId) {
-            if (req.user.is_super_admin) {
-                const [snapshots] = await pool.query('SELECT * FROM dashboard_snapshot');
-                return res.json(processSnapshots(snapshots));
-            }
-            
-            if (req.user.role === 'noc') {
-                const [permissions] = await pool.query('SELECT workspace_id FROM noc_permissions WHERE user_id = ?', [req.user.id]);
-                const authorizedIds = [req.user.workspace_id, ...permissions.map(p => p.workspace_id)];
-                // Menggunakan placeholder ? untuk array ID
-                const [snapshots] = await pool.query('SELECT * FROM dashboard_snapshot WHERE workspace_id IN (?)', [authorizedIds]);
-                return res.json(processSnapshots(snapshots));
-            }
-        }
-
-        // Jika deviceId tidak diberikan, ambil snapshot untuk SATU workspace (batch)
-        if (!deviceId) {
-            const [snapshots] = await pool.query(
-                'SELECT * FROM dashboard_snapshot WHERE workspace_id = ?',
-                [workspaceId]
-            );
-            return res.json(processSnapshots(snapshots));
+            return res.json(mappedSnapshots);
         }
         
-        // Single device mode
         const [snapshots] = await pool.query(
             'SELECT * FROM dashboard_snapshot WHERE workspace_id = ? AND device_id = ?',
             [workspaceId, deviceId]
         );
         
         if (snapshots.length === 0) {
+            // Jika belum ada snapshot, return data kosong
             return res.json({
                 resource: null,
                 traffic: {},
@@ -77,11 +73,42 @@ exports.getSnapshot = async (req, res) => {
         }
         
         const snapshot = snapshots[0];
+        
+        // Helper function untuk parse JSON field
+        // MySQL JSON column bisa mengembalikan object langsung atau string JSON
+        const parseJsonField = (field) => {
+            if (!field) return null;
+            // Jika sudah berupa object, return langsung
+            if (typeof field === 'object' && !Array.isArray(field)) {
+                return field;
+            }
+            // Jika sudah berupa array, return langsung
+            if (Array.isArray(field)) {
+                return field;
+            }
+            // Jika string, coba parse
+            if (typeof field === 'string') {
+                try {
+                    return JSON.parse(field);
+                } catch (e) {
+                    console.warn(`[Dashboard Snapshot] Error parsing JSON field:`, e.message);
+                    return null;
+                }
+            }
+            return field;
+        };
+        
+        // Parse JSON fields
+        let resource = parseJsonField(snapshot.resource);
+        let traffic = parseJsonField(snapshot.traffic) || {};
+        let pppoeActive = parseJsonField(snapshot.pppoe_active) || [];
+        let activeInterfaces = parseJsonField(snapshot.active_interfaces) || [];
+        
         res.json({
-            resource: parseJsonField(snapshot.resource),
-            traffic: parseJsonField(snapshot.traffic) || {},
-            pppoeSecrets: parseJsonField(snapshot.pppoe_active) || [],
-            activeInterfaces: parseJsonField(snapshot.active_interfaces) || [],
+            resource,
+            traffic,
+            pppoeSecrets: pppoeActive,
+            activeInterfaces,
             updatedAt: snapshot.updated_at
         });
     } catch (error) {
@@ -95,3 +122,4 @@ exports.getSnapshot = async (req, res) => {
         });
     }
 };
+
