@@ -317,6 +317,9 @@ export const MikrotikProvider = ({ children }: { children: React.ReactNode }) =>
         setSelectedDeviceIds: handleDevicesChange,
         selectedDeviceId: selectedDeviceIds[0] || null,
         setSelectedDeviceId: handleDeviceChange,
+        pppoeSecrets: selectedDeviceIds[0] ? (allDevicesData.dataMap[selectedDeviceIds[0]]?.pppoeSecrets || []) : [],
+        resource: selectedDeviceIds[0] ? (allDevicesData.dataMap[selectedDeviceIds[0]]?.resource || null) : null,
+        isConnected: selectedDeviceIds[0] ? (allDevicesData.dataMap[selectedDeviceIds[0]]?.isConnected || false) : false,
         toggleDeviceId,
         forceRefresh,
     };
