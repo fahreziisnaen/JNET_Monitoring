@@ -49,19 +49,21 @@ exports.getSnapshot = async (req, res) => {
                 }
             };
 
-            const mappedSnapshots = snapshots.map(s => {
-                const item = {
-                    deviceId: s.device_id,
-                    workspaceId: s.workspace_id,
-                    resource: parseJsonField(s.resource),
-                    traffic: parseJsonField(s.traffic) || {},
-                    pppoeSecrets: isSummary ? [] : (parseJsonField(s.pppoe_active) || []),
-                    hotspotActive: [], // Placeholder
-                    activeInterfaces: parseJsonField(s.active_interfaces) || [],
-                    updatedAt: s.updated_at
-                };
-                return item;
-            });
+                    const pppoeActive = parseJsonField(s.pppoe_active) || [];
+                    const activeCount = pppoeActive.filter(u => !u.disabled).length;
+                    
+                    const item = {
+                        deviceId: s.device_id,
+                        workspaceId: s.workspace_id,
+                        resource: parseJsonField(s.resource),
+                        traffic: parseJsonField(s.traffic) || {},
+                        pppoeSecrets: isSummary ? [] : pppoeActive,
+                        // Add metadata for fast summaries
+                        totalUsers: pppoeActive.length, // pppoe_active currently contains all secrets in this project's snapshots
+                        activeUsers: activeCount,
+                        activeInterfaces: parseJsonField(s.active_interfaces) || [],
+                        updatedAt: s.updated_at
+                    };
 
             return res.json(mappedSnapshots);
         }

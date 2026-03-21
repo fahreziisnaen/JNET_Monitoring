@@ -13,6 +13,8 @@ interface DeviceData {
     traffic: any;
     isConnected: boolean;
     workspaceId?: number;
+    totalUsers?: number;
+    activeUsers?: number;
 }
 
 interface MikrotikContextType {
@@ -267,6 +269,8 @@ export const MikrotikProvider = ({ children }: { children: React.ReactNode }) =>
                             traffic: s.traffic || {},
                             isConnected: s.isConnected || false,
                             workspaceId: s.workspace_id,
+                            totalUsers: s.totalUsers || 0,
+                            activeUsers: s.activeUsers || 0,
                         });
                     });
                 }

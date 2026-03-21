@@ -578,6 +578,17 @@ wss.on('connection', (ws, req) => {
             ws.deviceId = finalDeviceId;
             const connectionKey = `ws-${ws.workspaceId}-${finalDeviceId}`;
 
+            // --- NOC MODE AUTO-INIT via URL PARAMS ---
+            const workspaceIdsParam = urlParams.get('workspaceIds');
+            if (workspaceIdsParam) {
+                const wsIds = workspaceIdsParam.split(',').map(Number).filter(id => !isNaN(id));
+                if (wsIds.length > 0) {
+                    ws.isNoc = true;
+                    ws.monitoredWorkspaceIds = wsIds;
+                    console.log(`[WebSocket] NOC Mode AUTO-INIT via URL (Workspaces: ${wsIds.join(',')})`);
+                }
+            }
+
             // Cek apakah backgroundMonitor sudah populate mikrotikStore untuk device ini
             const storedSecrets = mikrotikStore.getSecrets(ws.workspaceId, finalDeviceId);
             const storedActive = mikrotikStore.getActive(ws.workspaceId, finalDeviceId);
@@ -602,6 +613,79 @@ wss.on('connection', (ws, req) => {
                     }
                 }));
             } catch (e) { }
+
+            // --- INSTANT NOC PUSH (if auto-inited) ---
+            if (ws.isNoc && ws.monitoredWorkspaceIds?.length > 0) {
+                // Gunakan fungsi utilitas yang sama dengan subscribe-noc untuk konsistensi
+                (async () => {
+                    try {
+                        const workspaceIds = ws.monitoredWorkspaceIds;
+                        // 1. Ambil metadata workspace & device secara cepat
+                        const [wRows] = await pool.query('SELECT id, name FROM workspaces WHERE id IN (?)', [workspaceIds]);
+                        const workspaceMap = new Map(wRows.map(w => [w.id, w.name]));
+                        const [dRows] = await pool.query('SELECT id, name, workspace_id FROM mikrotik_devices WHERE workspace_id IN (?)', [workspaceIds]);
+                        const deviceMap = new Map(dRows.map(d => [d.id, { name: d.name, workspace_id: d.workspace_id }]));
+
+                        let aggregatedSecrets = [];
+                        const devicesToFetchFromDb = [];
+
+                        for (const deviceId of deviceMap.keys()) {
+                            const dMeta = deviceMap.get(deviceId);
+                            const storedSecrets = mikrotikStore.getSecrets(dMeta.workspace_id, deviceId);
+                            if (storedSecrets && storedSecrets.length > 0) {
+                                const storedActive = mikrotikStore.getActive(dMeta.workspace_id, deviceId);
+                                const activeMap = new Map(storedActive.map(u => [u.name, u]));
+                                const enriched = storedSecrets.map(secret => {
+                                    const activeInfo = activeMap.get(secret.name);
+                                    const s = { ...secret };
+                                    s.isActive = !!activeInfo;
+                                    if (activeInfo?.uptime) s.uptime = activeInfo.uptime;
+                                    if (activeInfo?.['.id']) s.activeConnectionId = activeInfo['.id'];
+                                    if (activeInfo?.address) {
+                                        s.currentAddress = activeInfo.address;
+                                        if (!s['remote-address']) s['remote-address'] = activeInfo.address;
+                                    }
+                                    return {
+                                        ...s,
+                                        disabled: s.disabled === 'true' || s.disabled === true ? 'true' : 'false',
+                                        deviceId: deviceId,
+                                        workspace_id: dMeta.workspace_id,
+                                        workspace_name: workspaceMap.get(dMeta.workspace_id) || '',
+                                        router_name: dMeta.name || '',
+                                        mikrotik_status: mikrotikStore.getDeviceStatus(dMeta.workspace_id, deviceId) || 'connected'
+                                    };
+                                });
+                                aggregatedSecrets = aggregatedSecrets.concat(enriched);
+                            } else {
+                                devicesToFetchFromDb.push(deviceId);
+                            }
+                        }
+
+                        if (devicesToFetchFromDb.length > 0) {
+                            const [sRows] = await pool.query(`SELECT ps.name, ps.profile, ps.remote_address as 'remote-address', ps.disabled, ps.is_active as isActive, ps.uptime, ps.current_address as currentAddress, ps.active_connection_id as activeConnectionId, ps.workspace_id, ps.device_id FROM pppoe_secrets ps WHERE ps.device_id IN (?)`, [devicesToFetchFromDb]);
+                            const dbSecrets = sRows.map(s => {
+                                const dMeta = deviceMap.get(s.device_id) || {};
+                                return {
+                                    ...s,
+                                    disabled: s.disabled === 1 ? 'true' : 'false',
+                                    isActive: s.isActive === 1,
+                                    deviceId: s.device_id,
+                                    workspace_name: workspaceMap.get(s.workspace_id) || '',
+                                    router_name: dMeta.name || '',
+                                    mikrotik_status: mikrotikStore.getDeviceStatus(s.workspace_id, s.device_id) || 'disconnected'
+                                };
+                            });
+                            aggregatedSecrets = aggregatedSecrets.concat(dbSecrets);
+                        }
+
+                        if (ws.readyState === WebSocket.OPEN) {
+                            ws.send(JSON.stringify({ type: 'pppoe-update', payload: { pppoeSecrets: aggregatedSecrets, isSnapshot: true } }));
+                        }
+                    } catch (e) {
+                        console.error("[WebSocket] Gagal kirim NOC instant push:", e.message);
+                    }
+                })();
+            }
 
             // Jika background monitor sudah punya data, kirim snapshot langsung
             if (storedSecrets.length > 0 && deviceStatus === 'connected') {

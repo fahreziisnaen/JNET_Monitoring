@@ -6,6 +6,7 @@ import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Power, PowerOff, Loader2, Search, ArrowUpDown, ChevronUp, ChevronDown, Users, UserCheck, UserX, MoreHorizontal, Edit, ZapOff, Trash2, X } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { useAuth } from '../providers/auth-provider';
+import { useMikrotik } from '../providers/mikrotik-provider';
 import { formatUptime, formatCompactUptime } from '@/utils/format';
 import SummaryCard from '../dashboard/summary-card';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
@@ -41,6 +42,7 @@ interface NocManagementTabProps {
 const NocManagementTab: React.FC<NocManagementTabProps> = ({ workspaces }) => {
     const workspaceIds = useMemo(() => workspaces.map(w => w.id), [workspaces]);
     const { token } = useAuth();
+    const { allDevicesData } = useMikrotik();
     const [secrets, setSecrets] = useState<PppoeSecret[]>([]);
     const [loading, setLoading] = useState(true);
     const [searchQuery, setSearchQuery] = useState('');
@@ -168,7 +170,7 @@ const NocManagementTab: React.FC<NocManagementTabProps> = ({ workspaces }) => {
 
         const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
         const host = process.env.NEXT_PUBLIC_WS_BASE_URL || `${protocol}//${window.location.host}/ws`;
-        const wsUrl = `${host}?token=${token}`;
+        const wsUrl = `${host}?workspaceIds=${workspaceIds.join(',')}&token=${token}`;
 
         const connect = () => {
             console.log("[NOC WS] Connecting to", wsUrl);
@@ -176,7 +178,8 @@ const NocManagementTab: React.FC<NocManagementTabProps> = ({ workspaces }) => {
             wsRef.current = ws;
 
             ws.onopen = () => {
-                console.log("[NOC WS] Connected, subscribing to workspaces:", workspaceIds);
+                console.log("[NOC WS] Connected, auto-subscribed via URL");
+                // Optional message kept for compatibility
                 ws.send(JSON.stringify({
                     type: 'subscribe-noc',
                     workspaceIds: workspaceIds
@@ -326,15 +329,35 @@ const NocManagementTab: React.FC<NocManagementTabProps> = ({ workspaces }) => {
     }, [secrets, activeFilter, searchQuery, sortColumn, sortDirection]);
 
     const summary = useMemo(() => {
-        const onlineSecrets = secrets.filter(s => s.mikrotik_status === 'connected');
-        const total = onlineSecrets.length;
-        const active = onlineSecrets.filter(s => s.isActive && s.disabled === 'false').length;
+        // PRIORITAS 1: Jika sudah ada data local secrets, hitung dari sana (Paling akurat & real-time)
+        if (secrets.length > 0) {
+            const onlineSecrets = secrets.filter(s => s.mikrotik_status === 'connected');
+            const total = onlineSecrets.length;
+            const active = onlineSecrets.filter(s => s.isActive && s.disabled === 'false').length;
+            return {
+                total,
+                active,
+                inactive: Math.max(0, total - active)
+            };
+        }
+
+        // PRIORITAS 2: Jika data local belum ada, hitung dari data GLOBAL (Instan dari layout)
+        let gTotal = 0;
+        let gActive = 0;
+        
+        Object.values(allDevicesData).forEach((device: any) => {
+            if (device.workspaceId && workspaceIds.includes(device.workspaceId)) {
+                gTotal += device.totalUsers || 0;
+                gActive += device.activeUsers || 0;
+            }
+        });
+
         return {
-            total,
-            active,
-            inactive: Math.max(0, total - active)
+            total: gTotal,
+            active: gActive,
+            inactive: Math.max(0, gTotal - gActive)
         };
-    }, [secrets]);
+    }, [secrets, allDevicesData, workspaceIds]);
 
     const offlineRouters = useMemo(() => {
         const uniqueRouters = new Map();
