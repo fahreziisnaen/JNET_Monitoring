@@ -702,7 +702,7 @@ wss.on('connection', (ws, req) => {
                         ws.monitoredWorkspaceIds = workspaceIds;
                         console.log(`[WebSocket] Client beralih ke MODE NOC (Monitoring ${ws.monitoredWorkspaceIds.length} workspace)`);
                         
-                        // KIRIM SNAPSHOT AWAL (Optimasi No-Join)
+                        // KIRIM SNAPSHOT AWAL (RAM-First, Sama dengan Management)
                         (async () => {
                             try {
                                 if (workspaceIds.length === 0) return;
@@ -714,31 +714,74 @@ wss.on('connection', (ws, req) => {
                                 const [dRows] = await pool.query('SELECT id, name, workspace_id FROM mikrotik_devices WHERE workspace_id IN (?)', [workspaceIds]);
                                 const deviceMap = new Map(dRows.map(d => [d.id, { name: d.name, workspace_id: d.workspace_id }]));
 
-                                // 2. Ambil secrets tanpa JOIN (lebih ringan untuk SQL)
-                                const [sRows] = await pool.query(`
-                                    SELECT 
-                                        name, profile, remote_address as 'remote-address',
-                                        disabled, is_active as isActive, uptime,
-                                        current_address as currentAddress, active_connection_id as activeConnectionId,
-                                        workspace_id, device_id
-                                    FROM pppoe_secrets 
-                                    WHERE workspace_id IN (?)
-                                `, [workspaceIds]);
+                                let aggregatedSecrets = [];
+                                const devicesToFetchFromDb = [];
 
-                                // 3. Map di level JS (Zero-SQL overhead)
-                                const aggregatedSecrets = sRows.map(s => {
-                                    const dMeta = deviceMap.get(s.device_id) || {};
-                                    return {
-                                        ...s,
-                                        disabled: s.disabled === 1 ? 'true' : 'false',
-                                        isActive: s.isActive === 1,
-                                        deviceId: s.device_id,
-                                        workspace_name: workspaceMap.get(s.workspace_id) || '',
-                                        router_name: dMeta.name || '',
-                                        mikrotik_status: mikrotikStore.getDeviceStatus(s.workspace_id, s.device_id) || 'disconnected'
-                                    };
-                                });
+                                // 2. PRIORITAS: Ambil dari RAM (mikrotikStore) - Persis Management
+                                for (const deviceId of deviceMap.keys()) {
+                                    const dMeta = deviceMap.get(deviceId);
+                                    const storedSecrets = mikrotikStore.getSecrets(dMeta.workspace_id, deviceId);
+                                    
+                                    if (storedSecrets && storedSecrets.length > 0) {
+                                        const storedActive = mikrotikStore.getActive(dMeta.workspace_id, deviceId);
+                                        const activeMap = new Map(storedActive.map(u => [u.name, u]));
+                                        
+                                        const enriched = storedSecrets.map(secret => {
+                                            const activeInfo = activeMap.get(secret.name);
+                                            const s = { ...secret };
+                                            s.isActive = !!activeInfo;
+                                            if (activeInfo?.uptime) s.uptime = activeInfo.uptime;
+                                            if (activeInfo?.['.id']) s.activeConnectionId = activeInfo['.id'];
+                                            if (activeInfo?.address) {
+                                                s.currentAddress = activeInfo.address;
+                                                if (!s['remote-address']) s['remote-address'] = activeInfo.address;
+                                            }
+                                            // Format tambahan NOC
+                                            return {
+                                                ...s,
+                                                disabled: s.disabled === 'true' || s.disabled === true ? 'true' : 'false',
+                                                deviceId: deviceId,
+                                                workspace_id: dMeta.workspace_id,
+                                                workspace_name: workspaceMap.get(dMeta.workspace_id) || '',
+                                                router_name: dMeta.name || '',
+                                                mikrotik_status: mikrotikStore.getDeviceStatus(dMeta.workspace_id, deviceId) || 'connected'
+                                            };
+                                        });
+                                        aggregatedSecrets = aggregatedSecrets.concat(enriched);
+                                    } else {
+                                        // Jika RAM kosong, antre untuk ambil dari DB
+                                        devicesToFetchFromDb.push(deviceId);
+                                    }
+                                }
 
+                                // 3. FALLBACK: Jika ada device yang belum ada di RAM, ambil dari DB
+                                if (devicesToFetchFromDb.length > 0) {
+                                    const [sRows] = await pool.query(`
+                                        SELECT 
+                                            name, profile, remote_address as 'remote-address',
+                                            disabled, is_active as isActive, uptime,
+                                            current_address as currentAddress, active_connection_id as activeConnectionId,
+                                            workspace_id, device_id
+                                        FROM pppoe_secrets 
+                                        WHERE device_id IN (?)
+                                    `, [devicesToFetchFromDb]);
+
+                                    const dbSecrets = sRows.map(s => {
+                                        const dMeta = deviceMap.get(s.device_id) || {};
+                                        return {
+                                            ...s,
+                                            disabled: s.disabled === 1 ? 'true' : 'false',
+                                            isActive: s.isActive === 1,
+                                            deviceId: s.device_id,
+                                            workspace_name: workspaceMap.get(s.workspace_id) || '',
+                                            router_name: dMeta.name || '',
+                                            mikrotik_status: mikrotikStore.getDeviceStatus(s.workspace_id, s.device_id) || 'disconnected'
+                                        };
+                                    });
+                                    aggregatedSecrets = aggregatedSecrets.concat(dbSecrets);
+                                }
+
+                                // 4. KIRIM (Instant)
                                 if (ws.readyState === WebSocket.OPEN) {
                                     ws.send(JSON.stringify({
                                         type: 'pppoe-update',
