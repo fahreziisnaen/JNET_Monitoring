@@ -204,8 +204,12 @@ async function startWorkspaceMonitoring(workspaceId, connectionKey, deviceId = n
         const WS_TIMEOUT = 24 * 60 * 60 * 1000;
         client = await getOrCreateConnection(workspaceId, WS_TIMEOUT, connectionKey, deviceId);
 
-        // Tentukan status koneksi berdasarkan store yang di-\update oleh dataLogger
+        // Tentukan status koneksi berdasarkan store yang di-update oleh dataLogger
         const currentDeviceStatus = mikrotikStore.getDeviceStatus(workspaceId, deviceId);
+
+        // Ambil nama device untuk notifikasi toast yang lebih informatif
+        const [devRows] = await pool.query('SELECT name FROM mikrotik_devices WHERE id = ?', [deviceId]);
+        const deviceName = devRows[0]?.name || 'Mikrotik';
 
         // Broadcast status
         broadcastToWorkspace(workspaceId, deviceId, {
@@ -213,7 +217,10 @@ async function startWorkspaceMonitoring(workspaceId, connectionKey, deviceId = n
             payload: {
                 status: currentDeviceStatus,
                 deviceId: deviceId,
-                message: currentDeviceStatus === 'connected' ? 'Terhubung ke perangkat Mikrotik' : 'Koneksi ke perangkat Mikrotik terputus',
+                deviceName: deviceName,
+                message: currentDeviceStatus === 'connected' 
+                    ? `Terhubung ke perangkat ${deviceName}` 
+                    : `Koneksi ke perangkat ${deviceName} terputus`,
                 timestamp: Date.now()
             }
         });
@@ -574,12 +581,19 @@ wss.on('connection', (ws, req) => {
 
             // Kirim status koneksi terkini ke client
             try {
+                // Ambil nama device untuk notifikasi toast yang lebih informatif
+                const [devRows] = await pool.query('SELECT name FROM mikrotik_devices WHERE id = ?', [finalDeviceId]);
+                const deviceName = devRows[0]?.name || 'Mikrotik';
+
                 ws.send(JSON.stringify({
                     type: 'connection-status',
                     payload: {
                         status: deviceStatus,
                         deviceId: finalDeviceId,
-                        message: deviceStatus === 'connected' ? 'Terhubung ke perangkat Mikrotik' : 'Koneksi ke perangkat Mikrotik terputus',
+                        deviceName: deviceName,
+                        message: deviceStatus === 'connected' 
+                            ? `Terhubung ke perangkat ${deviceName}` 
+                            : `Koneksi ke perangkat ${deviceName} terputus`,
                         timestamp: Date.now()
                     }
                 }));

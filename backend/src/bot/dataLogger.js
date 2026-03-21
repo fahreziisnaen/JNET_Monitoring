@@ -99,7 +99,8 @@ async function checkAlarms(workspaceId, device, broadcastCallback = null) {
                         payload: {
                             status: 'connected',
                             deviceId: device.id,
-                            message: `Koneksi ke perangkat Mikrotik berhasil dipulihkan.`,
+                            deviceName: device.name,
+                            message: `Koneksi ke perangkat ${device.name} berhasil dipulihkan.`,
                             timestamp: Date.now()
                         }
                     });

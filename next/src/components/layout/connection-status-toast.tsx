@@ -17,7 +17,7 @@ export default function ConnectionStatusToast() {
             const data = event.detail;
             if (!data) return;
 
-            const { status, message, code } = data;
+            const { status, message, deviceName } = data;
 
             // Ignore 'Device changed' disconnections (1000 closure with this reason)
             if (status === 'disconnected' && message === 'Device changed') {
@@ -28,8 +28,8 @@ export default function ConnectionStatusToast() {
                 wasConnectedRef.current = false;
                 // Show persistent destructive toast
                 if (!toastIdRef.current) {
-                    toastIdRef.current = toast.error('Koneksi Terputus', {
-                        description: message || 'Koneksi ke perangkat Mikrotik terputus.',
+                    toastIdRef.current = toast.error(deviceName ? `Offline: ${deviceName}` : 'Koneksi Terputus', {
+                        description: message || `Koneksi ke perangkat ${deviceName || 'Mikrotik'} terputus.`,
                         duration: Infinity // Persistent until reconnected
                     });
                 }
@@ -39,15 +39,11 @@ export default function ConnectionStatusToast() {
                     toast.dismiss(toastIdRef.current);
                     toastIdRef.current = null;
 
-                    toast.success('Terhubung Kembali', {
-                        description: 'Koneksi ke perangkat Mikrotik berhasil dipulihkan.',
+                    toast.success(deviceName ? `Online: ${deviceName}` : 'Terhubung Kembali', {
+                        description: message || `Koneksi ke perangkat ${deviceName || 'Mikrotik'} berhasil dipulihkan.`,
                         duration: 3000
                     });
-                } else if (!wasConnectedRef.current) {
-                    // Optional: You could show an initial 'Terhubung' toast here, but user finds it annoying.
-                    // Doing nothing on initial load.
                 }
-
                 // Mark as successfully connected
                 wasConnectedRef.current = true;
             }
@@ -58,14 +54,16 @@ export default function ConnectionStatusToast() {
             const data = event.detail;
             if (!data?.users?.length) return;
 
-            const users: string[] = data.users;
+            const { users, deviceName } = data;
+            const deviceContext = deviceName ? ` (${deviceName})` : '';
+
             if (users.length === 1) {
-                toast.error(`Client Offline`, {
+                toast.error(`Client Offline${deviceContext}`, {
                     description: `User ${users[0]} terputus dari jaringan.`,
                     duration: 8000,
                 });
             } else {
-                toast.error(`${users.length} Client Offline`, {
+                toast.error(`${users.length} Client Offline${deviceContext}`, {
                     description: users.slice(0, 3).join(', ') + (users.length > 3 ? ` +${users.length - 3} lainnya` : '') + ' terputus.',
                     duration: 8000,
                 });
@@ -77,14 +75,16 @@ export default function ConnectionStatusToast() {
             const data = event.detail;
             if (!data?.users?.length) return;
 
-            const users: string[] = data.users;
+            const { users, deviceName } = data;
+            const deviceContext = deviceName ? ` (${deviceName})` : '';
+
             if (users.length === 1) {
-                toast.success(`Client Online`, {
+                toast.success(`Client Online${deviceContext}`, {
                     description: `User ${users[0]} kembali terhubung.`,
                     duration: 6000,
                 });
             } else {
-                toast.success(`${users.length} Client Online`, {
+                toast.success(`${users.length} Client Online${deviceContext}`, {
                     description: users.slice(0, 3).join(', ') + (users.length > 3 ? ` +${users.length - 3} lainnya` : '') + ' kembali terhubung.',
                     duration: 6000,
                 });

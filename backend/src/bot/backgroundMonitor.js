@@ -289,13 +289,13 @@ async function startPhysicalMonitor(group, broadcastCallback) {
                             if (downtimeUsers.length > 0) {
                                 state.broadcastCallback(inst.workspace_id, inst.id, {
                                     type: 'downtime-notification',
-                                    payload: { users: downtimeUsers }
+                                    payload: { users: downtimeUsers, deviceName: inst.name }
                                 });
                             }
                             if (reconnectUsers.length > 0) {
                                 state.broadcastCallback(inst.workspace_id, inst.id, {
                                     type: 'reconnect-notification',
-                                    payload: { users: reconnectUsers }
+                                    payload: { users: reconnectUsers, deviceName: inst.name }
                                 });
                             }
                         } else if (Date.now() - serverStartTime < SUPPRESSION_PERIOD_MS) {
