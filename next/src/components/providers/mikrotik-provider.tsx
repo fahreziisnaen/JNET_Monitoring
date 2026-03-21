@@ -307,11 +307,9 @@ export const MikrotikProvider = ({ children }: { children: React.ReactNode }) =>
                 setIsLoaded(true); // Still mark as loaded to let UI proceed
             });
     }, [user?.workspace_id, triggerRender]);
-
     // Connection Manager: maintain WS for the UNION of both selections
     useEffect(() => {
         if (!isLoaded || !user?.workspace_id) return;
-
         // JIKA DI HALAMAN NOC: Matikan semua koneksi individual untuk menghemat bandwidth
         // NOC menggunakan koneksinya sendiri di NocManagementTab
         if (pathname === '/noc') {
@@ -323,13 +321,21 @@ export const MikrotikProvider = ({ children }: { children: React.ReactNode }) =>
             return;
         }
 
+        // PRIORITAS KONEKSI: Limit jumlah koneksi simultan (Browser limit)
+        // 1. Active Device (Prioritas Utama)
+        // 2. Dashboard Devices (Maksimal 5 teratas)
+        const priorityIds = new Set<number>();
+        if (activeDeviceId) priorityIds.add(activeDeviceId);
+        
+        dashboardDeviceIds.slice(0, 5).forEach(id => priorityIds.add(id));
+
         const currentSelected = new Set(effectiveSelectedIds);
         const activeTimers: any[] = [];
         
-        // 1. Close connections for unselected devices
+        // 1. Close connections for unselected devices ATAU yang di luar limit prioritas
         wsPoolRef.current.forEach((ws, deviceId) => {
-            if (!currentSelected.has(deviceId)) {
-                ws.close(1000, 'Unselected');
+            if (!currentSelected.has(deviceId) || !priorityIds.has(deviceId)) {
+                ws.close(1000, 'Unselected/Limit Reached');
                 wsPoolRef.current.delete(deviceId);
                 const timer = reconnectTimersRef.current.get(deviceId);
                 if (timer) clearTimeout(timer);
@@ -338,21 +344,21 @@ export const MikrotikProvider = ({ children }: { children: React.ReactNode }) =>
             }
         });
 
-        // 2. Open connections for needed devices (staggered)
-        effectiveSelectedIds.forEach((id, index) => {
+        // 2. Open connections for needed devices (staggered & prioritized)
+        Array.from(priorityIds).forEach((id, index) => {
             if (!wsPoolRef.current.has(id)) {
                 const timer = setTimeout(() => {
                     const devData = deviceDataRef.current.get(id);
                     const wsWorkspaceId = devData?.workspaceId || user.workspace_id;
                     if (user?.workspace_id) connectDevice(id, wsWorkspaceId);
-                }, index * 300);
+                }, index * 200); // Stagger for better scheduling
                 reconnectTimersRef.current.set(id, timer);
                 activeTimers.push(timer);
             }
         });
 
         return () => activeTimers.forEach(t => clearTimeout(t));
-    }, [effectiveSelectedIds, isLoaded, user?.workspace_id, connectDevice, pathname]);
+    }, [effectiveSelectedIds, isLoaded, user?.workspace_id, connectDevice, pathname, activeDeviceId, dashboardDeviceIds]);
 
     // Setters for Dashboard (Multiple)
     const handleDashboardChange = useCallback((deviceIds: number[]) => {

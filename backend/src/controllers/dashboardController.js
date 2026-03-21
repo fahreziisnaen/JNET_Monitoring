@@ -18,18 +18,22 @@ exports.getSnapshot = async (req, res) => {
         // Jika deviceId tidak diberikan, ambil snapshot batch
         if (!deviceId) {
             let snapshots;
+            const summaryColumns = 'device_id, workspace_id, resource, traffic, updated_at';
+            const allColumns = '*';
+            const cols = isSummary ? summaryColumns : allColumns;
+
             if (isSuper && !req.query.workspaceId) {
-                // Superadmin gets ALL snapshots in the system
-                [snapshots] = await pool.query('SELECT * FROM dashboard_snapshot');
+                // Superadmin gets snapshots for all workspaces
+                [snapshots] = await pool.query(`SELECT ${cols} FROM dashboard_snapshot`);
             } else if ((user.role === 'noc' || user.role === 'admin') && !req.query.workspaceId) {
-                // NOC/Admin get snapshots for authorized workspaces (including their own)
+                // NOC/Admin get snapshots for authorized workspaces
                 const [perms] = await pool.query('SELECT workspace_id FROM noc_permissions WHERE user_id = ?', [user.id]);
                 const authorizedIds = [user.workspace_id, ...perms.map(p => p.workspace_id)];
-                [snapshots] = await pool.query('SELECT * FROM dashboard_snapshot WHERE workspace_id IN (?)', [authorizedIds]);
+                [snapshots] = await pool.query(`SELECT ${cols} FROM dashboard_snapshot WHERE workspace_id IN (?)`, [authorizedIds]);
             } else {
                 // Regular user or specific workspaceId override
                 [snapshots] = await pool.query(
-                    'SELECT * FROM dashboard_snapshot WHERE workspace_id = ?',
+                    `SELECT ${cols} FROM dashboard_snapshot WHERE workspace_id = ?`,
                     [workspaceId]
                 );
             }
