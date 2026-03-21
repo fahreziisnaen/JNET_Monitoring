@@ -274,6 +274,7 @@ CREATE TABLE `pppoe_secrets` (
   `uptime` VARCHAR(50) DEFAULT NULL,
   `current_address` VARCHAR(50) DEFAULT NULL,
   `active_connection_id` VARCHAR(50) DEFAULT NULL COMMENT 'MikroTik .id dari PPP active connection untuk kick',
+  `previous_profile` VARCHAR(100) DEFAULT NULL COMMENT 'Profil lama sebelum user di-isolir',
   `updated_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`workspace_id`, `device_id`, `name`),
   KEY `idx_device_id` (`device_id`),

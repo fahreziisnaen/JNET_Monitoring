@@ -23,9 +23,10 @@ JNET Monitoring is a full-stack application designed to provide an intuitive and
 ### 👥 User & PPPoE Management
 * **PPPoE Management**: 
   - View, add, edit, delete, disable, and kick active PPPoE users
+  - **Isolir (Client Isolation)**: Quickly isolate clients by changing their profile to "Isolir" with one click, and restore to their original profile later.
   - Search and filter PPPoE secrets
   - View uptime for active users
-  - Auto-kick users when profile is changed or secret is disabled
+  - Auto-kick users when profile is changed (including Isolate/Unisolate) or secret is disabled
 * **Hotspot Management**: Complete CRUD operations for Hotspot users
 * **IP Pool Management**: Automatically assign IP addresses to new PPPoE users based on profiles
   - Auto-populate IP start, IP end, and gateway when profile is selected
@@ -80,8 +81,8 @@ JNET Monitoring is a full-stack application designed to provide an intuitive and
 * **Beautiful PDF Formatting**: Professional tables with repeating headers, alternating row colors, pagination, and info boxes
 
 ### 🔔 Notification System
-* **Downtime Notifications**: WhatsApp + WebSocket toast when user disconnects for 2+ minutes
-* **Reconnect Notifications**: WhatsApp + WebSocket toast when user reconnects after 2+ min downtime
+* **Downtime Notifications**: WhatsApp + WebSocket toast when user disconnects for 10+ minutes
+* **Reconnect Notifications**: WhatsApp + WebSocket toast when user reconnects after 10+ min downtime (with 1 min stable period)
 * **Gateway Connection Alerts**: Real-time toasts in dashboard when MikroTik device connects/disconnects
 * **System Alerts**: High CPU usage, device offline notifications
 
@@ -511,6 +512,8 @@ See `backend/database_setup.sql` for complete schema definition.
 | POST | `/active/*/kick` | Kick active user |
 | GET | `/secrets/:name/usage` | Get usage history |
 | GET | `/secrets/:name/sla` | Get SLA details & downtime events |
+| POST | `/secrets/:id/isolate` | Isolate client (change profile to "Isolir") |
+| POST | `/secrets/:id/unisolate` | Restore client from isolation |
 | GET | `/profiles` | List PPPoE profiles |
 
 ### Assets & Clients (`/api/assets`, `/api/clients`)
