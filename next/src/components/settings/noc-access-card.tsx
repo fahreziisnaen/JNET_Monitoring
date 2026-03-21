@@ -155,8 +155,8 @@ const NocAccessCard = () => {
                                             <User size={16} className="text-primary" />
                                         </div>
                                         <div>
-                                            <h5 className="text-sm font-semibold text-foreground">{user.display_name}</h5>
-                                            <p className="text-xs text-secondary-foreground opacity-80 font-mono">@{user.username}</p>
+                                            <h5 className="text-sm font-medium">{user.display_name}</h5>
+                                            <p className="text-xs text-muted-foreground">@{user.username}</p>
                                         </div>
                                     </div>
                                     <Button

@@ -282,18 +282,18 @@ const WorkspaceMembersCard = () => {
 
             <div className="flex items-center gap-1">
                 {canManageRole(member) && (
-                    <div className="opacity-0 group-hover:opacity-100 transition-opacity flex items-center bg-background rounded-md p-1 border border-primary/30 shadow-sm">
+                    <div className="flex items-center bg-secondary rounded px-1.5 py-0.5 border border-border">
                         <select
-                            className="bg-transparent text-[11px] font-semibold text-foreground border-none outline-none pr-1 cursor-pointer appearance-none"
+                            className="bg-transparent text-[11px] font-bold text-foreground cursor-pointer focus:outline-none"
                             value={member.role}
                             onChange={(e) => handleRoleChange(member, e.target.value as any)}
                             disabled={togglingRoleId === member.id}
                         >
-                            <option value="user" className="bg-background text-foreground">User</option>
-                            <option value="noc" className="bg-background text-foreground text-emerald-500">NOC</option>
-                            <option value="admin" className="bg-background text-foreground text-blue-500">Admin</option>
+                            <option value="user" className="text-black bg-white">User</option>
+                            <option value="noc" className="text-black bg-white">NOC</option>
+                            <option value="admin" className="text-black bg-white">Admin</option>
                         </select>
-                        {togglingRoleId === member.id && <Loader2 size={12} className="animate-spin ml-1 text-primary" />}
+                        {togglingRoleId === member.id && <Loader2 size={12} className="animate-spin ml-1" />}
                     </div>
                 )}
 
@@ -382,7 +382,7 @@ const WorkspaceMembersCard = () => {
                         {Object.entries(groupedUsers).map(([wsName, users]) => (
                             <div key={wsName}>
                                 <h3 className="text-sm font-semibold text-primary mb-2 flex items-center gap-2">
-                                    <span className="bg-primary/10 text-primary px-2 py-0.5 rounded-md text-xs">{wsName}</span>
+                                    <span className="bg-primary-100 text-primary px-2 py-0.5 rounded-md text-xs">{wsName}</span>
                                     <span className="text-xs text-muted-foreground font-normal">{users.length} user</span>
                                 </h3>
                                 <div className="divide-y divide-border ml-2 border-l-2 border-primary/10 pl-4">

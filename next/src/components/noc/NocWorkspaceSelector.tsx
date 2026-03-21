@@ -101,16 +101,16 @@ const NocWorkspaceSelector: React.FC<NocWorkspaceSelectorProps> = ({ selectedWor
                         </button>
                     </div>
 
-                    <div className="overflow-y-auto p-2 space-y-1 custom-scrollbar bg-background">
+                    <div className="overflow-y-auto p-2 space-y-1 custom-scrollbar">
                         {workspaces.map(ws => {
                             const isSelected = selectedWorkspaceIds.includes(ws.id);
                             return (
                                 <div
                                     key={ws.id}
                                     onClick={(e) => { e.stopPropagation(); toggleWorkspace(ws.id); }}
-                                    className={`flex items-center justify-between p-2 rounded-md cursor-pointer transition-colors border border-transparent ${isSelected ? 'bg-primary/20 border-primary/30' : 'hover:bg-secondary/50'}`}
+                                    className={`flex items-center justify-between p-2 rounded-md cursor-pointer transition-colors ${isSelected ? 'bg-primary/10 hover:bg-primary/20' : 'hover:bg-secondary'}`}
                                 >
-                                    <span className={`text-sm ${isSelected ? 'font-bold text-primary' : 'text-foreground font-medium'}`}>{ws.name}</span>
+                                    <span className={isSelected ? 'font-medium text-primary' : ''}>{ws.name}</span>
                                     {isSelected && <CheckCircle2 className="w-4 h-4 text-primary" />}
                                 </div>
                             )
