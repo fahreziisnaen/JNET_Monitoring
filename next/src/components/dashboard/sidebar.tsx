@@ -158,7 +158,7 @@ const DeviceInfoCard = ({ deviceId, data, connected, name }: { deviceId: number,
 };
 
 const Sidebar = () => {
-  const { allDevicesData, allStatus, selectedDeviceIds } = useMikrotik() || { allDevicesData: {}, allStatus: {}, selectedDeviceIds: [] };
+  const { allDevicesData, allDevicesStatus, selectedDeviceIds } = useMikrotik() || { allDevicesData: {}, allDevicesStatus: {}, selectedDeviceIds: [] };
   const [deviceNames, setDeviceNames] = React.useState<Record<number, string>>({});
 
   React.useEffect(() => {
@@ -205,7 +205,7 @@ const Sidebar = () => {
             deviceId={id}
             name={deviceNames[id] || `Device ${id}`}
             data={allDevicesData[id]}
-            connected={allStatus[id]?.isConnected}
+            connected={allDevicesStatus[id]?.isConnected}
         />
       ))}
     </aside>

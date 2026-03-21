@@ -368,7 +368,7 @@ const SortableInterfaceCard = ({ id, etherId, currentTraffic, index, itemCount, 
 
 const MainContent = () => {
   const { user } = useAuth();
-  const { allDevicesData, allStatus, selectedDeviceIds, isLoaded: devicesLoaded } = useMikrotik() || { allDevicesData: {}, allStatus: {}, selectedDeviceIds: [], isLoaded: false };
+  const { allDevicesData, allDevicesStatus, selectedDeviceIds, isLoaded: devicesLoaded } = useMikrotik() || { allDevicesData: {}, allDevicesStatus: {}, selectedDeviceIds: [], isLoaded: false };
   const [selectedInterfaces, setSelectedInterfaces] = useState<Set<string>>(new Set()); // format: "deviceId:interfaceName"
   const [showFilter, setShowFilter] = useState(false);
   const [minimizedDevices, setMinimizedDevices] = useState<Set<number>>(new Set());
@@ -624,7 +624,7 @@ const MainContent = () => {
   const itemCount = displayedInterfaces.length;
   const gridLayoutClass = itemCount >= 3 ? 'md:grid-cols-2' : 'md:grid-cols-1';
 
-  const isConnected = selectedDeviceIds.length > 0 && selectedDeviceIds.some((id: number) => allStatus[id]?.isConnected);
+  const isConnected = selectedDeviceIds.length > 0 && selectedDeviceIds.some((id: number) => allDevicesStatus[id]?.isConnected);
 
   return (
     <div className="flex-grow space-y-4">
@@ -658,7 +658,7 @@ const MainContent = () => {
                     const interfaces = groupedAvailableInterfaces[deviceId] || [];
                     const isMinimized = minimizedDevices.has(deviceId);
                     const deviceName = deviceMetas[deviceId]?.name || `Device ${deviceId}`;
-                    const connected = allStatus[deviceId]?.isConnected;
+                    const connected = allDevicesStatus[deviceId]?.isConnected;
 
                     return (
                         <div key={deviceId} className="border rounded-lg overflow-hidden">
