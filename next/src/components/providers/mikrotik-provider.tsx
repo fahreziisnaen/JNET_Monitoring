@@ -16,6 +16,7 @@ interface DeviceData {
     activeInterfaces: Array<{ name: string; type: string; running: boolean }>;
     traffic: any;
     isConnected: boolean;
+    workspaceId?: number;
 }
 
 const DEFAULT_DEVICE_DATA: DeviceData = {
@@ -24,6 +25,7 @@ const DEFAULT_DEVICE_DATA: DeviceData = {
     activeInterfaces: [],
     traffic: {},
     isConnected: false,
+    workspaceId: undefined,
 };
 
 export const MikrotikProvider = ({ children }: { children: React.ReactNode }) => {
@@ -209,6 +211,7 @@ export const MikrotikProvider = ({ children }: { children: React.ReactNode }) =>
                             activeInterfaces: s.activeInterfaces || [],
                             traffic: s.traffic || {},
                             isConnected: s.isConnected || false,
+                            workspaceId: s.workspace_id,
                         });
                     });
                     triggerRender();
@@ -258,8 +261,11 @@ export const MikrotikProvider = ({ children }: { children: React.ReactNode }) =>
             if (!wsPoolRef.current.has(id)) {
                 // Stagger connections
                 const timer = setTimeout(() => {
+                    const devData = deviceDataRef.current.get(id);
+                    const wsWorkspaceId = devData?.workspaceId || user.workspace_id;
+                    
                     if (user?.workspace_id) { // Ensure user is still logged in
-                        connectDevice(id, user.workspace_id);
+                        connectDevice(id, wsWorkspaceId);
                     }
                 }, index * 300); // 300ms stagger is enough for lazy load
                 reconnectTimersRef.current.set(id, timer); // Store timer to clear if device becomes unselected
