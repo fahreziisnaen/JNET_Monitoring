@@ -12,6 +12,7 @@ exports.getSnapshot = async (req, res) => {
 
     // Superadmin bypass: If no workspaceId provided, they might want ALL authorized snapshots
     const isSuper = user.is_super_admin === 1 || user.is_super_admin === true;
+    const isSummary = req.query.summary === 'true';
     
     try {
         // Jika deviceId tidak diberikan, ambil snapshot batch
@@ -44,16 +45,19 @@ exports.getSnapshot = async (req, res) => {
                 }
             };
 
-            const mappedSnapshots = snapshots.map(s => ({
-                deviceId: s.device_id,
-                workspaceId: s.workspace_id,
-                resource: parseJsonField(s.resource),
-                traffic: parseJsonField(s.traffic) || {},
-                pppoeSecrets: parseJsonField(s.pppoe_active) || [],
-                hotspotActive: [], // Placeholder to prevent build errors
-                activeInterfaces: parseJsonField(s.active_interfaces) || [],
-                updatedAt: s.updated_at
-            }));
+            const mappedSnapshots = snapshots.map(s => {
+                const item = {
+                    deviceId: s.device_id,
+                    workspaceId: s.workspace_id,
+                    resource: parseJsonField(s.resource),
+                    traffic: parseJsonField(s.traffic) || {},
+                    pppoeSecrets: isSummary ? [] : (parseJsonField(s.pppoe_active) || []),
+                    hotspotActive: [], // Placeholder
+                    activeInterfaces: parseJsonField(s.active_interfaces) || [],
+                    updatedAt: s.updated_at
+                };
+                return item;
+            });
 
             return res.json(mappedSnapshots);
         }

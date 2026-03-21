@@ -243,8 +243,8 @@ export const MikrotikProvider = ({ children }: { children: React.ReactNode }) =>
         const apiUrl = process.env.NEXT_PUBLIC_API_BASE_URL;
         const isSuper = user.is_super_admin === 1 || user.is_super_admin === true;
         const snapshotUrl = isSuper 
-            ? `${apiUrl}/api/dashboard/snapshot` 
-            : `${apiUrl}/api/dashboard/snapshot?workspaceId=${user.workspace_id}`;
+            ? `${apiUrl}/api/dashboard/snapshot?summary=true` 
+            : `${apiUrl}/api/dashboard/snapshot?summary=true&workspaceId=${user.workspace_id}`;
 
         // 1. Fetch ALL snapshots for the workspace for instant data
         apiFetch(snapshotUrl)
@@ -364,8 +364,27 @@ export const MikrotikProvider = ({ children }: { children: React.ReactNode }) =>
         setActiveDeviceId(deviceId);
         if (user?.workspace_id) {
             localStorage.setItem(`active-device-${user.workspace_id}`, JSON.stringify(deviceId));
+            
+            // OPTIONAL: Fetch full snapshot for this specific device if not already loaded
+            const current = deviceDataRef.current.get(deviceId);
+            if (!current || !current.pppoeSecrets || current.pppoeSecrets.length === 0) {
+                const apiUrl = process.env.NEXT_PUBLIC_API_BASE_URL;
+                apiFetch(`${apiUrl}/api/dashboard/snapshot?deviceId=${deviceId}&workspaceId=${current?.workspaceId || user.workspace_id}`)
+                    .then(res => res.ok ? res.json() : null)
+                    .then(data => {
+                        if (data) {
+                            updateDeviceData(deviceId, {
+                                pppoeSecrets: data.pppoeSecrets || [],
+                                hotspotActive: data.hotspotActive || [],
+                                resource: data.resource,
+                                isConnected: data.isConnected
+                            });
+                        }
+                    })
+                    .catch(err => console.error('[MikrotikProvider] Lazy fetch error:', err));
+            }
         }
-    }, [user?.workspace_id]);
+    }, [user?.workspace_id, updateDeviceData]);
 
     // Derive aggregated data for context
     const allDevicesData = useMemo(() => {
