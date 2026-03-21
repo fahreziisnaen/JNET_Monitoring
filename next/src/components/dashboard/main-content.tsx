@@ -378,7 +378,8 @@ const MainContent = () => {
 
   // Load saved order and selected interfaces from localStorage
   useEffect(() => {
-    const savedOrder = localStorage.getItem('dashboard-interface-order');
+    const orderKey = user?.workspace_id ? `dashboard-interface-order-v2-${user.workspace_id}` : 'dashboard-interface-order';
+    const savedOrder = localStorage.getItem(orderKey);
     if (savedOrder) {
       try {
         setInterfaceOrder(JSON.parse(savedOrder));
@@ -532,7 +533,8 @@ const MainContent = () => {
       if (prevOrder.length === 0) {
         // Initialize order on first load
         const initialOrder = [...displayedInterfaces];
-        localStorage.setItem('dashboard-interface-order', JSON.stringify(initialOrder));
+        const orderKey = user?.workspace_id ? `dashboard-interface-order-v2-${user.workspace_id}` : 'dashboard-interface-order';
+        localStorage.setItem(orderKey, JSON.stringify(initialOrder));
         return initialOrder;
       } else {
         // Update order: keep ALL existing order (even if not currently in displayedInterfaces),
@@ -548,7 +550,8 @@ const MainContent = () => {
         }
 
         const updatedOrder = [...prevOrder, ...newInterfaces];
-        localStorage.setItem('dashboard-interface-order', JSON.stringify(updatedOrder));
+        const orderKey = user?.workspace_id ? `dashboard-interface-order-v2-${user.workspace_id}` : 'dashboard-interface-order';
+        localStorage.setItem(orderKey, JSON.stringify(updatedOrder));
         return updatedOrder;
       }
     });
@@ -562,7 +565,8 @@ const MainContent = () => {
         const oldIndex = items.indexOf(active.id as string);
         const newIndex = items.indexOf(over.id as string);
         const newOrder = arrayMove(items, oldIndex, newIndex);
-        localStorage.setItem('dashboard-interface-order', JSON.stringify(newOrder));
+        const orderKey = user?.workspace_id ? `dashboard-interface-order-v2-${user.workspace_id}` : 'dashboard-interface-order';
+        localStorage.setItem(orderKey, JSON.stringify(newOrder));
         return newOrder;
       });
     }
@@ -604,11 +608,12 @@ const MainContent = () => {
   useEffect(() => {
     if (hasLoadedSavedSelection) {
       try {
+        const selectionKey = user?.workspace_id ? `selected-interfaces-v2-${user.workspace_id}` : 'dashboard-selected-interfaces';
         if (selectedInterfaces.size > 0) {
-          localStorage.setItem('dashboard-selected-interfaces', JSON.stringify(Array.from(selectedInterfaces)));
+          localStorage.setItem(selectionKey, JSON.stringify(Array.from(selectedInterfaces)));
         } else {
           // Also save empty selection to prevent auto-select on next load
-          localStorage.setItem('dashboard-selected-interfaces', JSON.stringify([]));
+          localStorage.setItem(selectionKey, JSON.stringify([]));
         }
       } catch (e) {
         console.error('Failed to save selected interfaces:', e);

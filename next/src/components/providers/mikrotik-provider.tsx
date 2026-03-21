@@ -44,28 +44,15 @@ export const MikrotikProvider = ({ children }: { children: React.ReactNode }) =>
     const [tick, setTick] = useState(0);
     const triggerRender = useCallback(() => setTick(t => t + 1), []);
 
-    // Load selected device from localStorage
-    useEffect(() => {
-        if (user?.workspace_id) {
-            const saved = localStorage.getItem(`selected-devices-v2-${user.workspace_id}`);
-            if (saved) {
-                try {
-                    const ids = JSON.parse(saved);
-                    if (Array.isArray(ids)) {
-                        setSelectedDeviceIds(ids.filter(id => !isNaN(id)));
-                    } else if (typeof ids === 'number') {
-                        // Migration from old single-select
-                        setSelectedDeviceIds([ids]);
-                    }
-                } catch (e) {
-                    console.error('Failed to parse saved device IDs:', e);
-                }
-            }
-            setIsLoaded(true);
-        } else {
-            setIsLoaded(false);
-        }
-    }, [user]);
+    // handleDeviceData: update internal ref and trigger render
+    const updateDeviceData = useCallback((deviceId: number, data: Partial<DeviceData>) => {
+        const prev = deviceDataRef.current.get(deviceId) || { ...DEFAULT_DEVICE_DATA };
+        deviceDataRef.current.set(deviceId, {
+            ...prev,
+            ...data
+        });
+        triggerRender();
+    }, [triggerRender]);
 
     // Connect a single device WebSocket
     const connectDevice = useCallback((deviceId: number, workspaceId: number) => {
@@ -116,24 +103,20 @@ export const MikrotikProvider = ({ children }: { children: React.ReactNode }) =>
                     const hasInterfaces = payload.activeInterfaces && payload.activeInterfaces.length > 0;
                     const hasTraffic = payload.traffic && Object.keys(payload.traffic).length > 0;
 
-                    deviceDataRef.current.set(deviceId, {
+                    updateDeviceData(deviceId, {
                         pppoeSecrets: payload.pppoeSecrets || [],
                         resource: hasResource ? payload.resource : prev.resource,
                         activeInterfaces: hasInterfaces ? payload.activeInterfaces : prev.activeInterfaces,
                         traffic: hasTraffic ? payload.traffic : prev.traffic,
                         isConnected: true, // Pastikan connected jika ada data batch
                     });
-                    triggerRender();
                 } else if (message.type === 'pppoe-update' && message.payload) {
                     const newSecrets = message.payload.pppoeSecrets || [];
                     if (JSON.stringify(newSecrets) !== JSON.stringify(prev.pppoeSecrets)) {
-                        deviceDataRef.current.set(deviceId, { ...prev, pppoeSecrets: newSecrets, isConnected: true });
-                        triggerRender();
+                        updateDeviceData(deviceId, { pppoeSecrets: newSecrets, isConnected: true });
                     }
-                } else if (message.type === 'connection-status' && message.payload) {
                     const connected = message.payload.status === 'connected';
-                    deviceDataRef.current.set(deviceId, { ...prev, isConnected: connected });
-                    triggerRender();
+                    updateDeviceData(deviceId, { isConnected: connected });
 
                     // Forward event for toast notifications (if device is selected)
                     if (selectedDeviceIds.includes(deviceId)) {
@@ -162,9 +145,8 @@ export const MikrotikProvider = ({ children }: { children: React.ReactNode }) =>
         socket.onclose = (event) => {
             clearTimeout(connTimeout);
             const prev = deviceDataRef.current.get(deviceId) || { ...DEFAULT_DEVICE_DATA };
-            deviceDataRef.current.set(deviceId, { ...prev, isConnected: false });
+            updateDeviceData(deviceId, { isConnected: false });
             wsPoolRef.current.delete(deviceId);
-            triggerRender();
 
             // Forward disconnect if device is selected
             if (selectedDeviceIds.includes(deviceId)) {
@@ -189,19 +171,17 @@ export const MikrotikProvider = ({ children }: { children: React.ReactNode }) =>
             clearTimeout(connTimeout);
             if (socket.readyState === WebSocket.CLOSING || socket.readyState === WebSocket.CLOSED) return;
             const prev = deviceDataRef.current.get(deviceId) || { ...DEFAULT_DEVICE_DATA };
-            deviceDataRef.current.set(deviceId, { ...prev, isConnected: false });
-            triggerRender();
+            updateDeviceData(deviceId, { isConnected: false });
         };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [triggerRender, user]);
+    }, [updateDeviceData, user, selectedDeviceIds]);
 
-    // On login: fetch devices and connect all (with stagger to avoid race conditions)
+    // Initial load: Fetch all snapshots for the workspace at once
     useEffect(() => {
         if (!user?.workspace_id) {
-            // Cleanup on logout
-            wsPoolRef.current.forEach((ws) => {
-                if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) ws.close(1000, 'Logout');
-            });
+            setIsLoaded(false);
+            // Cleanup all connections on logout
+            wsPoolRef.current.forEach((ws) => ws.close(1000, 'Logout'));
             wsPoolRef.current.clear();
             deviceDataRef.current.clear();
             reconnectTimersRef.current.forEach(t => clearTimeout(t));
@@ -212,53 +192,82 @@ export const MikrotikProvider = ({ children }: { children: React.ReactNode }) =>
         }
 
         const apiUrl = process.env.NEXT_PUBLIC_API_BASE_URL;
-        const staggerTimers: any[] = [];
-
-        apiFetch(`${apiUrl}/api/devices`)
+        
+        // 1. Fetch ALL snapshots for the workspace in ONE request
+        apiFetch(`${apiUrl}/api/dashboard/snapshot?workspaceId=${user.workspace_id}`)
             .then(res => res.ok ? res.json() : [])
-            .then((devices: any[]) => {
-                if (!Array.isArray(devices)) return;
-                devices.forEach((device: any, index: number) => {
-                    if (!device.id || !device.workspace_id) return;
-
-                    // Load snapshot with explicit workspaceId
-                    apiFetch(`${apiUrl}/api/dashboard/snapshot?deviceId=${device.id}&workspaceId=${device.workspace_id}`)
-                        .then(res => res.ok ? res.json() : null)
-                        .then(data => {
-                            if (!data) return;
-                            const prev = deviceDataRef.current.get(device.id) || { ...DEFAULT_DEVICE_DATA };
-                            deviceDataRef.current.set(device.id, {
-                                pppoeSecrets: data.pppoeSecrets || prev.pppoeSecrets,
-                                resource: data.resource || prev.resource,
-                                activeInterfaces: data.activeInterfaces || prev.activeInterfaces,
-                                traffic: data.traffic || prev.traffic,
-                                isConnected: data.deviceStatus === 'connected',
-                            });
-                            triggerRender();
-                        })
-                        .catch(() => {});
-
-                    // Connect WS with explicit workspaceId
-                    const timer = setTimeout(() => {
-                        if (user) connectDevice(device.id, device.workspace_id);
-                    }, index * 800);
-                    staggerTimers.push(timer);
-                });
+            .then((snapshots: any[]) => {
+                if (Array.isArray(snapshots)) {
+                    snapshots.forEach(s => {
+                        deviceDataRef.current.set(s.deviceId, {
+                            pppoeSecrets: s.pppoeSecrets || [],
+                            resource: s.resource,
+                            activeInterfaces: s.activeInterfaces || [],
+                            traffic: s.traffic || {},
+                            isConnected: s.isConnected || false,
+                        });
+                    });
+                    triggerRender();
+                }
+                
+                // 2. Load selected devices from localStorage
+                const saved = localStorage.getItem(`selected-devices-v2-${user.workspace_id}`);
+                if (saved) {
+                    try {
+                        const ids = JSON.parse(saved);
+                        if (Array.isArray(ids)) {
+                            setSelectedDeviceIds(ids.filter(id => !isNaN(id)));
+                        } else if (typeof ids === 'number') {
+                            setSelectedDeviceIds([ids]);
+                        }
+                    } catch (e) { console.error('Failed to parse saved device IDs:', e); }
+                }
+                setIsLoaded(true);
             })
-            .catch(err => console.error('[WS Pool] Error fetching devices:', err));
+            .catch(err => {
+                console.error('[MikrotikProvider] Error fetching initial snapshots:', err);
+                setIsLoaded(true); // Still mark as loaded to let UI proceed
+            });
+    }, [user?.workspace_id, triggerRender]);
+
+    // Connection Manager: Only connect/maintain WS for selected devices
+    useEffect(() => {
+        if (!isLoaded || !user?.workspace_id) return;
+
+        const currentSelected = new Set(selectedDeviceIds);
+        const activeTimers: any[] = [];
+        
+        // 1. Close connections for unselected devices
+        wsPoolRef.current.forEach((ws, deviceId) => {
+            if (!currentSelected.has(deviceId)) {
+                ws.close(1000, 'Unselected');
+                wsPoolRef.current.delete(deviceId);
+                const timer = reconnectTimersRef.current.get(deviceId);
+                if (timer) clearTimeout(timer);
+                reconnectTimersRef.current.delete(deviceId); // Clear any pending reconnect timers
+                reconnectAttemptsRef.current.delete(deviceId); // Reset attempts
+            }
+        });
+
+        // 2. Open connections for newly selected devices (staggered)
+        selectedDeviceIds.forEach((id, index) => {
+            if (!wsPoolRef.current.has(id)) {
+                // Stagger connections
+                const timer = setTimeout(() => {
+                    if (user?.workspace_id) { // Ensure user is still logged in
+                        connectDevice(id, user.workspace_id);
+                    }
+                }, index * 300); // 300ms stagger is enough for lazy load
+                reconnectTimersRef.current.set(id, timer); // Store timer to clear if device becomes unselected
+                activeTimers.push(timer);
+            }
+        });
 
         return () => {
-            staggerTimers.forEach(t => clearTimeout(t));
-            // On unmount / user change: close all WS
-            wsPoolRef.current.forEach((ws) => {
-                if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) ws.close(1000, 'Unmount');
-            });
-            wsPoolRef.current.clear();
-            reconnectTimersRef.current.forEach(t => clearTimeout(t));
-            reconnectTimersRef.current.clear();
+            // Clear any timers that were set in this effect run
+            activeTimers.forEach(t => clearTimeout(t));
         };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [user?.workspace_id]);
+    }, [selectedDeviceIds, isLoaded, user?.workspace_id, connectDevice]);
 
     // handleDeviceChange: handle array of deviceIds
     const handleDevicesChange = useCallback((deviceIds: number[]) => {

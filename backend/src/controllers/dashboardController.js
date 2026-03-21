@@ -10,18 +10,35 @@ exports.getSnapshot = async (req, res) => {
     let deviceId = req.query.deviceId ? parseInt(req.query.deviceId) : null;
     
     try {
-        // Jika deviceId tidak diberikan, cari active_device_id untuk workspace tsb
+        // Jika deviceId tidak diberikan, ambil SEMUA snapshot untuk workspace tsb
         if (!deviceId) {
-            const [workspaces] = await pool.query('SELECT active_device_id FROM workspaces WHERE id = ?', [workspaceId]);
-            if (!workspaces[0]?.active_device_id) {
-                return res.json({
-                    resource: null,
-                    traffic: {},
-                    pppoeSecrets: [],
-                    activeInterfaces: []
-                });
-            }
-            deviceId = workspaces[0].active_device_id;
+            const [snapshots] = await pool.query(
+                'SELECT * FROM dashboard_snapshot WHERE workspace_id = ?',
+                [workspaceId]
+            );
+            
+            // Helper function untuk parse JSON field
+            const parseJsonField = (field) => {
+                if (!field) return null;
+                if (typeof field === 'object') return field;
+                try {
+                    return JSON.parse(field);
+                } catch (e) {
+                    return null;
+                }
+            };
+
+            const mappedSnapshots = snapshots.map(s => ({
+                deviceId: s.device_id,
+                workspaceId: s.workspace_id,
+                resource: parseJsonField(s.resource),
+                traffic: parseJsonField(s.traffic) || {},
+                pppoeSecrets: parseJsonField(s.pppoe_active) || [],
+                activeInterfaces: parseJsonField(s.active_interfaces) || [],
+                updatedAt: s.updated_at
+            }));
+
+            return res.json(mappedSnapshots);
         }
         
         const [snapshots] = await pool.query(
