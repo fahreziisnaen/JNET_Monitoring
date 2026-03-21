@@ -53,7 +53,8 @@ const DEFAULT_DEVICE_DATA: DeviceData = {
 
 export const MikrotikProvider = ({ children }: { children: React.ReactNode }) => {
     const { user } = useAuth();
-    const [selectedDeviceIds, setSelectedDeviceIds] = useState<number[]>([]);
+    const [dashboardDeviceIds, setDashboardDeviceIds] = useState<number[]>([]);
+    const [activeDeviceId, setActiveDeviceId] = useState<number | null>(null);
     const [isLoaded, setIsLoaded] = useState(false);
 
     // Per-device data stored in ref to avoid excessive re-renders
@@ -71,10 +72,17 @@ export const MikrotikProvider = ({ children }: { children: React.ReactNode }) =>
     const [tick, setTick] = useState(0);
     const triggerRender = useCallback(() => setTick(t => t + 1), []);
 
-    // Keep selectedDeviceIdsRef in sync
+    // Union of both selections for WebSocket management
+    const effectiveSelectedIds = useMemo(() => {
+        const ids = new Set(dashboardDeviceIds);
+        if (activeDeviceId) ids.add(activeDeviceId);
+        return Array.from(ids);
+    }, [dashboardDeviceIds, activeDeviceId]);
+
+    // Keep selectedDeviceIdsRef in sync with the UNION of all needed connections
     useEffect(() => {
-        selectedDeviceIdsRef.current = selectedDeviceIds;
-    }, [selectedDeviceIds]);
+        selectedDeviceIdsRef.current = effectiveSelectedIds;
+    }, [effectiveSelectedIds]);
 
     // handleDeviceData: update internal ref and trigger render
     const updateDeviceData = useCallback((deviceId: number, data: Partial<DeviceData>) => {
@@ -273,17 +281,22 @@ export const MikrotikProvider = ({ children }: { children: React.ReactNode }) =>
                 }
                 triggerRender();
 
-                // 3. Load selected devices from localStorage
-                const saved = localStorage.getItem(`selected-devices-v2-${user.workspace_id}`);
-                if (saved) {
+                // 3. Load selections from localStorage
+                const dashboardSaved = localStorage.getItem(`dashboard-devices-${user.workspace_id}`);
+                const activeSaved = localStorage.getItem(`active-device-${user.workspace_id}`);
+
+                if (dashboardSaved) {
                     try {
-                        const ids = JSON.parse(saved);
-                        if (Array.isArray(ids)) {
-                            setSelectedDeviceIds(ids.filter(id => !isNaN(id)));
-                        } else if (typeof ids === 'number') {
-                            setSelectedDeviceIds([ids]);
-                        }
-                    } catch (e) { console.error('Failed to parse saved device IDs:', e); }
+                        const ids = JSON.parse(dashboardSaved);
+                        if (Array.isArray(ids)) setDashboardDeviceIds(ids.filter(id => !isNaN(id)));
+                    } catch (e) { console.error('Failed to parse dashboard device IDs:', e); }
+                }
+
+                if (activeSaved) {
+                    try {
+                        const id = JSON.parse(activeSaved);
+                        if (typeof id === 'number' && !isNaN(id)) setActiveDeviceId(id);
+                    } catch (e) { console.error('Failed to parse active device ID:', e); }
                 }
                 setIsLoaded(true);
             })
@@ -293,11 +306,11 @@ export const MikrotikProvider = ({ children }: { children: React.ReactNode }) =>
             });
     }, [user?.workspace_id, triggerRender]);
 
-    // Connection Manager: Only connect/maintain WS for selected devices
+    // Connection Manager: maintain WS for the UNION of both selections
     useEffect(() => {
         if (!isLoaded || !user?.workspace_id) return;
 
-        const currentSelected = new Set(selectedDeviceIds);
+        const currentSelected = new Set(effectiveSelectedIds);
         const activeTimers: any[] = [];
         
         // 1. Close connections for unselected devices
@@ -307,59 +320,52 @@ export const MikrotikProvider = ({ children }: { children: React.ReactNode }) =>
                 wsPoolRef.current.delete(deviceId);
                 const timer = reconnectTimersRef.current.get(deviceId);
                 if (timer) clearTimeout(timer);
-                reconnectTimersRef.current.delete(deviceId); // Clear any pending reconnect timers
-                reconnectAttemptsRef.current.delete(deviceId); // Reset attempts
+                reconnectTimersRef.current.delete(deviceId);
+                reconnectAttemptsRef.current.delete(deviceId);
             }
         });
 
-        // 2. Open connections for newly selected devices (staggered)
-        selectedDeviceIds.forEach((id, index) => {
+        // 2. Open connections for needed devices (staggered)
+        effectiveSelectedIds.forEach((id, index) => {
             if (!wsPoolRef.current.has(id)) {
-                // Stagger connections
                 const timer = setTimeout(() => {
                     const devData = deviceDataRef.current.get(id);
                     const wsWorkspaceId = devData?.workspaceId || user.workspace_id;
-                    
-                    if (user?.workspace_id) { // Ensure user is still logged in
-                        connectDevice(id, wsWorkspaceId);
-                    }
-                }, index * 300); // 300ms stagger is enough for lazy load
-                reconnectTimersRef.current.set(id, timer); // Store timer to clear if device becomes unselected
+                    if (user?.workspace_id) connectDevice(id, wsWorkspaceId);
+                }, index * 300);
+                reconnectTimersRef.current.set(id, timer);
                 activeTimers.push(timer);
             }
         });
 
-        return () => {
-            // Clear any timers that were set in this effect run
-            activeTimers.forEach(t => clearTimeout(t));
-        };
-    }, [selectedDeviceIds, isLoaded, user?.workspace_id, connectDevice]);
+        return () => activeTimers.forEach(t => clearTimeout(t));
+    }, [effectiveSelectedIds, isLoaded, user?.workspace_id, connectDevice]);
 
-    // handleDeviceChange: handle array of deviceIds
-    const handleDevicesChange = useCallback((deviceIds: number[]) => {
-        setSelectedDeviceIds(deviceIds);
+    // Setters for Dashboard (Multiple)
+    const handleDashboardChange = useCallback((deviceIds: number[]) => {
+        setDashboardDeviceIds(deviceIds);
         if (user?.workspace_id) {
-            localStorage.setItem(`selected-devices-v2-${user.workspace_id}`, JSON.stringify(deviceIds));
+            localStorage.setItem(`dashboard-devices-${user.workspace_id}`, JSON.stringify(deviceIds));
         }
     }, [user?.workspace_id]);
 
-    const toggleDeviceId = useCallback((deviceId: number) => {
-        setSelectedDeviceIds(prev => {
-            const next = prev.includes(deviceId) 
-                ? prev.filter(id => id !== deviceId)
-                : [...prev, deviceId];
-            
+    const toggleDashboardId = useCallback((deviceId: number) => {
+        setDashboardDeviceIds(prev => {
+            const next = prev.includes(deviceId) ? prev.filter(id => id !== deviceId) : [...prev, deviceId];
             if (user?.workspace_id) {
-                localStorage.setItem(`selected-devices-v2-${user.workspace_id}`, JSON.stringify(next));
+                localStorage.setItem(`dashboard-devices-${user.workspace_id}`, JSON.stringify(next));
             }
             return next;
         });
     }, [user?.workspace_id]);
 
-    // setSelectedDeviceId (singular) for backward compatibility
-    const handleDeviceChange = useCallback((deviceId: number) => {
-        handleDevicesChange([deviceId]);
-    }, [handleDevicesChange]);
+    // Setter for Active Management (Singular)
+    const handleActiveChange = useCallback((deviceId: number) => {
+        setActiveDeviceId(deviceId);
+        if (user?.workspace_id) {
+            localStorage.setItem(`active-device-${user.workspace_id}`, JSON.stringify(deviceId));
+        }
+    }, [user?.workspace_id]);
 
     // Derive aggregated data for context
     const allDevicesData = useMemo(() => {
@@ -380,32 +386,34 @@ export const MikrotikProvider = ({ children }: { children: React.ReactNode }) =>
     }, [tick]);
 
     const forceRefresh = useCallback((deviceId?: number) => {
-        const targetIds = deviceId ? [deviceId] : selectedDeviceIds;
+        const targetIds = deviceId ? [deviceId] : effectiveSelectedIds;
         targetIds.forEach(id => {
             const ws = wsPoolRef.current.get(id);
             if (ws && ws.readyState === WebSocket.OPEN) {
                 ws.send(JSON.stringify({ type: 'force-refresh', target: 'secrets' }));
             }
         });
-    }, [selectedDeviceIds]);
+    }, [effectiveSelectedIds]);
 
     const getDeviceWorkspaceId = useCallback((deviceId: number) => {
         return deviceDataRef.current.get(deviceId)?.workspaceId || null;
     }, []);
 
+    const activeDataId = activeDeviceId || dashboardDeviceIds[0] || null;
+
     const value: MikrotikContextType = {
         allDevicesData: allDevicesData.dataMap,
         allDevicesStatus: allDevicesData.allDevicesStatus,
-        selectedDeviceIds,
-        setSelectedDeviceIds: handleDevicesChange,
-        selectedDeviceId: selectedDeviceIds[0] || null,
-        setSelectedDeviceId: handleDeviceChange,
+        selectedDeviceIds: dashboardDeviceIds,
+        setSelectedDeviceIds: handleDashboardChange,
+        selectedDeviceId: activeDeviceId || dashboardDeviceIds[0] || null,
+        setSelectedDeviceId: handleActiveChange,
         isLoaded,
-        pppoeSecrets: selectedDeviceIds[0] ? (allDevicesData.dataMap[selectedDeviceIds[0]]?.pppoeSecrets || []) : [],
-        hotspotActive: selectedDeviceIds[0] ? (allDevicesData.dataMap[selectedDeviceIds[0]]?.hotspotActive || []) : [],
-        resource: selectedDeviceIds[0] ? (allDevicesData.dataMap[selectedDeviceIds[0]]?.resource || null) : null,
-        isConnected: selectedDeviceIds[0] ? (allDevicesData.dataMap[selectedDeviceIds[0]]?.isConnected || false) : false,
-        toggleDeviceId,
+        pppoeSecrets: activeDataId ? (allDevicesData.dataMap[activeDataId]?.pppoeSecrets || []) : [],
+        hotspotActive: activeDataId ? (allDevicesData.dataMap[activeDataId]?.hotspotActive || []) : [],
+        resource: activeDataId ? (allDevicesData.dataMap[activeDataId]?.resource || null) : null,
+        isConnected: activeDataId ? (allDevicesData.dataMap[activeDataId]?.isConnected || false) : false,
+        toggleDeviceId: toggleDashboardId,
         forceRefresh,
         getDeviceWorkspaceId,
     };

@@ -55,8 +55,12 @@ export const DeviceSelector: React.FC<DeviceSelectorProps> = ({
           const devicesData = await devicesRes.json();
           setDevices(devicesData);
 
-          // Jika belum ada selectedDeviceIds, coba load dari localStorage atau gunakan default
-          const savedLocalDevices = localStorage.getItem(`selected-devices-v2-${user.workspace_id}`);
+          // Jika belum ada selection, coba load dari localStorage yang baru (decoupled)
+          const savedKey = onDeviceChange 
+            ? `active-device-${user.workspace_id}` 
+            : `dashboard-devices-${user.workspace_id}`;
+          
+          const savedLocalDevices = localStorage.getItem(savedKey);
           if (selectedDeviceIds.length === 0 && !savedLocalDevices && devicesData.length > 0) {
             if (onDeviceChange) {
               // Single-select mode: default ke device pertama saja
