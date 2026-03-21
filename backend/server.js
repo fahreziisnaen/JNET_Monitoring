@@ -696,14 +696,45 @@ wss.on('connection', (ws, req) => {
                     } else if (data.type === 'subscribe-noc') {
                         // Dukungan Mode NOC: Satu koneksi memantau banyak workspace
                         ws.isNoc = true;
-                        ws.monitoredWorkspaceIds = Array.isArray(data.workspaceIds) ? data.workspaceIds.map(Number) : [];
+                        const workspaceIds = Array.isArray(data.workspaceIds) ? data.workspaceIds.map(Number) : [];
+                        ws.monitoredWorkspaceIds = workspaceIds;
                         console.log(`[WebSocket] Client beralih ke MODE NOC (Monitoring ${ws.monitoredWorkspaceIds.length} workspace)`);
                         
-                        // Kirim konfirmasi
-                        ws.send(JSON.stringify({
-                            type: 'noc-ready',
-                            payload: { monitoredWorkspaces: ws.monitoredWorkspaceIds.length }
-                        }));
+                        // KIRIM SNAPSHOT AWAL (Instant dari Store)
+                        (async () => {
+                            try {
+                                const [rows] = await pool.query(`
+                                    SELECT 
+                                        ps.name, ps.profile, ps.remote_address as 'remote-address',
+                                        ps.disabled, ps.is_active as isActive, ps.uptime,
+                                        ps.current_address as currentAddress, ps.active_connection_id as activeConnectionId,
+                                        ps.workspace_id, ps.device_id,
+                                        w.name as workspace_name, md.name as router_name
+                                    FROM pppoe_secrets ps
+                                    JOIN workspaces w ON ps.workspace_id = w.id
+                                    JOIN mikrotik_devices md ON ps.device_id = md.id
+                                    WHERE ps.workspace_id IN (?)
+                                `, [workspaceIds.length > 0 ? workspaceIds : [-1]]);
+
+                                const aggregatedSecrets = rows.map(s => {
+                                    const secret = { ...s };
+                                    secret.disabled = s.disabled === 1 ? 'true' : 'false';
+                                    secret.isActive = s.isActive === 1;
+                                    secret.deviceId = s.device_id;
+                                    secret.mikrotik_status = mikrotikStore.getDeviceStatus(s.workspace_id, s.device_id) || 'disconnected';
+                                    return secret;
+                                });
+
+                                if (ws.readyState === WebSocket.OPEN) {
+                                    ws.send(JSON.stringify({
+                                        type: 'pppoe-update',
+                                        payload: { pppoeSecrets: aggregatedSecrets, isSnapshot: true }
+                                    }));
+                                }
+                            } catch (e) {
+                                console.error("[WebSocket] Gagal kirim NOC snapshot:", e.message);
+                            }
+                        })();
                     }
                 } catch (e) {
                     // Ignore non-JSON messages

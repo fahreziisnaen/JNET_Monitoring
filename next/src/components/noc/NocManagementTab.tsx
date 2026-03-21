@@ -148,7 +148,8 @@ const NocManagementTab: React.FC<NocManagementTabProps> = ({ workspaces }) => {
     // Reset debounce ref saat workspaceIds berubah agar filter switch langsung fetch
     useEffect(() => {
         lastFetchTimeRef.current = 0;
-        fetchSecrets(false);
+        // setSecrets([]); // Optional: clear secrets when workspaces change
+        setLoading(true);
 
         // Update WebSocket subscription when workspaces change
         if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN && workspaceIds.length > 0) {
@@ -157,7 +158,7 @@ const NocManagementTab: React.FC<NocManagementTabProps> = ({ workspaces }) => {
                 workspaceIds: workspaceIds
             }));
         }
-    }, [workspaceIds, fetchSecrets]);
+    }, [workspaceIds]);
 
     useEffect(() => {
         if (!token || workspaceIds.length === 0) return;
@@ -185,30 +186,41 @@ const NocManagementTab: React.FC<NocManagementTabProps> = ({ workspaces }) => {
                     
                     if (data.type === 'pppoe-update' || data.type === 'batch-update') {
                         const newSecrets = data.payload?.pppoeSecrets || data.payload?.secrets;
-                        if (newSecrets && Array.isArray(newSecrets)) {
-                            setSecrets(prev => {
-                                // Create a map of incoming updates for faster lookup
-                                const updates = new Map();
-                                newSecrets.forEach((s: any) => {
-                                    const key = `${s.workspace_id}_${s.name}`;
-                                    updates.set(key, {
-                                        ...s,
-                                        deviceId: s.device_id || s.deviceId
-                                    });
-                                });
+                        const isSnapshot = data.payload?.isSnapshot || false;
 
-                                // Merge updates into existing state
-                                return prev.map(oldSecret => {
-                                    const key = `${oldSecret.workspace_id}_${oldSecret.name}`;
-                                    if (updates.has(key)) {
-                                        const updated = updates.get(key);
-                                        updates.delete(key); // Mark as consumed
-                                        return { ...oldSecret, ...updated };
-                                    }
-                                    return oldSecret;
-                                }).concat(Array.from(updates.values())); // Append any new secrets not in current list
-                            });
+                        if (newSecrets && Array.isArray(newSecrets)) {
+                            if (isSnapshot) {
+                                // Full snapshot: replace everything
+                                setSecrets(newSecrets.map((s: any) => ({
+                                    ...s,
+                                    deviceId: s.device_id || s.deviceId
+                                })));
+                            } else {
+                                // Incremental update: merge
+                                setSecrets(prev => {
+                                    const updates = new Map();
+                                    newSecrets.forEach((s: any) => {
+                                        const key = `${s.workspace_id}_${s.name}`;
+                                        updates.set(key, {
+                                            ...s,
+                                            deviceId: s.device_id || s.deviceId
+                                        });
+                                    });
+
+                                    return prev.map(oldSecret => {
+                                        const key = `${oldSecret.workspace_id}_${oldSecret.name}`;
+                                        if (updates.has(key)) {
+                                            const updated = updates.get(key);
+                                            updates.delete(key);
+                                            return { ...oldSecret, ...updated };
+                                        }
+                                        return oldSecret;
+                                    }).concat(Array.from(updates.values()));
+                                });
+                            }
                             setUptimeOffset(0);
+                            setLoading(false);
+                            setIsInitialLoad(false);
                         }
                     }
                 } catch (e) {
@@ -324,8 +336,10 @@ const NocManagementTab: React.FC<NocManagementTabProps> = ({ workspaces }) => {
     const offlineRouters = useMemo(() => {
         const uniqueRouters = new Map();
         secrets.forEach(s => {
-            if (!uniqueRouters.has(s.router_name || s.workspace_name)) {
-                uniqueRouters.set(s.router_name || s.workspace_name, s.mikrotik_status);
+            // Gunakan router_name jika ada, jika tidak workspace_name
+            const name = s.router_name || s.workspace_name;
+            if (name && !uniqueRouters.has(name)) {
+                uniqueRouters.set(name, s.mikrotik_status);
             }
         });
         return Array.from(uniqueRouters.entries())
