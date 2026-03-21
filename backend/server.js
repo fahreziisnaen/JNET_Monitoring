@@ -638,17 +638,17 @@ wss.on('connection', (ws, req) => {
                             
                             const enriched = storedSecrets.map(secret => {
                                 const activeInfo = activeMap.get(secret.name);
-                                const s = { ...secret };
-                                s.isActive = !!activeInfo;
-                                if (activeInfo?.uptime) s.uptime = activeInfo.uptime;
-                                if (activeInfo?.['.id']) s.activeConnectionId = activeInfo['.id'];
-                                if (activeInfo?.address) {
-                                    s.currentAddress = activeInfo.address;
-                                    if (!s['remote-address']) s['remote-address'] = activeInfo.address;
-                                }
+                                const isDis = secret.disabled === 'true' || secret.disabled === true;
+                                
                                 return {
-                                    ...s,
-                                    disabled: s.disabled === 'true' || s.disabled === true ? 'true' : 'false',
+                                    name: secret.name,
+                                    profile: secret.profile || '',
+                                    'remote-address': secret['remote-address'] || activeInfo?.address || '',
+                                    disabled: isDis ? 'true' : 'false',
+                                    isActive: !!activeInfo,
+                                    uptime: activeInfo?.uptime || '',
+                                    activeConnectionId: activeInfo?.['.id'] || '',
+                                    currentAddress: activeInfo?.address || '',
                                     deviceId: deviceId,
                                     workspace_id: dMeta.workspace_id,
                                     workspace_name: workspaceMap.get(dMeta.workspace_id) || '',
@@ -667,10 +667,16 @@ wss.on('connection', (ws, req) => {
                         const dbSecrets = sRows.map(s => {
                             const dMeta = deviceMap.get(s.device_id) || {};
                             return {
-                                ...s,
+                                name: s.name,
+                                profile: s.profile || '',
+                                'remote-address': s['remote-address'] || s.currentAddress || '',
                                 disabled: s.disabled === 1 ? 'true' : 'false',
                                 isActive: s.isActive === 1,
+                                uptime: s.uptime || '',
+                                activeConnectionId: s.activeConnectionId || '',
+                                currentAddress: s.currentAddress || '',
                                 deviceId: s.device_id,
+                                workspace_id: s.workspace_id,
                                 workspace_name: workspaceMap.get(s.workspace_id) || '',
                                 router_name: dMeta.name || '',
                                 mikrotik_status: mikrotikStore.getDeviceStatus(s.workspace_id, s.device_id) || 'disconnected'

@@ -179,11 +179,6 @@ const NocManagementTab: React.FC<NocManagementTabProps> = ({ workspaces }) => {
 
             ws.onopen = () => {
                 console.log("[NOC WS] Connected, auto-subscribed via URL");
-                // Optional message kept for compatibility
-                ws.send(JSON.stringify({
-                    type: 'subscribe-noc',
-                    workspaceIds: workspaceIds
-                }));
             };
 
             ws.onmessage = (event) => {

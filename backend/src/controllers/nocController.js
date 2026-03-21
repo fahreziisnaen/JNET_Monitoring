@@ -203,18 +203,17 @@ exports.getAggregatedSecrets = async (req, res) => {
                 
                 const enriched = storedSecrets.map(secret => {
                     const activeInfo = activeMap.get(secret.name);
-                    const s = { ...secret };
-                    s.isActive = !!activeInfo;
-                    if (activeInfo?.uptime) s.uptime = activeInfo.uptime;
-                    if (activeInfo?.['.id']) s.activeConnectionId = activeInfo['.id'];
-                    if (activeInfo?.address) {
-                        s.currentAddress = activeInfo.address;
-                        if (!s['remote-address']) s['remote-address'] = activeInfo.address;
-                    }
+                    const isDis = secret.disabled === 'true' || secret.disabled === true;
                     
                     return {
-                        ...s,
-                        disabled: s.disabled === 'true' || s.disabled === true ? 'true' : 'false',
+                        name: secret.name,
+                        profile: secret.profile || '',
+                        'remote-address': secret['remote-address'] || activeInfo?.address || '',
+                        disabled: isDis ? 'true' : 'false',
+                        isActive: !!activeInfo,
+                        uptime: activeInfo?.uptime || '',
+                        activeConnectionId: activeInfo?.['.id'] || '',
+                        currentAddress: activeInfo?.address || '',
                         deviceId: deviceId,
                         workspace_id: dMeta.workspace_id,
                         workspace_name: workspaceMap.get(dMeta.workspace_id) || '',
@@ -244,14 +243,21 @@ exports.getAggregatedSecrets = async (req, res) => {
             `, [devicesToFetchFromDb]);
 
             const dbSecrets = sRows.map(s => {
-                const secret = { ...s };
-                secret.disabled = s.disabled === 1 ? 'true' : 'false';
-                secret.isActive = s.isActive === 1;
-                if (!secret['remote-address'] && secret.currentAddress) {
-                    secret['remote-address'] = secret.currentAddress;
-                }
-                secret.mikrotik_status = mikrotikStore.getDeviceStatus(s.workspace_id, s.device_id) || 'disconnected';
-                return secret;
+                return {
+                    name: s.name,
+                    profile: s.profile || '',
+                    'remote-address': s['remote-address'] || s.currentAddress || '',
+                    disabled: s.disabled === 1 ? 'true' : 'false',
+                    isActive: s.isActive === 1,
+                    uptime: s.uptime || '',
+                    activeConnectionId: s.activeConnectionId || '',
+                    currentAddress: s.currentAddress || '',
+                    deviceId: s.device_id,
+                    workspace_id: s.workspace_id,
+                    workspace_name: s.workspace_name || workspaceMap.get(s.workspace_id) || '',
+                    router_name: s.router_name || '',
+                    mikrotik_status: mikrotikStore.getDeviceStatus(s.workspace_id, s.device_id) || 'disconnected'
+                };
             });
             aggregatedSecrets = aggregatedSecrets.concat(dbSecrets);
         }
