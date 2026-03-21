@@ -40,6 +40,8 @@ export const MikrotikProvider = ({ children }: { children: React.ReactNode }) =>
     const reconnectTimersRef = useRef<Map<number, any>>(new Map());
     // Per-device reconnect attempt counters
     const reconnectAttemptsRef = useRef<Map<number, number>>(new Map());
+    // Tracks the last status broadcasted to UI via CustomEvent to prevent redundant toasts
+    const lastBroadcastedStatusRef = useRef<Map<number, string>>(new Map());
 
     // Tick counter: increment to trigger re-render when device data changes
     const [tick, setTick] = useState(0);
@@ -117,11 +119,15 @@ export const MikrotikProvider = ({ children }: { children: React.ReactNode }) =>
                         updateDeviceData(deviceId, { pppoeSecrets: newSecrets, isConnected: true });
                     }
                 } else if (message.type === 'connection-status' && message.payload) {
-                    const connected = message.payload.status === 'connected';
+                    const status = message.payload.status;
+                    const connected = status === 'connected';
                     updateDeviceData(deviceId, { isConnected: connected });
 
-                    // Forward event for toast notifications (if device is selected)
-                    if (selectedDeviceIdsRef.current.includes(deviceId)) {
+                    // DE-DUPLICATION: Only dispatch event if status actually changed
+                    const lastStatus = lastBroadcastedStatusRef.current.get(deviceId);
+                    if (lastStatus !== status && selectedDeviceIdsRef.current.includes(deviceId)) {
+                        console.log(`[WS Pool] Status transition for ${deviceId}: ${lastStatus || 'unknown'} -> ${status}`);
+                        lastBroadcastedStatusRef.current.set(deviceId, status);
                         window.dispatchEvent(new CustomEvent('mikrotik-connection-status', {
                             detail: message.payload
                         }));
@@ -146,28 +152,43 @@ export const MikrotikProvider = ({ children }: { children: React.ReactNode }) =>
 
         socket.onclose = (event) => {
             clearTimeout(connTimeout);
-            updateDeviceData(deviceId, { isConnected: false });
+            console.warn(`[WS Pool] Connection closed for device ${deviceId}. Code: ${event.code}, Reason: ${event.reason}`);
             wsPoolRef.current.delete(deviceId);
-
-            // Forward disconnect if device is selected (use ref for fresh state)
-            if (selectedDeviceIdsRef.current.includes(deviceId)) {
-                window.dispatchEvent(new CustomEvent('mikrotik-connection-status', {
-                    detail: { status: 'disconnected', message: event.reason || 'Koneksi terputus', code: event.code }
-                }));
-            }
-
-            // Auto reconnect (if not intentional close like logout/unselect)
+            
+            // Do NOT immediately update isConnected=false or dispatch toast
+            // This prevents "Connection Lost" toasts during quick network flickers
+            
             const attempts = reconnectAttemptsRef.current.get(deviceId) || 0;
-            const maxAttempts = 5;
+            const maxAttempts = 10;
+
             if (user && attempts < maxAttempts && event.code !== 1008 && event.code !== 1003 && event.code !== 1000) {
-                reconnectAttemptsRef.current.set(deviceId, attempts + 1);
+                const delay = Math.min(1000 * Math.pow(2, attempts), 10000);
+                console.log(`[WS Pool] Reconnecting device ${deviceId} in ${delay}ms (Attempt ${attempts + 1})`);
+                
                 const timer = setTimeout(() => {
-                    // Check again before reconnecting
-                    if (user && selectedDeviceIdsRef.current.includes(deviceId)) {
+                    if (selectedDeviceIdsRef.current.includes(deviceId)) {
                         connectDevice(deviceId, workspaceId);
                     }
-                }, 3000);
+                }, delay);
+                
                 reconnectTimersRef.current.set(deviceId, timer);
+                reconnectAttemptsRef.current.set(deviceId, attempts + 1);
+            } else if (event.code !== 1000) {
+                // Permanent failure or manual close
+                updateDeviceData(deviceId, { isConnected: false });
+                
+                // Only broadcast 'disconnected' if we were previously 'connected'
+                const lastStatus = lastBroadcastedStatusRef.current.get(deviceId);
+                if (lastStatus !== 'disconnected') {
+                    lastBroadcastedStatusRef.current.set(deviceId, 'disconnected');
+                    window.dispatchEvent(new CustomEvent('mikrotik-connection-status', {
+                        detail: { 
+                            status: 'disconnected', 
+                            deviceId, 
+                            message: 'Gagal terhubung ke server real-time perangkat ini.' 
+                        }
+                    }));
+                }
             }
         };
 
