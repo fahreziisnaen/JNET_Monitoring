@@ -21,11 +21,16 @@ const ManagementPage = () => {
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [isIpPoolModalOpen, setIsIpPoolModalOpen] = useState(false);
   const [summary, setSummary] = useState({ total: 0, active: 0, inactive: 0 });
-  // loading hanya true saat kita belum tahu status koneksi awal
+  // loading = true saat pertama load atau habis ganti device (grace period)
   const [loading, setLoading] = useState(true);
+  // isInitializing = true selama grace period setelah ganti device
+  // UI menampilkan loading spinner bukan "Terputus" saat grace period aktif
+  const [isInitializing, setIsInitializing] = useState(false);
   const [refreshTrigger, setRefreshTrigger] = useState(0);
   const [activeFilter, setActiveFilter] = useState<'all' | 'active' | 'inactive'>('all');
   const [hasDevices, setHasDevices] = useState<boolean | null>(null);
+  // Track previous device so we can detect an actual change
+  const prevDeviceIdRef = React.useRef<number | null>(null);
 
   useEffect(() => {
     if (!user?.workspace_id) return;
@@ -49,27 +54,37 @@ const ManagementPage = () => {
     checkDevices();
   }, [user?.workspace_id]);
 
-  // Ensure auto update triggers correctly on reconnection
+  // Saat device berubah: langsung set grace period (isInitializing) selama 3 detik
+  // Selama itu, jangan tampilkan "Terputus" — tampilkan loading spinner saja
   useEffect(() => {
-    if (isConnected === true) {
-      if (forceRefresh) forceRefresh();
-      setLoading(false);
-    } else {
-      // Tunggu sebentar sebelum menunjukkan offline, untuk memberi waktu WS konek
-      // Kurangi ke 1 detik agar transisi lebih cepat
+    if (!selectedDeviceId) return;
+    // Jika device berubah (bukan mount awal)
+    if (prevDeviceIdRef.current !== null && prevDeviceIdRef.current !== selectedDeviceId) {
+      setIsInitializing(true);
+      setLoading(true);
       const timer = setTimeout(() => {
+        setIsInitializing(false);
         setLoading(false);
-      }, 1000);
+      }, 3000); // grace period 3 detik
+      prevDeviceIdRef.current = selectedDeviceId;
       return () => clearTimeout(timer);
     }
-  }, [isConnected, forceRefresh]);
-
-  // Set loading true saat ganti device agar UI tidak menampilkan data lama/offline secara instan
-  useEffect(() => {
-    if (selectedDeviceId) {
-      setLoading(true);
-    }
+    prevDeviceIdRef.current = selectedDeviceId;
   }, [selectedDeviceId]);
+
+  // Ketika isConnected true: matikan initializing & loading
+  // Ketika false + bukan initializing: biarkan UI tampilkan "Terputus"
+  useEffect(() => {
+    if (isConnected === true) {
+      setIsInitializing(false);
+      setLoading(false);
+      if (forceRefresh) forceRefresh();
+    } else if (!isInitializing) {
+      // Beri waktu 1.5 detik sebelum tampilkan offline (bukan setelah device switch)
+      const timer = setTimeout(() => setLoading(false), 1500);
+      return () => clearTimeout(timer);
+    }
+  }, [isConnected]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Tidak perlu fetchSummary lagi, semua data dari WebSocket
   const fetchSummary = useCallback(async () => {
@@ -173,7 +188,7 @@ const ManagementPage = () => {
           </div>
         </div>
 
-        {!isConnected && !loading ? (
+        {!isConnected && !loading && !isInitializing ? (
           <div className="flex flex-col items-center justify-center p-12 bg-secondary/50 rounded-xl border border-destructive/20 mt-8">
             <div className="h-16 w-16 bg-destructive/10 rounded-full flex items-center justify-center mb-4">
               <UserX className="h-8 w-8 text-destructive" />

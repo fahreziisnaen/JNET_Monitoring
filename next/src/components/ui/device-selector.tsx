@@ -58,8 +58,13 @@ export const DeviceSelector: React.FC<DeviceSelectorProps> = ({
           // Jika belum ada selectedDeviceIds, coba load dari localStorage atau gunakan default
           const savedLocalDevices = localStorage.getItem(`selected-devices-v2-${user.workspace_id}`);
           if (selectedDeviceIds.length === 0 && !savedLocalDevices && devicesData.length > 0) {
-            // Default: pilih semua device saat pertama kali
-            onDevicesChange(devicesData.map((d: Device) => d.id));
+            if (onDeviceChange) {
+              // Single-select mode: default ke device pertama saja
+              onDevicesChange([devicesData[0].id]);
+            } else {
+              // Multi-select mode: default ke semua device
+              onDevicesChange(devicesData.map((d: Device) => d.id));
+            }
           }
         }
       } catch (error) {
