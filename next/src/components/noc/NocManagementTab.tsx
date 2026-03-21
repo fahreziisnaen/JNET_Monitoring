@@ -151,6 +151,9 @@ const NocManagementTab: React.FC<NocManagementTabProps> = ({ workspaces }) => {
         
         lastFetchTimeRef.current = 0;
         setLoading(true);
+        
+        // Fetch via REST immediately for instant data
+        fetchSecrets();
 
         if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
             wsRef.current.send(JSON.stringify({
@@ -158,7 +161,7 @@ const NocManagementTab: React.FC<NocManagementTabProps> = ({ workspaces }) => {
                 workspaceIds: workspaceIds
             }));
         }
-    }, [workspaceIds]);
+    }, [workspaceIds, fetchSecrets]);
 
     useEffect(() => {
         if (!token || workspaceIds.length === 0) return;
@@ -453,18 +456,21 @@ const NocManagementTab: React.FC<NocManagementTabProps> = ({ workspaces }) => {
         }
     };
 
-    const renderSummaryCard = (title: string, count: number, icon: React.ReactNode, color: string, filter: 'all' | 'active' | 'inactive') => (
-        <button onClick={() => setActiveFilter(filter)} className={`w-full text-left rounded-lg transition-all ${activeFilter === filter ? 'ring-2 ring-primary ring-offset-2 ring-offset-background' : ''}`}>
-            <SummaryCard title={title} count={loading && secrets.length === 0 ? <Loader2 className="animate-spin" /> : count} icon={icon} colorClass={color} />
-        </button>
-    );
+    const renderSummaryCard = (title: string, icon: React.ReactNode, color: string, filter: 'all' | 'active' | 'inactive') => {
+        const count = filter === 'all' ? summary.total : filter === 'active' ? summary.active : summary.inactive;
+        return (
+            <button onClick={() => setActiveFilter(filter)} className={`w-full text-left rounded-lg transition-all ${activeFilter === filter ? 'ring-2 ring-primary ring-offset-2 ring-offset-background' : ''}`}>
+                <SummaryCard title={title} count={loading && secrets.length === 0 ? <Loader2 className="animate-spin" /> : count} icon={icon} colorClass={color} />
+            </button>
+        );
+    };
 
     return (
         <div className="space-y-6">
             <div className="grid grid-cols-3 gap-2 sm:gap-4">
-                {renderSummaryCard("Total", summary.total, <Users />, "bg-gradient-to-br from-blue-500 to-blue-700", 'all')}
-                {renderSummaryCard("Aktif", summary.active, <UserCheck />, "bg-gradient-to-br from-green-500 to-green-700", 'active')}
-                {renderSummaryCard("Tidak Aktif", summary.inactive, <UserX />, "bg-gradient-to-br from-red-500 to-red-700", 'inactive')}
+                {renderSummaryCard("Total", <Users />, "bg-gradient-to-br from-blue-500 to-blue-700", 'all')}
+                {renderSummaryCard("Aktif", <UserCheck />, "bg-gradient-to-br from-green-500 to-green-700", 'active')}
+                {renderSummaryCard("Tidak Aktif", <UserX />, "bg-gradient-to-br from-red-500 to-red-700", 'inactive')}
             </div>
 
             {offlineRouters.length > 0 && (

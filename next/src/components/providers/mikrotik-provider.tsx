@@ -187,11 +187,16 @@ export const MikrotikProvider = ({ children }: { children: React.ReactNode }) =>
 
             // Only update state & notify if device is still selected (avoid stale updates for deselected devices)
             const isStillSelected = selectedDeviceIdsRef.current.includes(deviceId);
-            if (isStillSelected) {
+            const isSystemicClose = event.reason === 'NOC Mode Active' || event.reason === 'Unselected' || event.reason === 'Unselected/Limit Reached';
+
+            if (isStillSelected && !isSystemicClose) {
                 updateDeviceData(deviceId, { isConnected: false });
                 window.dispatchEvent(new CustomEvent('mikrotik-connection-status', {
                     detail: { status: 'disconnected', message: event.reason || 'Koneksi terputus', code: event.code }
                 }));
+            } else if (isStillSelected && isSystemicClose) {
+                // Sssst... just update the state silently for intentional closes
+                updateDeviceData(deviceId, { isConnected: false });
             }
 
             // Auto reconnect only if device is still selected, user is still logged in,
