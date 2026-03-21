@@ -696,33 +696,47 @@ wss.on('connection', (ws, req) => {
                     } else if (data.type === 'subscribe-noc') {
                         // Dukungan Mode NOC: Satu koneksi memantau banyak workspace
                         ws.isNoc = true;
-                        const workspaceIds = Array.isArray(data.workspaceIds) ? data.workspaceIds.map(Number) : [];
+                        let workspaceIds = Array.isArray(data.workspaceIds) ? data.workspaceIds.map(Number) : [];
+                        // Pastikan unik
+                        workspaceIds = [...new Set(workspaceIds)];
                         ws.monitoredWorkspaceIds = workspaceIds;
                         console.log(`[WebSocket] Client beralih ke MODE NOC (Monitoring ${ws.monitoredWorkspaceIds.length} workspace)`);
                         
-                        // KIRIM SNAPSHOT AWAL (Instant dari Store)
+                        // KIRIM SNAPSHOT AWAL (Optimasi No-Join)
                         (async () => {
                             try {
-                                const [rows] = await pool.query(`
-                                    SELECT 
-                                        ps.name, ps.profile, ps.remote_address as 'remote-address',
-                                        ps.disabled, ps.is_active as isActive, ps.uptime,
-                                        ps.current_address as currentAddress, ps.active_connection_id as activeConnectionId,
-                                        ps.workspace_id, ps.device_id,
-                                        w.name as workspace_name, md.name as router_name
-                                    FROM pppoe_secrets ps
-                                    JOIN workspaces w ON ps.workspace_id = w.id
-                                    JOIN mikrotik_devices md ON ps.device_id = md.id
-                                    WHERE ps.workspace_id IN (?)
-                                `, [workspaceIds.length > 0 ? workspaceIds : [-1]]);
+                                if (workspaceIds.length === 0) return;
 
-                                const aggregatedSecrets = rows.map(s => {
-                                    const secret = { ...s };
-                                    secret.disabled = s.disabled === 1 ? 'true' : 'false';
-                                    secret.isActive = s.isActive === 1;
-                                    secret.deviceId = s.device_id;
-                                    secret.mikrotik_status = mikrotikStore.getDeviceStatus(s.workspace_id, s.device_id) || 'disconnected';
-                                    return secret;
+                                // 1. Ambil metadata workspace & device secara cepat
+                                const [wRows] = await pool.query('SELECT id, name FROM workspaces WHERE id IN (?)', [workspaceIds]);
+                                const workspaceMap = new Map(wRows.map(w => [w.id, w.name]));
+
+                                const [dRows] = await pool.query('SELECT id, name, workspace_id FROM mikrotik_devices WHERE workspace_id IN (?)', [workspaceIds]);
+                                const deviceMap = new Map(dRows.map(d => [d.id, { name: d.name, workspace_id: d.workspace_id }]));
+
+                                // 2. Ambil secrets tanpa JOIN (lebih ringan untuk SQL)
+                                const [sRows] = await pool.query(`
+                                    SELECT 
+                                        name, profile, remote_address as 'remote-address',
+                                        disabled, is_active as isActive, uptime,
+                                        current_address as currentAddress, active_connection_id as activeConnectionId,
+                                        workspace_id, device_id
+                                    FROM pppoe_secrets 
+                                    WHERE workspace_id IN (?)
+                                `, [workspaceIds]);
+
+                                // 3. Map di level JS (Zero-SQL overhead)
+                                const aggregatedSecrets = sRows.map(s => {
+                                    const dMeta = deviceMap.get(s.device_id) || {};
+                                    return {
+                                        ...s,
+                                        disabled: s.disabled === 1 ? 'true' : 'false',
+                                        isActive: s.isActive === 1,
+                                        deviceId: s.device_id,
+                                        workspace_name: workspaceMap.get(s.workspace_id) || '',
+                                        router_name: dMeta.name || '',
+                                        mikrotik_status: mikrotikStore.getDeviceStatus(s.workspace_id, s.device_id) || 'disconnected'
+                                    };
                                 });
 
                                 if (ws.readyState === WebSocket.OPEN) {

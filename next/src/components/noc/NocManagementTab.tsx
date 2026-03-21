@@ -42,7 +42,7 @@ const NocManagementTab: React.FC<NocManagementTabProps> = ({ workspaces }) => {
     const workspaceIds = useMemo(() => workspaces.map(w => w.id), [workspaces]);
     const { token } = useAuth();
     const [secrets, setSecrets] = useState<PppoeSecret[]>([]);
-    const [loading, setLoading] = useState(false);
+    const [loading, setLoading] = useState(true);
     const [searchQuery, setSearchQuery] = useState('');
     const [sortColumn, setSortColumn] = useState<string | null>(null);
     const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
@@ -145,14 +145,14 @@ const NocManagementTab: React.FC<NocManagementTabProps> = ({ workspaces }) => {
         }
     }, [workspaceIds, token]);
 
-    // Reset debounce ref saat workspaceIds berubah agar filter switch langsung fetch
+    // Update WebSocket subscription when workspaces change
     useEffect(() => {
+        if (workspaceIds.length === 0) return;
+        
         lastFetchTimeRef.current = 0;
-        // setSecrets([]); // Optional: clear secrets when workspaces change
         setLoading(true);
 
-        // Update WebSocket subscription when workspaces change
-        if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN && workspaceIds.length > 0) {
+        if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
             wsRef.current.send(JSON.stringify({
                 type: 'subscribe-noc',
                 workspaceIds: workspaceIds
