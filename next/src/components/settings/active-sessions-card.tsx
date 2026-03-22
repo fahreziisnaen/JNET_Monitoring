@@ -99,7 +99,7 @@ const ActiveSessionsCard = () => {
                                 {getDeviceIcon(session.os)}
                                 <div className="flex-grow">
                                     <p className="font-semibold text-foreground">{session.browser || 'Perangkat Tidak Dikenal'}</p>
-                                    <p className="text-xs text-muted-foreground">{session.ip_address} &bull; Terakhir aktif: {new Date(session.last_seen).toLocaleString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' })}</p>
+                                    <p className="text-xs text-muted-foreground">{session.ip_address} &bull; Terakhir aktif: {new Date(session.last_seen).toLocaleString('id-ID')}</p>
                                 </div>
                                 {session.isCurrentSession ? (
                                     <span className="text-sm font-bold text-green-500">Sesi Ini</span>

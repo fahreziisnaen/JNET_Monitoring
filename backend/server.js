@@ -134,21 +134,17 @@ const wss = new WebSocket.Server({ server, path: "/ws" });
 function broadcastToWorkspace(workspaceId, deviceId, data) {
     let sentCount = 0;
     wss.clients.forEach((client) => {
-        // Standard match: client is in this workspace and device matches (if provided)
-        const isStandardMatch = client.workspaceId == workspaceId && (!deviceId || client.deviceId == deviceId);
-        
-        // NOC match: client has isNoc flag and this workspace is in their monitored list
-        const isNocMatch = client.isNoc && client.monitoredWorkspaceIds?.includes(Number(workspaceId));
-
-        if ((isStandardMatch || isNocMatch) && client.readyState === WebSocket.OPEN) {
+        const isDeviceMatch = !deviceId || client.deviceId == deviceId;
+        if (client.workspaceId == workspaceId && isDeviceMatch && client.readyState === WebSocket.OPEN) {
             try {
                 client.send(JSON.stringify(data));
                 sentCount++;
             } catch (error) {
-                // Ignore send errors
+                // Log WS monitoring disabled
             }
         }
     });
+    // Log WS monitoring disabled
 }
 
 function stopWorkspaceMonitoring(connectionKey, reason = 'Koneksi terputus') {
@@ -578,17 +574,6 @@ wss.on('connection', (ws, req) => {
             ws.deviceId = finalDeviceId;
             const connectionKey = `ws-${ws.workspaceId}-${finalDeviceId}`;
 
-            // --- NOC MODE AUTO-INIT via URL PARAMS ---
-            const workspaceIdsParam = urlParams.get('workspaceIds');
-            if (workspaceIdsParam) {
-                const wsIds = workspaceIdsParam.split(',').map(Number).filter(id => !isNaN(id));
-                if (wsIds.length > 0) {
-                    ws.isNoc = true;
-                    ws.monitoredWorkspaceIds = wsIds;
-                    console.log(`[WebSocket] NOC Mode AUTO-INIT via URL (Workspaces: ${wsIds.join(',')})`);
-                }
-            }
-
             // Cek apakah backgroundMonitor sudah populate mikrotikStore untuk device ini
             const storedSecrets = mikrotikStore.getSecrets(ws.workspaceId, finalDeviceId);
             const storedActive = mikrotikStore.getActive(ws.workspaceId, finalDeviceId);
@@ -613,90 +598,6 @@ wss.on('connection', (ws, req) => {
                     }
                 }));
             } catch (e) { }
-
-            // Helper function untuk kirim snapshot NOC secara instan
-            const sendNocSnapshot = async (ws, workspaceIds) => {
-                try {
-                    if (!workspaceIds || workspaceIds.length === 0) return;
-                    
-                    // 1. Metadata workspace & device
-                    const [wRows] = await pool.query('SELECT id, name FROM workspaces WHERE id IN (?)', [workspaceIds]);
-                    const workspaceMap = new Map(wRows.map(w => [w.id, w.name]));
-                    const [dRows] = await pool.query('SELECT id, name, workspace_id FROM mikrotik_devices WHERE workspace_id IN (?)', [workspaceIds]);
-                    const deviceMap = new Map(dRows.map(d => [d.id, { name: d.name, workspace_id: d.workspace_id }]));
-
-                    let aggregatedSecrets = [];
-                    const devicesToFetchFromDb = [];
-
-                    for (const deviceId of deviceMap.keys()) {
-                        const dMeta = deviceMap.get(deviceId);
-                        const storedSecrets = mikrotikStore.getSecrets(dMeta.workspace_id, deviceId);
-                        
-                        if (storedSecrets && storedSecrets.length > 0) {
-                            const storedActive = mikrotikStore.getActive(dMeta.workspace_id, deviceId);
-                            const activeMap = new Map(storedActive.map(u => [u.name, u]));
-                            
-                            const enriched = storedSecrets.map(secret => {
-                                const activeInfo = activeMap.get(secret.name);
-                                const isDis = secret.disabled === 'true' || secret.disabled === true;
-                                
-                                return {
-                                    name: secret.name,
-                                    profile: secret.profile || '',
-                                    'remote-address': secret['remote-address'] || activeInfo?.address || '',
-                                    disabled: isDis ? 'true' : 'false',
-                                    isActive: !!activeInfo,
-                                    uptime: activeInfo?.uptime || '',
-                                    activeConnectionId: activeInfo?.['.id'] || '',
-                                    currentAddress: activeInfo?.address || '',
-                                    deviceId: deviceId,
-                                    workspace_id: dMeta.workspace_id,
-                                    workspace_name: workspaceMap.get(dMeta.workspace_id) || '',
-                                    router_name: dMeta.name || '',
-                                    mikrotik_status: mikrotikStore.getDeviceStatus(dMeta.workspace_id, deviceId) || 'connected'
-                                };
-                            });
-                            aggregatedSecrets = aggregatedSecrets.concat(enriched);
-                        } else {
-                            devicesToFetchFromDb.push(deviceId);
-                        }
-                    }
-
-                    if (devicesToFetchFromDb.length > 0) {
-                        const [sRows] = await pool.query(`SELECT ps.name, ps.profile, ps.remote_address as 'remote-address', ps.disabled, ps.is_active as isActive, ps.uptime, ps.current_address as currentAddress, ps.active_connection_id as activeConnectionId, ps.workspace_id, ps.device_id FROM pppoe_secrets ps WHERE ps.device_id IN (?)`, [devicesToFetchFromDb]);
-                        const dbSecrets = sRows.map(s => {
-                            const dMeta = deviceMap.get(s.device_id) || {};
-                            return {
-                                name: s.name,
-                                profile: s.profile || '',
-                                'remote-address': s['remote-address'] || s.currentAddress || '',
-                                disabled: s.disabled === 1 ? 'true' : 'false',
-                                isActive: s.isActive === 1,
-                                uptime: s.uptime || '',
-                                activeConnectionId: s.activeConnectionId || '',
-                                currentAddress: s.currentAddress || '',
-                                deviceId: s.device_id,
-                                workspace_id: s.workspace_id,
-                                workspace_name: workspaceMap.get(s.workspace_id) || '',
-                                router_name: dMeta.name || '',
-                                mikrotik_status: mikrotikStore.getDeviceStatus(s.workspace_id, s.device_id) || 'disconnected'
-                            };
-                        });
-                        aggregatedSecrets = aggregatedSecrets.concat(dbSecrets);
-                    }
-
-                    if (ws.readyState === WebSocket.OPEN) {
-                        ws.send(JSON.stringify({ type: 'pppoe-update', payload: { pppoeSecrets: aggregatedSecrets, isSnapshot: true } }));
-                    }
-                } catch (e) {
-                    console.error("[WebSocket] Gagal kirim NOC snapshot:", e.message);
-                }
-            };
-
-            // --- INSTANT NOC PUSH (if auto-inited via URL) ---
-            if (ws.isNoc && ws.monitoredWorkspaceIds?.length > 0) {
-                sendNocSnapshot(ws, ws.monitoredWorkspaceIds);
-            }
 
             // Jika background monitor sudah punya data, kirim snapshot langsung
             if (storedSecrets.length > 0 && deviceStatus === 'connected') {
@@ -788,17 +689,6 @@ wss.on('connection', (ws, req) => {
                                 payload: { pppoeSecrets: enrichedSecrets }
                             }));
                         }
-                    } else if (data.type === 'subscribe-noc') {
-                        // Dukungan Mode NOC: Satu koneksi memantau banyak workspace
-                        ws.isNoc = true;
-                        let workspaceIds = Array.isArray(data.workspaceIds) ? data.workspaceIds.map(Number) : [];
-                        // Pastikan unik
-                        workspaceIds = [...new Set(workspaceIds)];
-                        ws.monitoredWorkspaceIds = workspaceIds;
-                        console.log(`[WebSocket] Client beralih ke MODE NOC (Monitoring ${ws.monitoredWorkspaceIds.length} workspace)`);
-                        
-                        // KIRIM SNAPSHOT AWAL
-                        sendNocSnapshot(ws, workspaceIds);
                     }
                 } catch (e) {
                     // Ignore non-JSON messages

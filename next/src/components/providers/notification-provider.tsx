@@ -205,20 +205,78 @@ export const NotificationProvider = ({ children }: { children: React.ReactNode }
   }, []);
 
   // Detect PPPoE user disconnections and reconnections
-  // DEPRECATED: Perubahan status sekarang dipush langsung dari backend via WebSocket
-  // (Lihat handleDowntimeNotification dan handleReconnectNotification di atas)
   useEffect(() => {
     if (!pppoeActive || !Array.isArray(pppoeActive)) {
-      isInitializedRef.current = false;
       return;
     }
-    
-    // Sinkronkan sate internal tanpa memicu notifikasi berulang
-    if (!isInitializedRef.current) {
-        previousActiveRef.current = new Set(pppoeActive.map((u: any) => u.name));
-        isInitializedRef.current = true;
+
+    const currentActive = new Set(pppoeActive.map((u: any) => u.name));
+    const previousActive = previousActiveRef.current;
+
+    // Initialize previousActive on first load if empty
+    // JANGAN trigger notification saat initial load atau saat belum initialized
+    if (!isInitializedRef.current || previousActive.size === 0) {
+      console.log('[Notification] Initial load, setting previousActive tanpa trigger notification', {
+        isInitialized: isInitializedRef.current,
+        previousSize: previousActive.size,
+        currentSize: currentActive.size
+      });
+      previousActiveRef.current = currentActive;
+      isInitializedRef.current = true;
+      return;
     }
-  }, [pppoeActive]);
+
+    // Detect changes
+    const newlyDisconnected = Array.from(previousActive).filter(
+      (name) => !currentActive.has(name)
+    );
+    
+    const newlyReconnected = Array.from(currentActive).filter(
+      (name) => !previousActive.has(name)
+    );
+
+    // Debug logging
+    if (newlyDisconnected.length > 0 || newlyReconnected.length > 0) {
+      console.log('[Notification] Changes detected:', {
+        disconnected: newlyDisconnected,
+        reconnected: newlyReconnected,
+        previousCount: previousActive.size,
+        currentCount: currentActive.size
+      });
+    }
+
+    // Handle disconnections (only if we have previous data AND it's not initial load)
+    // Pastikan previousActive tidak kosong dan ada perubahan yang valid
+    if (previousActive.size > 0 && newlyDisconnected.length > 0) {
+        const now = Date.now();
+        const validDisconnects: string[] = [];
+
+        // Filter berdasarkan cooldown
+        newlyDisconnected.forEach((userName) => {
+          const lastNotifTime = lastNotificationTimeRef.current.get(userName) || 0;
+          if (now - lastNotifTime > notificationCooldown) {
+            validDisconnects.push(userName);
+            lastNotificationTimeRef.current.set(userName, now);
+          }
+        });
+
+        // Catatan: Toast notification untuk disconnect TIDAK langsung ditampilkan
+        // Notifikasi disconnect (toast + WhatsApp) akan dikirim oleh backend setelah downtime mencapai 2 menit
+        // Notifikasi akan diterima via WebSocket dengan type 'downtime-notification'
+        // Ini untuk menghindari spam notifikasi untuk disconnect yang cepat reconnect
+    }
+    
+    // Catatan: Toast notification untuk reconnect TIDAK langsung ditampilkan
+    // Notifikasi reconnect (toast + WhatsApp) akan dikirim oleh backend hanya jika downtime sebelumnya >= 2 menit
+    // Notifikasi akan diterima via WebSocket dengan type 'reconnect-notification'
+    // Ini konsisten dengan disconnect notification yang hanya dikirim setelah 2 menit
+
+    // Update previous active users hanya jika ada perubahan yang valid
+    // Jangan update jika ini adalah initial load (previousActive kosong)
+    if (previousActive.size > 0 || currentActive.size > 0) {
+      previousActiveRef.current = currentActive;
+    }
+  }, [pppoeActive, showToast, user?.whatsapp_number, playBeepSound]);
 
   const clearDisconnectCount = useCallback(() => {
     setDisconnectCount(0);

@@ -90,7 +90,7 @@ const EtherChart = ({ trafficData, interfaceName, deviceId, workspaceId, history
             // Untuk kesederhanaan, kita muat semua ke Chart.js, Chart.js cukup pintar menanganinya
             
             // Format labels dan datasets
-            const historyLabels = data.map((r: any) => new Date(r.timestamp).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }));
+            const historyLabels = data.map((r: any) => new Date(r.timestamp).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }));
             const historyTx = data.map((r: any) => parseFloat((r.tx_bps / 1000000).toFixed(2)));
             const historyRx = data.map((r: any) => parseFloat((r.rx_bps / 1000000).toFixed(2)));
             
@@ -152,7 +152,7 @@ const EtherChart = ({ trafficData, interfaceName, deviceId, workspaceId, history
                 if (res.ok) {
                     const data = await res.json();
                     if (data && data.length > 0) {
-                        const historyLabels = data.map((r: any) => new Date(r.timestamp).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }));
+                        const historyLabels = data.map((r: any) => new Date(r.timestamp).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }));
                         const historyTx = data.map((r: any) => parseFloat((r.tx_bps / 1000000).toFixed(2)));
                         const historyRx = data.map((r: any) => parseFloat((r.rx_bps / 1000000).toFixed(2)));
                         const maxLength = historyHours * 60;
@@ -198,7 +198,7 @@ const EtherChart = ({ trafficData, interfaceName, deviceId, workspaceId, history
         lastUpdateRef.current = now;
 
         const newData = {
-          labels: [...prevData.labels.slice(1), new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit' })],
+          labels: [...prevData.labels.slice(1), new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })],
           datasets: [
             { ...prevData.datasets[0], data: [...(prevData.datasets[0].data as number[]).slice(1), txMbps] },
             { ...prevData.datasets[1], data: [...(prevData.datasets[1].data as number[]).slice(1), rxMbps] },

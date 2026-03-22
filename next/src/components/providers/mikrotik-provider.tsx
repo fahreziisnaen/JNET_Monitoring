@@ -3,7 +3,6 @@
 import React, { createContext, useContext, useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { useAuth } from './auth-provider';
 import { apiFetch, getAuthToken } from '@/utils/api';
-import { usePathname } from 'next/navigation';
 
 interface DeviceData {
     pppoeSecrets: any[];
@@ -13,8 +12,6 @@ interface DeviceData {
     traffic: any;
     isConnected: boolean;
     workspaceId?: number;
-    totalUsers?: number;
-    activeUsers?: number;
 }
 
 interface MikrotikContextType {
@@ -56,7 +53,6 @@ const DEFAULT_DEVICE_DATA: DeviceData = {
 
 export const MikrotikProvider = ({ children }: { children: React.ReactNode }) => {
     const { user } = useAuth();
-    const pathname = usePathname();
     const [dashboardDeviceIds, setDashboardDeviceIds] = useState<number[]>([]);
     const [activeDeviceId, setActiveDeviceId] = useState<number | null>(null);
     const [isLoaded, setIsLoaded] = useState(false);
@@ -189,16 +185,11 @@ export const MikrotikProvider = ({ children }: { children: React.ReactNode }) =>
 
             // Only update state & notify if device is still selected (avoid stale updates for deselected devices)
             const isStillSelected = selectedDeviceIdsRef.current.includes(deviceId);
-            const isSystemicClose = event.reason === 'NOC Mode Active' || event.reason === 'Unselected' || event.reason === 'Unselected/Limit Reached';
-
-            if (isStillSelected && !isSystemicClose) {
+            if (isStillSelected) {
                 updateDeviceData(deviceId, { isConnected: false });
                 window.dispatchEvent(new CustomEvent('mikrotik-connection-status', {
                     detail: { status: 'disconnected', message: event.reason || 'Koneksi terputus', code: event.code }
                 }));
-            } else if (isStillSelected && isSystemicClose) {
-                // Sssst... just update the state silently for intentional closes
-                updateDeviceData(deviceId, { isConnected: false });
             }
 
             // Auto reconnect only if device is still selected, user is still logged in,
@@ -252,8 +243,8 @@ export const MikrotikProvider = ({ children }: { children: React.ReactNode }) =>
         const apiUrl = process.env.NEXT_PUBLIC_API_BASE_URL;
         const isSuper = user.is_super_admin === 1 || user.is_super_admin === true;
         const snapshotUrl = isSuper 
-            ? `${apiUrl}/api/dashboard/snapshot?summary=true` 
-            : `${apiUrl}/api/dashboard/snapshot?summary=true&workspaceId=${user.workspace_id}`;
+            ? `${apiUrl}/api/dashboard/snapshot` 
+            : `${apiUrl}/api/dashboard/snapshot?workspaceId=${user.workspace_id}`;
 
         // 1. Fetch ALL snapshots for the workspace for instant data
         apiFetch(snapshotUrl)
@@ -269,8 +260,6 @@ export const MikrotikProvider = ({ children }: { children: React.ReactNode }) =>
                             traffic: s.traffic || {},
                             isConnected: s.isConnected || false,
                             workspaceId: s.workspace_id,
-                            totalUsers: s.totalUsers || 0,
-                            activeUsers: s.activeUsers || 0,
                         });
                     });
                 }
@@ -316,35 +305,18 @@ export const MikrotikProvider = ({ children }: { children: React.ReactNode }) =>
                 setIsLoaded(true); // Still mark as loaded to let UI proceed
             });
     }, [user?.workspace_id, triggerRender]);
+
     // Connection Manager: maintain WS for the UNION of both selections
     useEffect(() => {
         if (!isLoaded || !user?.workspace_id) return;
-        // JIKA DI HALAMAN NOC: Matikan semua koneksi individual untuk menghemat bandwidth
-        // NOC menggunakan koneksinya sendiri di NocManagementTab
-        if (pathname === '/noc') {
-            wsPoolRef.current.forEach((ws) => ws.close(1000, 'NOC Mode Active'));
-            wsPoolRef.current.clear();
-            reconnectTimersRef.current.forEach(t => clearTimeout(t));
-            reconnectTimersRef.current.clear();
-            reconnectAttemptsRef.current.clear();
-            return;
-        }
-
-        // PRIORITAS KONEKSI: Limit jumlah koneksi simultan (Browser limit)
-        // 1. Active Device (Prioritas Utama)
-        // 2. Dashboard Devices (Maksimal 5 teratas)
-        const priorityIds = new Set<number>();
-        if (activeDeviceId) priorityIds.add(activeDeviceId);
-        
-        dashboardDeviceIds.slice(0, 5).forEach(id => priorityIds.add(id));
 
         const currentSelected = new Set(effectiveSelectedIds);
         const activeTimers: any[] = [];
         
-        // 1. Close connections for unselected devices ATAU yang di luar limit prioritas
+        // 1. Close connections for unselected devices
         wsPoolRef.current.forEach((ws, deviceId) => {
-            if (!currentSelected.has(deviceId) || !priorityIds.has(deviceId)) {
-                ws.close(1000, 'Unselected/Limit Reached');
+            if (!currentSelected.has(deviceId)) {
+                ws.close(1000, 'Unselected');
                 wsPoolRef.current.delete(deviceId);
                 const timer = reconnectTimersRef.current.get(deviceId);
                 if (timer) clearTimeout(timer);
@@ -353,21 +325,21 @@ export const MikrotikProvider = ({ children }: { children: React.ReactNode }) =>
             }
         });
 
-        // 2. Open connections for needed devices (staggered & prioritized)
-        Array.from(priorityIds).forEach((id, index) => {
+        // 2. Open connections for needed devices (staggered)
+        effectiveSelectedIds.forEach((id, index) => {
             if (!wsPoolRef.current.has(id)) {
                 const timer = setTimeout(() => {
                     const devData = deviceDataRef.current.get(id);
                     const wsWorkspaceId = devData?.workspaceId || user.workspace_id;
                     if (user?.workspace_id) connectDevice(id, wsWorkspaceId);
-                }, index * 200); // Stagger for better scheduling
+                }, index * 300);
                 reconnectTimersRef.current.set(id, timer);
                 activeTimers.push(timer);
             }
         });
 
         return () => activeTimers.forEach(t => clearTimeout(t));
-    }, [effectiveSelectedIds, isLoaded, user?.workspace_id, connectDevice, pathname, activeDeviceId, dashboardDeviceIds]);
+    }, [effectiveSelectedIds, isLoaded, user?.workspace_id, connectDevice]);
 
     // Setters for Dashboard (Multiple)
     const handleDashboardChange = useCallback((deviceIds: number[]) => {
@@ -392,27 +364,8 @@ export const MikrotikProvider = ({ children }: { children: React.ReactNode }) =>
         setActiveDeviceId(deviceId);
         if (user?.workspace_id) {
             localStorage.setItem(`active-device-${user.workspace_id}`, JSON.stringify(deviceId));
-            
-            // OPTIONAL: Fetch full snapshot for this specific device if not already loaded
-            const current = deviceDataRef.current.get(deviceId);
-            if (!current || !current.pppoeSecrets || current.pppoeSecrets.length === 0) {
-                const apiUrl = process.env.NEXT_PUBLIC_API_BASE_URL;
-                apiFetch(`${apiUrl}/api/dashboard/snapshot?deviceId=${deviceId}&workspaceId=${current?.workspaceId || user.workspace_id}`)
-                    .then(res => res.ok ? res.json() : null)
-                    .then(data => {
-                        if (data) {
-                            updateDeviceData(deviceId, {
-                                pppoeSecrets: data.pppoeSecrets || [],
-                                hotspotActive: data.hotspotActive || [],
-                                resource: data.resource,
-                                isConnected: data.isConnected
-                            });
-                        }
-                    })
-                    .catch(err => console.error('[MikrotikProvider] Lazy fetch error:', err));
-            }
         }
-    }, [user?.workspace_id, updateDeviceData]);
+    }, [user?.workspace_id]);
 
     // Derive aggregated data for context
     const allDevicesData = useMemo(() => {

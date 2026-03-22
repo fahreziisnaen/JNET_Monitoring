@@ -6,7 +6,6 @@ import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Power, PowerOff, Loader2, Search, ArrowUpDown, ChevronUp, ChevronDown, Users, UserCheck, UserX, MoreHorizontal, Edit, ZapOff, Trash2, X } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { useAuth } from '../providers/auth-provider';
-import { useMikrotik } from '../providers/mikrotik-provider';
 import { formatUptime, formatCompactUptime } from '@/utils/format';
 import SummaryCard from '../dashboard/summary-card';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
@@ -40,11 +39,10 @@ interface NocManagementTabProps {
 }
 
 const NocManagementTab: React.FC<NocManagementTabProps> = ({ workspaces }) => {
-    const workspaceIds = useMemo(() => workspaces.map(w => w.id), [workspaces]);
+    const workspaceIds = workspaces.map(w => w.id);
     const { token } = useAuth();
-    const { allDevicesData } = useMikrotik();
     const [secrets, setSecrets] = useState<PppoeSecret[]>([]);
-    const [loading, setLoading] = useState(true);
+    const [loading, setLoading] = useState(false);
     const [searchQuery, setSearchQuery] = useState('');
     const [sortColumn, setSortColumn] = useState<string | null>(null);
     const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
@@ -63,7 +61,6 @@ const NocManagementTab: React.FC<NocManagementTabProps> = ({ workspaces }) => {
     const lastFetchTimeRef = React.useRef<number>(0);
     const [isInitialLoad, setIsInitialLoad] = useState(true);
     const [uptimeOffset, setUptimeOffset] = useState(0);
-    const wsRef = React.useRef<WebSocket | null>(null);
     const memoizedSecretToEdit = useMemo(() => {
         if (!secretToEdit) return null;
         return { ...secretToEdit, disabled: secretToEdit.disabled === 'true' };
@@ -113,8 +110,7 @@ const NocManagementTab: React.FC<NocManagementTabProps> = ({ workspaces }) => {
 
         // Debounce: hindari fetch terlalu sering
         const now = Date.now();
-        // Gunakan threshold 1 detik saja untuk responsivitas awal
-        if (now - lastFetchTimeRef.current < 1000) return;
+        if (now - lastFetchTimeRef.current < 2000) return;
         lastFetchTimeRef.current = now;
 
         // Hanya tampilkan spinner loading pada fetch pertama, bukan saat refresh background
@@ -135,7 +131,6 @@ const NocManagementTab: React.FC<NocManagementTabProps> = ({ workspaces }) => {
                     ...s,
                     deviceId: s.device_id || s.deviceId
                 }));
-                // Batalkan loading SEGERA setelah data didapat
                 setSecrets(mappedSecrets);
                 setUptimeOffset(0);
             }
@@ -147,110 +142,20 @@ const NocManagementTab: React.FC<NocManagementTabProps> = ({ workspaces }) => {
         }
     }, [workspaceIds, token]);
 
-    // Update WebSocket subscription when workspaces change
+    // Reset debounce ref saat workspaceIds berubah agar filter switch langsung fetch
     useEffect(() => {
-        if (workspaceIds.length === 0) return;
-        
         lastFetchTimeRef.current = 0;
-        setLoading(true);
-        
-        // Fetch via REST immediately for instant data
-        fetchSecrets();
-
-        if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-            wsRef.current.send(JSON.stringify({
-                type: 'subscribe-noc',
-                workspaceIds: workspaceIds
-            }));
-        }
-    }, [workspaceIds, fetchSecrets]);
+    }, [workspaceIds.join(',')]);
 
     useEffect(() => {
-        if (!token || workspaceIds.length === 0) return;
+        fetchSecrets(false); // first load shows spinner
 
-        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        const host = process.env.NEXT_PUBLIC_WS_BASE_URL || `${protocol}//${window.location.host}/ws`;
-        const wsUrl = `${host}?workspaceIds=${workspaceIds.join(',')}&token=${token}`;
+        const interval = setInterval(() => {
+            fetchSecrets(true); // background refresh — no spinner
+        }, 3000);
 
-        const connect = () => {
-            console.log("[NOC WS] Connecting to", wsUrl);
-            const ws = new WebSocket(wsUrl);
-            wsRef.current = ws;
-
-            ws.onopen = () => {
-                console.log("[NOC WS] Connected, auto-subscribed via URL");
-            };
-
-            ws.onmessage = (event) => {
-                try {
-                    const data = JSON.parse(event.data);
-                    
-                    if (data.type === 'pppoe-update' || data.type === 'batch-update') {
-                        const newSecrets = data.payload?.pppoeSecrets || data.payload?.secrets;
-                        const isSnapshot = data.payload?.isSnapshot || false;
-
-                        if (newSecrets && Array.isArray(newSecrets)) {
-                            if (isSnapshot) {
-                                // Full snapshot: replace everything
-                                setSecrets(newSecrets.map((s: any) => ({
-                                    ...s,
-                                    deviceId: s.device_id || s.deviceId
-                                })));
-                            } else {
-                                // Incremental update: merge
-                                setSecrets(prev => {
-                                    const updates = new Map();
-                                    newSecrets.forEach((s: any) => {
-                                        const key = `${s.workspace_id}_${s.name}`;
-                                        updates.set(key, {
-                                            ...s,
-                                            deviceId: s.device_id || s.deviceId
-                                        });
-                                    });
-
-                                    return prev.map(oldSecret => {
-                                        const key = `${oldSecret.workspace_id}_${oldSecret.name}`;
-                                        if (updates.has(key)) {
-                                            const updated = updates.get(key);
-                                            updates.delete(key);
-                                            return { ...oldSecret, ...updated };
-                                        }
-                                        return oldSecret;
-                                    }).concat(Array.from(updates.values()));
-                                });
-                            }
-                            setUptimeOffset(0);
-                            setLoading(false);
-                            setIsInitialLoad(false);
-                        }
-                    }
-                } catch (e) {
-                    console.error("[NOC WS] Error processing message:", e);
-                }
-            };
-
-            ws.onclose = () => {
-                console.log("[NOC WS] Disconnected, retrying in 3s...");
-                setTimeout(() => {
-                    if (wsRef.current === ws) connect();
-                }, 3000);
-            };
-
-            ws.onerror = (err) => {
-                console.error("[NOC WS] Error:", err);
-                ws.close();
-            };
-        };
-
-        connect();
-
-        return () => {
-            if (wsRef.current) {
-                wsRef.current.close();
-                wsRef.current = null;
-            }
-        };
-    }, [token, workspaceIds]); // Only re-connect if token or workspaces list changes
+        return () => clearInterval(interval);
+    }, [fetchSecrets]);
 
     const handleSort = (column: string) => {
         if (sortColumn === column) {
@@ -324,43 +229,21 @@ const NocManagementTab: React.FC<NocManagementTabProps> = ({ workspaces }) => {
     }, [secrets, activeFilter, searchQuery, sortColumn, sortDirection]);
 
     const summary = useMemo(() => {
-        // PRIORITAS 1: Jika sudah ada data local secrets, hitung dari sana (Paling akurat & real-time)
-        if (secrets.length > 0) {
-            const onlineSecrets = secrets.filter(s => s.mikrotik_status === 'connected');
-            const total = onlineSecrets.length;
-            const active = onlineSecrets.filter(s => s.isActive && s.disabled === 'false').length;
-            return {
-                total,
-                active,
-                inactive: Math.max(0, total - active)
-            };
-        }
-
-        // PRIORITAS 2: Jika data local belum ada, hitung dari data GLOBAL (Instan dari layout)
-        let gTotal = 0;
-        let gActive = 0;
-        
-        Object.values(allDevicesData).forEach((device: any) => {
-            if (device.workspaceId && workspaceIds.includes(device.workspaceId)) {
-                gTotal += device.totalUsers || 0;
-                gActive += device.activeUsers || 0;
-            }
-        });
-
+        const onlineSecrets = secrets.filter(s => s.mikrotik_status === 'connected');
+        const total = onlineSecrets.length;
+        const active = onlineSecrets.filter(s => s.isActive && s.disabled === 'false').length;
         return {
-            total: gTotal,
-            active: gActive,
-            inactive: Math.max(0, gTotal - gActive)
+            total,
+            active,
+            inactive: Math.max(0, total - active)
         };
-    }, [secrets, allDevicesData, workspaceIds]);
+    }, [secrets]);
 
     const offlineRouters = useMemo(() => {
         const uniqueRouters = new Map();
         secrets.forEach(s => {
-            // Gunakan router_name jika ada, jika tidak workspace_name
-            const name = s.router_name || s.workspace_name;
-            if (name && !uniqueRouters.has(name)) {
-                uniqueRouters.set(name, s.mikrotik_status);
+            if (!uniqueRouters.has(s.router_name || s.workspace_name)) {
+                uniqueRouters.set(s.router_name || s.workspace_name, s.mikrotik_status);
             }
         });
         return Array.from(uniqueRouters.entries())
@@ -474,21 +357,18 @@ const NocManagementTab: React.FC<NocManagementTabProps> = ({ workspaces }) => {
         }
     };
 
-    const renderSummaryCard = (title: string, icon: React.ReactNode, color: string, filter: 'all' | 'active' | 'inactive') => {
-        const count = filter === 'all' ? summary.total : filter === 'active' ? summary.active : summary.inactive;
-        return (
-            <button onClick={() => setActiveFilter(filter)} className={`w-full text-left rounded-lg transition-all ${activeFilter === filter ? 'ring-2 ring-primary ring-offset-2 ring-offset-background' : ''}`}>
-                <SummaryCard title={title} count={loading && secrets.length === 0 ? <Loader2 className="animate-spin" /> : count} icon={icon} colorClass={color} />
-            </button>
-        );
-    };
+    const renderSummaryCard = (title: string, count: number, icon: React.ReactNode, color: string, filter: 'all' | 'active' | 'inactive') => (
+        <button onClick={() => setActiveFilter(filter)} className={`w-full text-left rounded-lg transition-all ${activeFilter === filter ? 'ring-2 ring-primary ring-offset-2 ring-offset-background' : ''}`}>
+            <SummaryCard title={title} count={loading && secrets.length === 0 ? <Loader2 className="animate-spin" /> : count} icon={icon} colorClass={color} />
+        </button>
+    );
 
     return (
         <div className="space-y-6">
             <div className="grid grid-cols-3 gap-2 sm:gap-4">
-                {renderSummaryCard("Total", <Users />, "bg-gradient-to-br from-blue-500 to-blue-700", 'all')}
-                {renderSummaryCard("Aktif", <UserCheck />, "bg-gradient-to-br from-green-500 to-green-700", 'active')}
-                {renderSummaryCard("Tidak Aktif", <UserX />, "bg-gradient-to-br from-red-500 to-red-700", 'inactive')}
+                {renderSummaryCard("Total", summary.total, <Users />, "bg-gradient-to-br from-blue-500 to-blue-700", 'all')}
+                {renderSummaryCard("Aktif", summary.active, <UserCheck />, "bg-gradient-to-br from-green-500 to-green-700", 'active')}
+                {renderSummaryCard("Tidak Aktif", summary.inactive, <UserX />, "bg-gradient-to-br from-red-500 to-red-700", 'inactive')}
             </div>
 
             {offlineRouters.length > 0 && (

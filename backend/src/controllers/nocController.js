@@ -179,88 +179,46 @@ exports.getAggregatedSecrets = async (req, res) => {
         }
 
         const validWorkspaceIds = workspaceIds.filter(id => !isNaN(parseInt(id, 10)));
+
         if (validWorkspaceIds.length === 0) {
             return res.status(400).json({ message: 'Valid workspaceIds array is required' });
         }
 
-        // 1. Ambil metadata workspace & device secara cepat
-        const [wRows] = await pool.query('SELECT id, name FROM workspaces WHERE id IN (?)', [validWorkspaceIds]);
-        const workspaceMap = new Map(wRows.map(w => [w.id, w.name]));
+        // Ambil data secrets langsung dari database real-time cache (pppoe_secrets)
+        const [secrets] = await pool.query(`
+            SELECT 
+                ps.name, 
+                ps.profile, 
+                ps.remote_address as 'remote-address',
+                ps.disabled,
+                ps.is_active as isActive,
+                ps.uptime,
+                ps.current_address as currentAddress,
+                ps.active_connection_id as activeConnectionId,
+                ps.workspace_id,
+                ps.device_id,
+                w.name as workspace_name,
+                md.name as router_name
+            FROM pppoe_secrets ps
+            JOIN workspaces w ON ps.workspace_id = w.id
+            JOIN mikrotik_devices md ON ps.device_id = md.id
+            WHERE ps.workspace_id IN (?)
+        `, [validWorkspaceIds]);
 
-        const [dRows] = await pool.query('SELECT id, name, workspace_id FROM mikrotik_devices WHERE workspace_id IN (?)', [validWorkspaceIds]);
-        const deviceMap = new Map(dRows.map(d => [d.id, { name: d.name, workspace_id: d.workspace_id }]));
-
-        let aggregatedSecrets = [];
-        const devicesToFetchFromDb = [];
-
-        // 2. PRIORITAS: Ambil dari RAM (mikrotikStore) - Tercepat
-        for (const [deviceId, dMeta] of deviceMap.entries()) {
-            const storedSecrets = mikrotikStore.getSecrets(dMeta.workspace_id, deviceId);
+        // Format boolean dan resolusi status router
+        const aggregatedSecrets = secrets.map(s => {
+            const secret = { ...s };
+            secret.disabled = s.disabled === 1 ? 'true' : 'false';
+            secret.isActive = s.isActive === 1;
             
-            if (storedSecrets && storedSecrets.length > 0) {
-                const storedActive = mikrotikStore.getActive(dMeta.workspace_id, deviceId);
-                const activeMap = new Map(storedActive.map(u => [u.name, u]));
-                
-                const enriched = storedSecrets.map(secret => {
-                    const activeInfo = activeMap.get(secret.name);
-                    const isDis = secret.disabled === 'true' || secret.disabled === true;
-                    
-                    return {
-                        name: secret.name,
-                        profile: secret.profile || '',
-                        'remote-address': secret['remote-address'] || activeInfo?.address || '',
-                        disabled: isDis ? 'true' : 'false',
-                        isActive: !!activeInfo,
-                        uptime: activeInfo?.uptime || '',
-                        activeConnectionId: activeInfo?.['.id'] || '',
-                        currentAddress: activeInfo?.address || '',
-                        deviceId: deviceId,
-                        workspace_id: dMeta.workspace_id,
-                        workspace_name: workspaceMap.get(dMeta.workspace_id) || '',
-                        router_name: dMeta.name || '',
-                        mikrotik_status: mikrotikStore.getDeviceStatus(dMeta.workspace_id, deviceId) || 'connected'
-                    };
-                });
-                aggregatedSecrets = aggregatedSecrets.concat(enriched);
-            } else {
-                devicesToFetchFromDb.push(deviceId);
+            // Replicate original behavior fallback remote-address
+            if (!secret['remote-address'] && secret.currentAddress) {
+                secret['remote-address'] = secret.currentAddress;
             }
-        }
-
-        // 3. FALLBACK: Jika ada device yang belum ada di RAM, ambil dari DB
-        if (devicesToFetchFromDb.length > 0) {
-            const [sRows] = await pool.query(`
-                SELECT 
-                    ps.name, ps.profile, ps.remote_address as 'remote-address',
-                    ps.disabled, ps.is_active as isActive, ps.uptime,
-                    ps.current_address as currentAddress, ps.active_connection_id as activeConnectionId,
-                    ps.workspace_id, ps.device_id,
-                    w.name as workspace_name, md.name as router_name
-                FROM pppoe_secrets ps
-                JOIN workspaces w ON ps.workspace_id = w.id
-                JOIN mikrotik_devices md ON ps.device_id = md.id
-                WHERE ps.device_id IN (?)
-            `, [devicesToFetchFromDb]);
-
-            const dbSecrets = sRows.map(s => {
-                return {
-                    name: s.name,
-                    profile: s.profile || '',
-                    'remote-address': s['remote-address'] || s.currentAddress || '',
-                    disabled: s.disabled === 1 ? 'true' : 'false',
-                    isActive: s.isActive === 1,
-                    uptime: s.uptime || '',
-                    activeConnectionId: s.activeConnectionId || '',
-                    currentAddress: s.currentAddress || '',
-                    deviceId: s.device_id,
-                    workspace_id: s.workspace_id,
-                    workspace_name: s.workspace_name || workspaceMap.get(s.workspace_id) || '',
-                    router_name: s.router_name || '',
-                    mikrotik_status: mikrotikStore.getDeviceStatus(s.workspace_id, s.device_id) || 'disconnected'
-                };
-            });
-            aggregatedSecrets = aggregatedSecrets.concat(dbSecrets);
-        }
+            
+            secret.mikrotik_status = mikrotikStore.getDeviceStatus(s.workspace_id, s.device_id) || 'disconnected';
+            return secret;
+        });
 
         res.json({
             secrets: aggregatedSecrets
