@@ -2,6 +2,7 @@ const { runCommandForWorkspace } = require('../utils/apiConnection');
 const pool = require('../config/database');
 const mikrotikStore = require('../utils/mikrotikStore');
 const { refreshSecretsNow } = require('../bot/backgroundMonitor');
+const broadcast = require('../utils/broadcast');
 const fs = require('fs');
 const path = require('path');
 
@@ -295,6 +296,7 @@ exports.addSecret = async (req, res) => {
         
         // Trigger refresh agar UI langsung update
         refreshSecretsNow(workspaceId, targetDeviceId);
+        broadcast.broadcastSinglePppoeUpdate(workspaceId, targetDeviceId, name);
         
         res.status(201).json({ message: `Secret untuk ${name} berhasil dibuat.` });
     } catch (error) {
@@ -401,6 +403,7 @@ exports.setSecretStatus = async (req, res) => {
         
         // Trigger refresh agar UI langsung update
         refreshSecretsNow(workspaceId, deviceId);
+        broadcast.broadcastSinglePppoeUpdate(workspaceId, deviceId, id.startsWith('*') ? null : id); // Jika id adalah nama, bisa langsung
         
         res.status(200).json({ message: `Secret berhasil di-${disabled === 'true' ? 'disable' : 'enable'}.` });
     } catch (error) { res.status(500).json({ message: error.message }); }
@@ -422,6 +425,8 @@ exports.kickActiveUser = async (req, res) => {
         
         // Trigger refresh agar UI langsung update
         refreshSecretsNow(workspaceId, deviceId);
+        // Note: we don't have the pppoe name here easily unless we fetch it, 
+        // but the listener in server.js will handle the active removal anyway.
         
         res.status(200).json({ message: 'Koneksi pengguna berhasil diputuskan.' });
     } catch (error) { res.status(500).json({ message: error.message }); }
@@ -520,6 +525,7 @@ exports.updateSecret = async (req, res) => {
         
         // Trigger refresh agar UI langsung update
         refreshSecretsNow(workspace_id, deviceId);
+        broadcast.broadcastSinglePppoeUpdate(workspace_id, deviceId, name || id);
         
         // Update database references if name changed
         if (name && oldName && name !== oldName) {
@@ -605,6 +611,9 @@ exports.deleteSecret = async (req, res) => {
         
         // Trigger refresh agar UI langsung update
         refreshSecretsNow(workspace_id, deviceId);
+        if (secretName) {
+            broadcast.broadcastSinglePppoeRemove(workspace_id, deviceId, secretName);
+        }
         
         res.status(200).json({ message: 'Secret dan data client map berhasil dihapus.' });
     } catch (error) {
@@ -708,6 +717,7 @@ exports.isolateSecret = async (req, res) => {
         }
 
         refreshSecretsNow(workspaceId, deviceId);
+        broadcast.broadcastSinglePppoeUpdate(workspaceId, deviceId, secretName);
         console.log(`[Isolate Secret] Success for ${secretName}`);
         res.status(200).json({ message: `User ${secretName} berhasil di-Isolir.` });
     } catch (error) {
@@ -778,6 +788,7 @@ exports.unisolateSecret = async (req, res) => {
 
         // Trigger refresh agar UI langsung update
         refreshSecretsNow(workspaceId, deviceId);
+        broadcast.broadcastSinglePppoeUpdate(workspaceId, deviceId, secretName);
 
         res.status(200).json({ message: `Isolir user ${secretName} berhasil dibuka. Profil dikembalikan ke: ${targetProfile}` });
     } catch (error) {

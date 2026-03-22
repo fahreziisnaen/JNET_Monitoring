@@ -28,6 +28,7 @@ const { monitorSlaAndNotifications, sendDowntimeNotifications, sendReconnectNoti
 const { startBackgroundMonitoring, refreshSecretsNow } = require('./src/bot/backgroundMonitor');
 const { setupPppoeListeners } = require('./src/utils/mikrotikListener');
 const mikrotikStore = require('./src/utils/mikrotikStore');
+const broadcast = require('./src/utils/broadcast');
 
 let RouterOSAPI = require('node-routeros');
 if (RouterOSAPI.RouterOSAPI) {
@@ -130,21 +131,10 @@ app.use('/api/noc', nocRoutes);
 app.use('/api/api-keys', apiKeyRoutes);
 
 const wss = new WebSocket.Server({ server, path: "/ws" });
+broadcast.init(wss);
 
 function broadcastToWorkspace(workspaceId, deviceId, data) {
-    let sentCount = 0;
-    wss.clients.forEach((client) => {
-        const isDeviceMatch = !deviceId || client.deviceId == deviceId;
-        if (client.workspaceId == workspaceId && isDeviceMatch && client.readyState === WebSocket.OPEN) {
-            try {
-                client.send(JSON.stringify(data));
-                sentCount++;
-            } catch (error) {
-                // Log WS monitoring disabled
-            }
-        }
-    });
-    // Log WS monitoring disabled
+    broadcast.broadcastTargeted(workspaceId, deviceId, data);
 }
 
 function stopWorkspaceMonitoring(connectionKey, reason = 'Koneksi terputus') {
@@ -234,46 +224,12 @@ async function startWorkspaceMonitoring(workspaceId, connectionKey, deviceId = n
             });
         }
 
-        // --- REAL-TIME LISTENERS INITIALIZATION ---
-        let listenerCleanup = null;
-
         /**
-         * Broadcast pppoe update instan ke frontend (True Real-time)
-         * Meminimalisir delay interval 3 detik.
+         * Broadcast single pppoe update instan ke frontend (Granular Real-time)
+         * Mengurangi data overhead dibanding broadcast seluruh list.
          */
-        const broadcastPppoeUpdate = () => {
-            const activeUsers = mikrotikStore.getActive(workspaceId, deviceId);
-            const activeUserMap = new Map();
-            activeUsers.forEach(user => {
-                if (user.name) {
-                    activeUserMap.set(user.name, {
-                        address: user.address || null,
-                        uptime: user.uptime || null,
-                        service: user.service || 'pppoe',
-                        '.id': user['.id'] || null
-                    });
-                }
-            });
-
-            const enrichedSecrets = cachedSecrets.map(secret => {
-                const activeInfo = activeUserMap.get(secret.name);
-                const isActive = !!activeInfo;
-                const enriched = Object.assign({}, secret);
-                enriched.deviceId = deviceId;
-                enriched.isActive = isActive;
-                if (isActive && activeInfo.uptime) enriched.uptime = activeInfo.uptime;
-                if (isActive && activeInfo['.id']) enriched.activeConnectionId = activeInfo['.id'];
-                if (isActive && activeInfo.address) {
-                    enriched.currentAddress = activeInfo.address;
-                    if (!enriched['remote-address']) enriched['remote-address'] = activeInfo.address;
-                }
-                return enriched;
-            });
-
-            broadcastToWorkspace(workspaceId, deviceId, {
-                type: 'pppoe-update',
-                payload: { pppoeSecrets: enrichedSecrets }
-            });
+        const broadcastSinglePppoeUpdate = (secretName) => {
+            broadcast.broadcastSinglePppoeUpdate(workspaceId, deviceId, secretName);
         };
 
         try {
@@ -296,15 +252,21 @@ async function startWorkspaceMonitoring(workspaceId, connectionKey, deviceId = n
                             } else {
                                 cachedSecrets.push(attributes);
                             }
+                            
+                            // Update global store
+                            mikrotikStore.updateSecret(workspaceId, deviceId, action, attributes);
+                            
+                            // Granular Broadcast
+                            broadcastSinglePppoeUpdate(attributes.name);
                         } else if (action === 'remove') {
                             cachedSecrets = cachedSecrets.filter(s => s['.id'] !== attributes['.id'] && s.name !== attributes.name);
+                            mikrotikStore.updateSecret(workspaceId, deviceId, action, attributes);
+                            
+                            broadcastToWorkspace(workspaceId, deviceId, {
+                                type: 'pppoe-single-remove',
+                                payload: { name: attributes.name }
+                            });
                         }
-
-                        // Update global store untuk diakses Controller
-                        mikrotikStore.updateSecret(workspaceId, deviceId, action, attributes);
-
-                        // INSTANT BROADCAST (True Real-time)
-                        broadcastPppoeUpdate();
                     },
                     onActiveUpdate: (action, attributes) => {
                         console.log(`[RealTime][Active] ${action.toUpperCase()}: ${attributes.name}`);
@@ -324,8 +286,8 @@ async function startWorkspaceMonitoring(workspaceId, connectionKey, deviceId = n
 
                         mikrotikStore.setActive(workspaceId, deviceId, updatedActive);
 
-                        // INSTANT BROADCAST (True Real-time)
-                        broadcastPppoeUpdate();
+                        // Granular Broadcast
+                        broadcastSinglePppoeUpdate(attributes.name);
                     },
                     onError: (err) => {
                         console.error(`[RealTime] Listener error untuk workspace ${workspaceId}:`, err.message);

@@ -67,7 +67,7 @@ const LocationManager: React.FC<LocationManagerProps> = ({ isNocMode = false, no
   const [activeFilter, setActiveFilter] = useState('all');
   const [selectedWorkspaceForNocAdd, setSelectedWorkspaceForNocAdd] = useState<number | null>(null);
 
-  const { pppoeSecrets, isConnected, selectedDeviceId: currentDeviceId } = useMikrotik() || { pppoeSecrets: [], isConnected: false, selectedDeviceId: null };
+  const { pppoeSecrets, allPppoeSecrets, isConnected, selectedDeviceId: currentDeviceId } = useMikrotik() || { pppoeSecrets: [], allPppoeSecrets: [], isConnected: false, selectedDeviceId: null };
 
   // Orphan detection: set of client IDs whose PPPoE secret no longer exists on their device
   const [orphanedIds, setOrphanedIds] = useState<Set<number>>(new Set());
@@ -93,7 +93,9 @@ const LocationManager: React.FC<LocationManagerProps> = ({ isNocMode = false, no
   const [nocSecrets, setNocSecrets] = useState<any[]>([]);
 
   const fetchNocSecrets = useCallback(async () => {
-    if (!isNocMode || nocWorkspaceIdsRef.current.length === 0) return;
+    const targetWorkspaceIds = isNocMode ? nocWorkspaceIdsRef.current : [user?.workspace_id].filter(Boolean) as number[];
+    if (targetWorkspaceIds.length === 0) return;
+
     try {
       const apiUrl = process.env.NEXT_PUBLIC_API_BASE_URL;
       const res = await apiFetch(`${apiUrl}/api/noc/secrets`, {
@@ -101,7 +103,7 @@ const LocationManager: React.FC<LocationManagerProps> = ({ isNocMode = false, no
         headers: {
             'Content-Type': 'application/json'
         },
-        body: JSON.stringify({ workspaceIds: nocWorkspaceIdsRef.current })
+        body: JSON.stringify({ workspaceIds: targetWorkspaceIds })
       });
       if (res.ok) {
         const data = await res.json();
@@ -110,17 +112,41 @@ const LocationManager: React.FC<LocationManagerProps> = ({ isNocMode = false, no
     } catch (err) {
       console.error('Failed to fetch noc secrets in LocationManager', err);
     }
-  }, [isNocMode, nocWorkspaceIdsKey]);
+  }, [isNocMode, nocWorkspaceIdsKey, user?.workspace_id]);
 
   useEffect(() => {
-    if (isNocMode) {
-      fetchNocSecrets();
-      const interval = setInterval(fetchNocSecrets, 5000);
-      return () => clearInterval(interval);
-    }
-  }, [isNocMode, fetchNocSecrets]);
+    fetchNocSecrets();
+    // Use a longer interval as WebSocket provides real-time updates
+    const intervalTime = isNocMode ? 30000 : 5000;
+    const interval = setInterval(fetchNocSecrets, intervalTime);
+    return () => clearInterval(interval);
+  }, [fetchNocSecrets, isNocMode]);
 
-  const activeSecrets = isNocMode ? nocSecrets : pppoeSecrets;
+  const activeSecrets = useMemo(() => {
+    // Merge: live WS data takes precedence over API cache (nocSecrets)
+    const mergedMap = new Map();
+    
+    // 1. Initial population from API cache (stale database data)
+    nocSecrets.forEach((s: any) => {
+      const key = `${s.device_id || s.deviceId}-${s.name}`;
+      mergedMap.set(key, s);
+    });
+    
+    // 2. Overlay with live data from WebSocket (real-time)
+    // In NOC mode use all aggregated secrets; in regular mode use selected device secrets
+    const liveSecrets = isNocMode ? allPppoeSecrets : pppoeSecrets;
+    
+    liveSecrets.forEach((s: any) => {
+      // Key must match API format for merging
+      // Note: pppoeSecrets (regular mode) might not have deviceId, so we fallback to currentDeviceId
+      const devId = s.deviceId || currentDeviceId;
+      const key = `${devId}-${s.name}`;
+      const existing = mergedMap.get(key);
+      mergedMap.set(key, { ...existing, ...s, deviceId: devId });
+    });
+    
+    return Array.from(mergedMap.values());
+  }, [isNocMode, nocSecrets, pppoeSecrets, allPppoeSecrets, currentDeviceId]);
 
   const [isClientModalOpen, setIsClientModalOpen] = useState(false);
   const [assets, setAssets] = useState<Asset[]>([]);
@@ -1362,7 +1388,7 @@ const LocationManager: React.FC<LocationManagerProps> = ({ isNocMode = false, no
             onDelete={handleDeleteClient}
             onEditPath={(client: Client) => handleStartEditPath('client', client)}
             nocWorkspaceId={isNocMode ? selectedClient.workspace_id : undefined}
-            overrideSecrets={isNocMode ? activeSecrets : undefined}
+            overrideSecrets={activeSecrets}
           />
           <EditClientModal
             isOpen={isEditClientModalOpen}

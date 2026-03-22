@@ -29,6 +29,8 @@ interface MikrotikContextType {
     toggleDeviceId: (deviceId: number) => void;
     forceRefresh: (deviceId?: number) => void;
     getDeviceWorkspaceId: (deviceId: number) => number | null;
+    setNocWorkspaceIds: (workspaceIds: number[]) => void;
+    allPppoeSecrets: any[];
 }
 
 const MikrotikContext = createContext<MikrotikContextType | null>(null);
@@ -55,6 +57,7 @@ export const MikrotikProvider = ({ children }: { children: React.ReactNode }) =>
     const { user } = useAuth();
     const [dashboardDeviceIds, setDashboardDeviceIds] = useState<number[]>([]);
     const [activeDeviceId, setActiveDeviceId] = useState<number | null>(null);
+    const [nocWorkspaceIds, setNocWorkspaceIds] = useState<number[]>([]);
     const [isLoaded, setIsLoaded] = useState(false);
 
     // Per-device data stored in ref to avoid excessive re-renders
@@ -72,12 +75,22 @@ export const MikrotikProvider = ({ children }: { children: React.ReactNode }) =>
     const [tick, setTick] = useState(0);
     const triggerRender = useCallback(() => setTick(t => t + 1), []);
 
-    // Union of both selections for WebSocket management
+    // Union of both selections + devices in NOC workspaces for WebSocket management
     const effectiveSelectedIds = useMemo(() => {
         const ids = new Set(dashboardDeviceIds);
         if (activeDeviceId) ids.add(activeDeviceId);
+        
+        // Add all devices that belong to nocWorkspaceIds
+        if (nocWorkspaceIds.length > 0) {
+            deviceDataRef.current.forEach((data, devId) => {
+                if (data.workspaceId && nocWorkspaceIds.includes(data.workspaceId)) {
+                    ids.add(devId);
+                }
+            });
+        }
+        
         return Array.from(ids);
-    }, [dashboardDeviceIds, activeDeviceId]);
+    }, [dashboardDeviceIds, activeDeviceId, nocWorkspaceIds, tick]); // tick ensures we pick up newly fetched workspace IDs
 
     // Keep selectedDeviceIdsRef in sync with the UNION of all needed connections
     useEffect(() => {
@@ -157,6 +170,33 @@ export const MikrotikProvider = ({ children }: { children: React.ReactNode }) =>
                     // so do NOT read message.payload.status here (it would always be falsy → isConnected: false).
                     // isConnected is managed exclusively by connection-status messages.
                     if (JSON.stringify(newSecrets) !== JSON.stringify(prev.pppoeSecrets)) {
+                        updateDeviceData(deviceId, { pppoeSecrets: newSecrets });
+                    }
+                } else if (message.type === 'pppoe-single-update' && message.payload) {
+                    const updatedSecret = message.payload.secret;
+                    if (!updatedSecret || !updatedSecret.name) return;
+                    
+                    const oldSecrets = prev.pppoeSecrets || [];
+                    const index = oldSecrets.findIndex(s => s.name === updatedSecret.name);
+                    
+                    let newSecrets;
+                    if (index !== -1) {
+                        // Update existing entry with new attributes
+                        newSecrets = [...oldSecrets];
+                        newSecrets[index] = { ...newSecrets[index], ...updatedSecret };
+                    } else {
+                        // Add new entry if it doesn't exist
+                        newSecrets = [...oldSecrets, updatedSecret];
+                    }
+                    
+                    updateDeviceData(deviceId, { pppoeSecrets: newSecrets });
+                } else if (message.type === 'pppoe-single-remove' && message.payload) {
+                    const nameToRemove = message.payload.name;
+                    if (!nameToRemove) return;
+                    
+                    const oldSecrets = prev.pppoeSecrets || [];
+                    const newSecrets = oldSecrets.filter(s => s.name !== nameToRemove);
+                    if (newSecrets.length !== oldSecrets.length) {
                         updateDeviceData(deviceId, { pppoeSecrets: newSecrets });
                     }
                 } else if (message.type === 'connection-status' && message.payload) {
@@ -382,8 +422,21 @@ export const MikrotikProvider = ({ children }: { children: React.ReactNode }) =>
             allDevicesStatus[id] = { isConnected: data.isConnected };
         });
 
-        return { dataMap, allDevicesStatus };
-    }, [tick]);
+        // Aggregated secrets for NOC mode or cross-device views
+        const allSecrets: any[] = [];
+        const currentSelected = new Set(effectiveSelectedIds);
+        deviceDataRef.current.forEach((data, id) => {
+            if (data.pppoeSecrets && currentSelected.has(id)) {
+                allSecrets.push(...data.pppoeSecrets.map(s => ({ 
+                    ...s, 
+                    deviceId: id, 
+                    workspace_id: data.workspaceId 
+                })));
+            }
+        });
+
+        return { dataMap, allDevicesStatus, allSecrets };
+    }, [tick, effectiveSelectedIds]);
 
     const forceRefresh = useCallback((deviceId?: number) => {
         const targetIds = deviceId ? [deviceId] : effectiveSelectedIds;
@@ -416,6 +469,8 @@ export const MikrotikProvider = ({ children }: { children: React.ReactNode }) =>
         toggleDeviceId: toggleDashboardId,
         forceRefresh,
         getDeviceWorkspaceId,
+        setNocWorkspaceIds,
+        allPppoeSecrets: allDevicesData.allSecrets,
     };
 
     return <MikrotikContext.Provider value={value}>{children}</MikrotikContext.Provider>;

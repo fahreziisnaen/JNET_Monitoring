@@ -310,9 +310,9 @@ const PppoeSecretsTable = ({ refreshTrigger, onActionComplete, initialFilter = '
   const handleAction = async (action: 'enable' | 'disable' | 'kick' | 'isolate' | 'unisolate', secret: PppoeSecret) => {
     setIsActionLoading(true);
 
+    const toastId = toast.loading(`Memproses ${action} untuk ${secret.name}...`);
     try {
       if (action === 'isolate' || action === 'unisolate') {
-        toast.info(`Memproses ${action} untuk ${secret.name}...`);
         const encodedId = encodeURIComponent(secret.name);
         // Prioritaskan deviceId dari secret itu sendiri
         const targetDeviceId = secret.deviceId || selectedDeviceId;
@@ -343,6 +343,7 @@ const PppoeSecretsTable = ({ refreshTrigger, onActionComplete, initialFilter = '
         }
         
         toast.success(action === 'isolate' ? "User Berhasil Di-Isolir" : "Isolir Berhasil Dibuka", {
+          id: toastId,
           description: action === 'isolate' ? `User ${secret.name} telah dipindahkan ke profil Isolir.` : `Profil user ${secret.name} telah dikembalikan.`
         });
       } else if (action === 'kick') {
@@ -435,7 +436,7 @@ const PppoeSecretsTable = ({ refreshTrigger, onActionComplete, initialFilter = '
 
       onActionComplete();
     } catch (error: any) {
-      toast.error(`Gagal Melakukan Aksi`, { description: error.message });
+      toast.error(`Gagal Melakukan Aksi`, { id: toastId, description: error.message });
     } finally {
       setIsActionLoading(false);
     }
@@ -449,6 +450,7 @@ const PppoeSecretsTable = ({ refreshTrigger, onActionComplete, initialFilter = '
   const handleDeleteConfirm = async () => {
     if (!secretToDelete) return;
     setIsActionLoading(true);
+    const toastId = toast.loading(`Menghapus secret ${secretToDelete.name}...`);
     try {
       const encodedId = encodeURIComponent(secretToDelete.name);
       const targetWorkspaceId = selectedDeviceId ? getDeviceWorkspaceId(selectedDeviceId) : null;
@@ -458,10 +460,10 @@ const PppoeSecretsTable = ({ refreshTrigger, onActionComplete, initialFilter = '
         deviceQuery += `${deviceQuery ? '&' : '?'}workspaceId=${targetWorkspaceId}`;
       }
       await apiFetch(`${apiUrl}/api/pppoe/secrets/${encodedId}${deviceQuery}`, { method: 'DELETE' });
-      toast.success("Berhasil Menghapus Secret", { description: `Secret untuk ${secretToDelete.name} telah dihapus.` });
+      toast.success("Berhasil Menghapus Secret", { id: toastId, description: `Secret untuk ${secretToDelete.name} telah dihapus.` });
       onActionComplete();
     } catch (error: any) {
-      toast.error("Gagal Menghapus Secret", { description: error.message || "Terjadi kesalahan saat menghapus data." });
+      toast.error("Gagal Menghapus Secret", { id: toastId, description: error.message || "Terjadi kesalahan saat menghapus data." });
     } finally {
       setIsActionLoading(false);
       setIsDeleteModalOpen(false);

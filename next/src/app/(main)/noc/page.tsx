@@ -8,6 +8,7 @@ import NocWorkspaceSelector from '@/components/noc/NocWorkspaceSelector';
 import NocManagementTab from '@/components/noc/NocManagementTab';
 import NocMapTab from '@/components/noc/NocMapTab';
 import { usePageTitle } from '@/hooks/usePageTitle';
+import { useMikrotik } from '@/components/providers/mikrotik-provider';
 
 interface Workspace {
     id: number;
@@ -17,11 +18,17 @@ interface Workspace {
 const NocPage = () => {
     usePageTitle('NOC');
     const { user } = useAuth();
+    const { setNocWorkspaceIds } = useMikrotik();
     const router = useRouter();
 
     const [allWorkspaces, setAllWorkspaces] = useState<Workspace[]>([]);
     const [selectedWorkspaceIds, setSelectedWorkspaceIds] = useState<number[]>([]);
     const [activeTab, setActiveTab] = useState<'management' | 'map'>('management');
+
+    // Sync NOC selection to MikrotikProvider for WebSocket management
+    useEffect(() => {
+        setNocWorkspaceIds(selectedWorkspaceIds);
+    }, [selectedWorkspaceIds, setNocWorkspaceIds]);
 
     const activeWorkspaces = allWorkspaces.filter(ws => selectedWorkspaceIds.includes(ws.id));
 

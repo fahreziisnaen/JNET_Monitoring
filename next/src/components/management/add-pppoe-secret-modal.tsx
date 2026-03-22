@@ -156,6 +156,7 @@ const AddPppoeSecretModal = ({
     isSubmitting.current = true;
     setLoading(true);
     setError("");
+    const toastId = toast.loading("Menambahkan secret...");
     try {
       const deviceWorkspaceId = selectedDeviceId ? getDeviceWorkspaceId(parseInt(selectedDeviceId)) : null;
       const targetWorkspaceId = nocWorkspaceId || deviceWorkspaceId || user?.workspace_id || "";
@@ -168,11 +169,11 @@ const AddPppoeSecretModal = ({
         throw new Error(data.message || "Gagal menambah secret");
       }
       onSuccess();
-      toast.success("Berhasil Menambah Secret", { description: `Secret untuk ${formData.name} berhasil dibuat.` });
+      toast.success("Berhasil Menambah Secret", { id: toastId, description: `Secret untuk ${formData.name} berhasil dibuat.` });
       onClose();
     } catch (err: any) {
       setError(err.message);
-      toast.error("Gagal Menambah Secret", { description: err.message });
+      toast.error("Gagal Menambah Secret", { id: toastId, description: err.message });
     } finally {
       isSubmitting.current = false;
       setLoading(false);

@@ -6,6 +6,7 @@ import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Power, PowerOff, Loader2, Search, ArrowUpDown, ChevronUp, ChevronDown, Users, UserCheck, UserX, MoreHorizontal, Edit, ZapOff, Trash2, X } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { useAuth } from '../providers/auth-provider';
+import { useMikrotik } from '../providers/mikrotik-provider';
 import { formatUptime, formatCompactUptime } from '@/utils/format';
 import SummaryCard from '../dashboard/summary-card';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
@@ -41,7 +42,8 @@ interface NocManagementTabProps {
 const NocManagementTab: React.FC<NocManagementTabProps> = ({ workspaces }) => {
     const workspaceIds = workspaces.map(w => w.id);
     const { token } = useAuth();
-    const [secrets, setSecrets] = useState<PppoeSecret[]>([]);
+    const { allPppoeSecrets, allDevicesStatus } = useMikrotik();
+    const [apiSecrets, setApiSecrets] = useState<PppoeSecret[]>([]);
     const [loading, setLoading] = useState(false);
     const [searchQuery, setSearchQuery] = useState('');
     const [sortColumn, setSortColumn] = useState<string | null>(null);
@@ -71,9 +73,35 @@ const NocManagementTab: React.FC<NocManagementTabProps> = ({ workspaces }) => {
         return () => clearInterval(interval);
     }, []);
 
+    const secrets = useMemo(() => {
+        // Merge API cache with live WS data
+        const mergedMap = new Map();
+        
+        // 1. Start with API data (stale cache)
+        apiSecrets.forEach(s => {
+            const deviceStatus = allDevicesStatus[s.deviceId]?.isConnected ? 'connected' : 'disconnected';
+            mergedMap.set(`${s.deviceId}-${s.name}`, { ...s, mikrotik_status: deviceStatus });
+        });
+        
+        // 2. Overlay with Live WS data (real-time)
+        allPppoeSecrets.forEach(s => {
+            // Find the workspace name for this secret if available in API data
+            const existing = mergedMap.get(`${s.deviceId}-${s.name}`);
+            mergedMap.set(`${s.deviceId}-${s.name}`, {
+                ...existing,
+                ...s,
+                mikrotik_status: 'connected',
+                workspace_name: existing?.workspace_name || s.workspace_name || 'Loading...',
+                workspace_id: s.workspace_id
+            });
+        });
+        
+        return Array.from(mergedMap.values()) as PppoeSecret[];
+    }, [apiSecrets, allPppoeSecrets, allDevicesStatus]);
+
     const secretsUptimeMap = useMemo(() => {
         const map = new Map<string, string>();
-        secrets.forEach(s => { if (s.name && s.isActive && s.uptime) map.set(s.name, s.uptime); });
+        secrets.forEach(s => { if (s.name && s.isActive && s.uptime) map.set(`${s.deviceId}-${s.name}`, s.uptime); });
         return map;
     }, [secrets]);
 
@@ -94,27 +122,22 @@ const NocManagementTab: React.FC<NocManagementTabProps> = ({ workspaces }) => {
         return (w ? w + 'w' : '') + (d ? d + 'd' : '') + (h ? h + 'h' : '') + (m ? m + 'm' : '') + sec + 's';
     };
 
-    const getUptime = useCallback((name: string): string => {
-        const base = secretsUptimeMap.get(name);
+    const getUptime = useCallback((name: string, deviceId: number): string => {
+        const base = secretsUptimeMap.get(`${deviceId}-${name}`);
         if (!base || base === 'N/A') return base || '-';
         return formatSecondsToUptime(parseUptimeToSeconds(base) + Math.min(uptimeOffset, 5));
     }, [secretsUptimeMap, uptimeOffset]);
 
-    const fetchSecrets = useCallback(async (isBackground = false) => {
+    const fetchSecrets = useCallback(async () => {
         if (workspaceIds.length === 0) {
-            setSecrets([]);
+            setApiSecrets([]);
             setLoading(false);
             setIsInitialLoad(false);
             return;
         }
 
-        // Debounce: hindari fetch terlalu sering
-        const now = Date.now();
-        if (now - lastFetchTimeRef.current < 2000) return;
-        lastFetchTimeRef.current = now;
-
-        // Hanya tampilkan spinner loading pada fetch pertama, bukan saat refresh background
-        if (!isBackground) setLoading(true);
+        // Hanya tampilkan spinner loading pada fetch pertama
+        setLoading(true);
         try {
             const response = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/api/noc/secrets`, {
                 method: 'POST',
@@ -131,7 +154,7 @@ const NocManagementTab: React.FC<NocManagementTabProps> = ({ workspaces }) => {
                     ...s,
                     deviceId: s.device_id || s.deviceId
                 }));
-                setSecrets(mappedSecrets);
+                setApiSecrets(mappedSecrets);
                 setUptimeOffset(0);
             }
         } catch (error) {
@@ -140,7 +163,7 @@ const NocManagementTab: React.FC<NocManagementTabProps> = ({ workspaces }) => {
             setLoading(false);
             setIsInitialLoad(false);
         }
-    }, [workspaceIds, token]);
+    }, [workspaceIds.join(','), token]);
 
     // Reset debounce ref saat workspaceIds berubah agar filter switch langsung fetch
     useEffect(() => {
@@ -148,13 +171,7 @@ const NocManagementTab: React.FC<NocManagementTabProps> = ({ workspaces }) => {
     }, [workspaceIds.join(',')]);
 
     useEffect(() => {
-        fetchSecrets(false); // first load shows spinner
-
-        const interval = setInterval(() => {
-            fetchSecrets(true); // background refresh — no spinner
-        }, 3000);
-
-        return () => clearInterval(interval);
+        fetchSecrets();
     }, [fetchSecrets]);
 
     const handleSort = (column: string) => {
@@ -254,10 +271,10 @@ const NocManagementTab: React.FC<NocManagementTabProps> = ({ workspaces }) => {
     const handleAction = async (action: 'enable' | 'disable' | 'kick' | 'isolate' | 'unisolate', secret: PppoeSecret) => {
         setIsActionLoading(true);
         const apiUrl = process.env.NEXT_PUBLIC_API_BASE_URL;
+        const toastId = toast.loading(`Memproses ${action} untuk ${secret.name}...`);
 
         try {
             if (action === 'isolate' || action === 'unisolate') {
-                toast.info(`Memproses ${action} untuk ${secret.name}...`);
                 const encodedId = encodeURIComponent(secret.name);
                 const res = await apiFetch(`${apiUrl}/api/pppoe/secrets/${encodedId}/${action}?workspaceId=${secret.workspace_id}&deviceId=${secret.deviceId}`, {
                     method: 'POST'
@@ -325,11 +342,11 @@ const NocManagementTab: React.FC<NocManagementTabProps> = ({ workspaces }) => {
                 }
             }
 
-            toast.success("Aksi Berhasil", { description: `Perintah ${action} selesai dieksekusi.` });
+            toast.success("Aksi Berhasil", { id: toastId, description: `Perintah ${action} selesai dieksekusi.` });
             lastFetchTimeRef.current = 0;
             fetchSecrets();
         } catch (error: any) {
-            toast.error(`Gagal Melakukan Aksi`, { description: error.message });
+            toast.error(`Gagal Melakukan Aksi`, { id: toastId, description: error.message });
         } finally {
             setIsActionLoading(false);
         }
@@ -340,16 +357,17 @@ const NocManagementTab: React.FC<NocManagementTabProps> = ({ workspaces }) => {
         setIsActionLoading(true);
         const apiUrl = process.env.NEXT_PUBLIC_API_BASE_URL;
 
+        const toastId = toast.loading(`Menghapus secret ${secretToDelete.name}...`);
         try {
             const encodedId = encodeURIComponent(secretToDelete.name);
             const res = await apiFetch(`${apiUrl}/api/pppoe/secrets/${encodedId}?workspaceId=${secretToDelete.workspace_id}&deviceId=${secretToDelete.deviceId}`, { method: 'DELETE' });
             if (!res.ok) throw new Error("Gagal Menghapus Secret");
 
-            toast.success("Berhasil Menghapus Secret", { description: `Secret untuk ${secretToDelete.name} telah dihapus.` });
+            toast.success("Berhasil Menghapus Secret", { id: toastId, description: `Secret untuk ${secretToDelete.name} telah dihapus.` });
             lastFetchTimeRef.current = 0;
             fetchSecrets();
         } catch (error: any) {
-            toast.error("Gagal Menghapus Secret", { description: error.message || "Terjadi kesalahan saat menghapus data." });
+            toast.error("Gagal Menghapus Secret", { id: toastId, description: error.message || "Terjadi kesalahan saat menghapus data." });
         } finally {
             setIsActionLoading(false);
             setIsDeleteModalOpen(false);
@@ -470,8 +488,8 @@ const NocManagementTab: React.FC<NocManagementTabProps> = ({ workspaces }) => {
                                             <td className="p-2 sm:p-4 font-mono text-[10px] sm:text-xs whitespace-nowrap">
                                                 {user.isActive ? (
                                                     <span className="flex flex-col sm:block">
-                                                        <span className="sm:hidden">{formatCompactUptime(getUptime(user.name))}</span>
-                                                        <span className="hidden sm:inline">{formatUptime(getUptime(user.name))}</span>
+                                                        <span className="sm:hidden">{formatCompactUptime(getUptime(user.name, user.deviceId))}</span>
+                                                        <span className="hidden sm:inline">{formatUptime(getUptime(user.name, user.deviceId))}</span>
                                                     </span>
                                                 ) : '-'}
                                             </td>

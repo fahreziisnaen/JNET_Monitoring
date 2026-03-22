@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { useMikrotik } from '@/components/providers/mikrotik-provider';
 import { useAuth } from '@/components/providers/auth-provider';
 import { apiFetch } from '@/utils/api';
+import { toast } from 'sonner';
 
 interface EditPppoeSecretModalProps {
   isOpen: boolean;
@@ -98,6 +99,7 @@ const EditPppoeSecretModal = ({ isOpen, onClose, onSuccess, secretToEdit, nocWor
     if (!secretToEdit) return;
     setLoading(true);
     setError('');
+    const toastId = toast.loading(`Mengupdate secret ${secretToEdit.name}...`);
     try {
       // Cek apakah profile berubah
       const profileChanged = formData.profile !== secretToEdit.profile;
@@ -147,10 +149,12 @@ const EditPppoeSecretModal = ({ isOpen, onClose, onSuccess, secretToEdit, nocWor
         }
       }
 
+      toast.success("Berhasil Mengupdate Secret", { id: toastId, description: `Secret ${secretToEdit.name} telah diperbarui.` });
       onSuccess();
       onClose();
     } catch (err: any) {
       setError(err.message);
+      toast.error("Gagal Mengupdate Secret", { id: toastId, description: err.message });
     } finally {
       setLoading(false);
     }
