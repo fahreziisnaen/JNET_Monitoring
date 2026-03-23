@@ -84,7 +84,7 @@ const LocationManager: React.FC<LocationManagerProps> = ({ isNocMode = false, no
 
   // Stabilize nocWorkspaceIds array — serialize to string to avoid new object reference on every render
   const nocWorkspaceIdsRef = useRef(nocWorkspaceIds);
-  const nocWorkspaceIdsKey = nocWorkspaceIds.join(',');
+  const nocWorkspaceIdsKey = useMemo(() => [...nocWorkspaceIds].sort().join(','), [nocWorkspaceIds]);
   useEffect(() => {
     nocWorkspaceIdsRef.current = nocWorkspaceIds;
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -145,8 +145,16 @@ const LocationManager: React.FC<LocationManagerProps> = ({ isNocMode = false, no
       mergedMap.set(key, { ...existing, ...s, deviceId: devId });
     });
     
-    return Array.from(mergedMap.values());
-  }, [isNocMode, nocSecrets, pppoeSecrets, allPppoeSecrets, currentDeviceId]);
+    const all = Array.from(mergedMap.values());
+    
+    // CRITICAL: Filter to only show secrets from selected workspaces in NOC mode
+    if (isNocMode) {
+      const selectedIds = new Set(nocWorkspaceIds);
+      return all.filter(s => selectedIds.has(s.workspace_id));
+    }
+    
+    return all;
+  }, [isNocMode, nocSecrets, pppoeSecrets, allPppoeSecrets, currentDeviceId, nocWorkspaceIdsKey]);
 
   const [isClientModalOpen, setIsClientModalOpen] = useState(false);
   const [assets, setAssets] = useState<Asset[]>([]);

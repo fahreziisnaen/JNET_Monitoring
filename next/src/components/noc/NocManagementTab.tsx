@@ -41,6 +41,7 @@ interface NocManagementTabProps {
 
 const NocManagementTab: React.FC<NocManagementTabProps> = ({ workspaces }) => {
     const workspaceIds = workspaces.map(w => w.id);
+    const workspaceIdsKey = useMemo(() => [...workspaceIds].sort().join(','), [workspaceIds]);
     const { token } = useAuth();
     const { allPppoeSecrets, allDevicesStatus } = useMikrotik();
     const [apiSecrets, setApiSecrets] = useState<PppoeSecret[]>([]);
@@ -96,8 +97,10 @@ const NocManagementTab: React.FC<NocManagementTabProps> = ({ workspaces }) => {
             });
         });
         
-        return Array.from(mergedMap.values()) as PppoeSecret[];
-    }, [apiSecrets, allPppoeSecrets, allDevicesStatus]);
+        const all = Array.from(mergedMap.values()) as PppoeSecret[];
+        // CRITICAL: Filter to only show secrets from selected workspaces
+        return all.filter(s => workspaceIds.includes(s.workspace_id));
+    }, [apiSecrets, allPppoeSecrets, allDevicesStatus, workspaceIdsKey]);
 
     const secretsUptimeMap = useMemo(() => {
         const map = new Map<string, string>();
@@ -163,12 +166,12 @@ const NocManagementTab: React.FC<NocManagementTabProps> = ({ workspaces }) => {
             setLoading(false);
             setIsInitialLoad(false);
         }
-    }, [workspaceIds.join(','), token]);
+    }, [workspaceIdsKey, token]);
 
     // Reset debounce ref saat workspaceIds berubah agar filter switch langsung fetch
     useEffect(() => {
         lastFetchTimeRef.current = 0;
-    }, [workspaceIds.join(',')]);
+    }, [workspaceIdsKey]);
 
     useEffect(() => {
         fetchSecrets();

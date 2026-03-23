@@ -401,11 +401,21 @@ exports.setSecretStatus = async (req, res) => {
         const realId = await resolveSecretId(workspaceId, id, deviceId);
         await runCommandForWorkspace(workspaceId, '/ppp/secret/set', [`=.id=${realId}`, `=disabled=${disabled}`], deviceId);
         
+        // Optimasi: Update DB segera agar broadcast mendapatkan data terbaru secara instant
+        const isDisabled = disabled === 'true' || disabled === 'yes';
+        let dbQuery = 'UPDATE pppoe_secrets SET disabled = ? WHERE workspace_id = ? AND name = ?';
+        let dbParams = [isDisabled ? 1 : 0, workspaceId, id];
+        if (deviceId) {
+            dbQuery += ' AND device_id = ?';
+            dbParams.push(deviceId);
+        }
+        await pool.query(dbQuery, dbParams).catch(e => console.error('[DB Cache Update] Failed:', e.message));
+
         // Trigger refresh agar UI langsung update
         refreshSecretsNow(workspaceId, deviceId);
         broadcast.broadcastSinglePppoeUpdate(workspaceId, deviceId, id.startsWith('*') ? null : id); // Jika id adalah nama, bisa langsung
         
-        res.status(200).json({ message: `Secret berhasil di-${disabled === 'true' ? 'disable' : 'enable'}.` });
+        res.status(200).json({ message: `Secret berhasil di-${isDisabled ? 'disable' : 'enable'}.` });
     } catch (error) { res.status(500).json({ message: error.message }); }
 };
 
@@ -698,8 +708,8 @@ exports.isolateSecret = async (req, res) => {
         }
 
         console.log(`[Isolate Secret] Step 3: Saving previous_profile: ${currentProfile} to DB`);
-        // 3. Simpan profil lama ke database
-        let updateQuery = 'UPDATE pppoe_secrets SET previous_profile = ? WHERE workspace_id = ? AND name = ?';
+        // 3. Simpan profil lama dan UPDATE profil baru ke database (fast-path cache)
+        let updateQuery = 'UPDATE pppoe_secrets SET profile = "Isolir", previous_profile = ? WHERE workspace_id = ? AND name = ?';
         let updateParams = [currentProfile, workspaceId, secretName];
         if (deviceId) {
             updateQuery += ' AND device_id = ?';
@@ -714,6 +724,8 @@ exports.isolateSecret = async (req, res) => {
             for (const active of activeData) {
                 await runCommandForWorkspace(workspaceId, '/ppp/active/remove', [`=.id=${active['.id']}`], deviceId);
             }
+            // Update DB cache segera agar status "OFFLINE" langsung broadcast
+            await pool.query('UPDATE pppoe_secrets SET is_active = 0, active_connection_id = NULL WHERE workspace_id = ? AND name = ?', [workspaceId, secretName]).catch(() => {});
         }
 
         refreshSecretsNow(workspaceId, deviceId);
@@ -769,9 +781,9 @@ exports.unisolateSecret = async (req, res) => {
         // 3. Kembalikan profil di MikroTik
         await runCommandForWorkspace(workspaceId, '/ppp/secret/set', [`=.id=${realId}`, `=profile=${targetProfile}`], deviceId);
 
-        // 4. Bersihkan previous_profile di database
-        let clearQuery = 'UPDATE pppoe_secrets SET previous_profile = NULL WHERE workspace_id = ? AND name = ?';
-        let clearParams = [workspaceId, secretName];
+        // 4. Bersihkan previous_profile dan UPDATE profil ke database (fast-path cache)
+        let clearQuery = 'UPDATE pppoe_secrets SET profile = ?, previous_profile = NULL WHERE workspace_id = ? AND name = ?';
+        let clearParams = [targetProfile, workspaceId, secretName];
         if (deviceId) {
             clearQuery += ' AND device_id = ?';
             clearParams.push(deviceId);
@@ -784,6 +796,8 @@ exports.unisolateSecret = async (req, res) => {
             for (const active of activeData) {
                 await runCommandForWorkspace(workspaceId, '/ppp/active/remove', [`=.id=${active['.id']}`], deviceId);
             }
+            // Update DB cache segera agar status "OFFLINE" langsung broadcast
+            await pool.query('UPDATE pppoe_secrets SET is_active = 0, active_connection_id = NULL WHERE workspace_id = ? AND name = ?', [workspaceId, secretName]).catch(() => {});
         }
 
         // Trigger refresh agar UI langsung update
