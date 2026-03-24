@@ -1,4 +1,5 @@
 const crypto = require('crypto');
+const RouterOSAPI = require('node-routeros').RouterOSAPI;
 
 // Global registry for shared physical listeners
 /**
