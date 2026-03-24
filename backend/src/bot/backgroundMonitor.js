@@ -276,57 +276,54 @@ async function startPhysicalMonitor(group, broadcastCallback) {
                         }
 
                         // --- SLA TRACKING ---
+                        const isSuppressed = Date.now() - serverStartTime < SUPPRESSION_PERIOD_MS;
+                        
                         if (activeUsers.length > 0) {
                             await pool.query(`UPDATE downtime_events SET end_time=NOW(), duration_seconds=TIMESTAMPDIFF(SECOND, start_time, NOW()) WHERE workspace_id=? AND device_id=? AND pppoe_user IN (?) AND end_time IS NULL`, [inst.workspace_id, inst.id, activeUsers.map(u=>u.name)]).catch(() => {});
                         }
-                        const eligibleForDowntime = enriched.filter(s => !s.isActive && (s.disabled === 0 || s.disabled === false || s.disabled === 'false'));
-                        for (const user of eligibleForDowntime) {
-                            const [open] = await pool.query('SELECT id FROM downtime_events WHERE workspace_id=? AND device_id=? AND pppoe_user=? AND end_time IS NULL', [inst.workspace_id, inst.id, user.name]).catch(()=>[[]]);
-                            if (open.length === 0) await pool.query('INSERT INTO downtime_events (workspace_id, device_id, pppoe_user, start_time) VALUES (?, ?, ?, NOW())', [inst.workspace_id, inst.id, user.name]).catch(() => {});
+                        
+                        // Only create NEW downtime events if NOT in suppression period
+                        // This avoids creating "fresh" records for users who were already offline before restart
+                        if (!isSuppressed) {
+                            const eligibleForDowntime = enriched.filter(s => !s.isActive && (s.disabled === 0 || s.disabled === false || s.disabled === 'false'));
+                            for (const user of eligibleForDowntime) {
+                                const [open] = await pool.query('SELECT id FROM downtime_events WHERE workspace_id=? AND device_id=? AND pppoe_user=? AND end_time IS NULL', [inst.workspace_id, inst.id, user.name]).catch(()=>[[]]);
+                                if (open.length === 0) {
+                                    await pool.query('INSERT INTO downtime_events (workspace_id, device_id, pppoe_user, start_time) VALUES (?, ?, ?, NOW())', [inst.workspace_id, inst.id, user.name]).catch(() => {});
+                                }
+                            }
                         }
 
                         // --- REALTIME TOAST NOTIFICATION BROADCAST ---
-                        // Suppress during first 5 minutes after server start (avoid flood on restart)
-                        if (state.broadcastCallback && Date.now() - serverStartTime > SUPPRESSION_PERIOD_MS) {
-                            const downtimeUsers = [];
-                            const reconnectUsers = [];
-
-                            for (const secret of enriched) {
-                                if (secret.disabled === true || secret.disabled === 'true' || secret.disabled === 1) continue;
-                                const cacheKey = `${inst.workspace_id}:${inst.id}:${secret.name}`;
-                                const wasActive = userStatusCache.get(cacheKey);
-
-                                // Only notify on transitions (not first time we see the user)
-                                if (wasActive !== undefined) {
+                        // 1. Always update cache to maintain baseline
+                        for (const secret of enriched) {
+                            const cacheKey = `${inst.workspace_id}:${inst.id}:${secret.name}`;
+                            const wasActive = userStatusCache.get(cacheKey);
+                            
+                            // 2. Only notify if:
+                            // - Suppression period is over
+                            // - We have a valid baseline (wasActive is not undefined)
+                            // - Status actually changed
+                            if (!isSuppressed && wasActive !== undefined && state.broadcastCallback) {
+                                if (secret.disabled !== true && secret.disabled !== 'true' && secret.disabled !== 1) {
                                     if (wasActive && !secret.isActive) {
-                                        // Was online, now offline → DOWN
-                                        downtimeUsers.push(secret.name);
+                                        // Transition: Online -> Offline
+                                        state.broadcastCallback(inst.workspace_id, inst.id, {
+                                            type: 'downtime-notification',
+                                            payload: { users: [secret.name], deviceName: inst.name }
+                                        });
                                     } else if (!wasActive && secret.isActive) {
-                                        // Was offline, now online → UP
-                                        reconnectUsers.push(secret.name);
+                                        // Transition: Offline -> Online
+                                        state.broadcastCallback(inst.workspace_id, inst.id, {
+                                            type: 'reconnect-notification',
+                                            payload: { users: [secret.name], deviceName: inst.name }
+                                        });
                                     }
                                 }
-                                userStatusCache.set(cacheKey, secret.isActive);
                             }
 
-                            if (downtimeUsers.length > 0) {
-                                state.broadcastCallback(inst.workspace_id, inst.id, {
-                                    type: 'downtime-notification',
-                                    payload: { users: downtimeUsers, deviceName: inst.name }
-                                });
-                            }
-                            if (reconnectUsers.length > 0) {
-                                state.broadcastCallback(inst.workspace_id, inst.id, {
-                                    type: 'reconnect-notification',
-                                    payload: { users: reconnectUsers, deviceName: inst.name }
-                                });
-                            }
-                        } else if (Date.now() - serverStartTime < SUPPRESSION_PERIOD_MS) {
-                            // During suppression, still populate cache so we get correct baseline
-                            for (const secret of enriched) {
-                                const cacheKey = `${inst.workspace_id}:${inst.id}:${secret.name}`;
-                                userStatusCache.set(cacheKey, secret.isActive);
-                            }
+                            // Always update cache
+                            userStatusCache.set(cacheKey, secret.isActive);
                         }
                     }
 
