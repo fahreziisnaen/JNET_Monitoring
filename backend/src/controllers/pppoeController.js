@@ -156,9 +156,14 @@ exports.getNextIp = async (req, res) => {
     console.log(`[Next IP] Request untuk profil: "${profile}" di workspace: ${workspace_id}`);
 
     try {
+        const deviceId = req.query.deviceId ? parseInt(req.query.deviceId) : null;
+        if (!deviceId) {
+            return res.status(400).json({ message: 'Device ID wajib disertakan.' });
+        }
+
         const [pools] = await pool.query(
-            'SELECT ip_start, ip_end, gateway FROM ip_pools WHERE workspace_id = ? AND profile_name = ?',
-            [workspace_id, profile]
+            'SELECT ip_start, ip_end, gateway FROM ip_pools WHERE workspace_id = ? AND device_id = ? AND profile_name = ?',
+            [workspace_id, deviceId, profile]
         );
 
         if (pools.length === 0) {
@@ -568,66 +573,107 @@ exports.deleteSecret = async (req, res) => {
     }
 
     const deviceId = req.query.deviceId ? parseInt(req.query.deviceId) : null;
+    
     try {
-        console.log(`[Delete Secret] Request hapus secret ID: ${id} untuk workspace: ${workspace_id}, device: ${deviceId}`);
+        console.log(`[Delete Secret] [STEP 1] Memulai proses hapus untuk ID/Name: ${id} | Workspace: ${workspace_id} | Device: ${deviceId}`);
 
-        // 1. Dapatkan nama secret dari Mikrotik terlebih dahulu sebelum dihapus
-        const secretData = await runCommandForWorkspace(workspace_id, '/ppp/secret/print', [id.startsWith('*') ? `?=.id=${id}` : `?name=${id}`], deviceId);
+        // 1. Dapatkan data secret dari Mikrotik untuk memastikan ID-nya benar
         let secretName = null;
-        let realId = id;
-        if (secretData && secretData.length > 0) {
-            secretName = secretData[0].name;
-            realId = secretData[0]['.id'];
-        } else {
-            console.warn(`[Delete Secret] Tidak dapat menemukan data secret ${id} di router. Namun mencoba melanjutkan proses db hapus...`);
-            secretName = !id.startsWith('*') ? id : null;
-        }
+        let mikrotikId = null;
 
-        // 2. Hapus secret dari router Mikrotik
         try {
-            await runCommandForWorkspace(workspace_id, '/ppp/secret/remove', [`=.id=${realId}`], deviceId);
-            console.log(`[Delete Secret] Berhasil hapus Mikrotik ID: ${realId}`);
-        } catch (e) {
-            console.warn(`[Delete Secret] Penghapusan di router gagal/tidak ada: ${e.message}`);
-        }
+            console.log(`[Delete Secret] [STEP 2] Mencari secret "${id}" di router...`);
+            // Gunakan timeout yang lebih pendek untuk pengecekan (30 detik) agar tidak menggantung terlalu lama
+            const secretData = await runCommandForWorkspace(workspace_id, '/ppp/secret/print', 
+                [id.startsWith('*') ? `?=.id=${id}` : `?name=${id}`], 
+                deviceId,
+                { timeout: 30000 }
+            );
 
-        // 3. Jika nama secret ditemukan, hapus referensi data lokasinya dari MySQL
-        if (secretName) {
-            // Hapus foto rumah jika ada
-            const [clientPhoto] = await pool.query('SELECT photo_url FROM clients WHERE pppoe_secret_name = ? AND workspace_id = ?', [secretName, workspace_id]);
-            if (clientPhoto.length > 0 && clientPhoto[0].photo_url) {
-                const photoPath = path.join(__dirname, '../../', clientPhoto[0].photo_url);
-                if (fs.existsSync(photoPath)) {
-                    fs.unlinkSync(photoPath);
+            if (secretData && secretData.length > 0) {
+                secretName = secretData[0].name;
+                mikrotikId = secretData[0]['.id'];
+                console.log(`[Delete Secret] Menemukan secret di router: ${secretName} (${mikrotikId})`);
+            } else {
+                console.warn(`[Delete Secret] Secret "${id}" tidak ditemukan di router Mikrotik.`);
+                // Jika id tidak diawali *, kemungkinan besar itu adalah nama. Gunakan itu sebagai fallback untuk hapus DB.
+                if (!id.startsWith('*')) {
+                    secretName = id;
                 }
             }
+        } catch (error) {
+            console.warn(`[Delete Secret] [WARN] Gagal cek status router (Router mungkin offline): ${error.message}`);
+            // Tetap set secretName agar proses DB bisa lanjut jika id bukan Mikrotik ID
+            if (!id.startsWith('*')) {
+                secretName = id;
+            }
+        }
 
-            // Hapus hubungan line dengan ODP (jika ada)
+        // 2. Hapus secret dari router Mikrotik (Hanya jika ID ditemukan)
+        if (mikrotikId) {
+            try {
+                console.log(`[Delete Secret] [STEP 3] Menghapus secret dari Mikrotik (ID: ${mikrotikId})...`);
+                await runCommandForWorkspace(workspace_id, '/ppp/secret/remove', [`=.id=${mikrotikId}`], deviceId);
+                console.log(`[Delete Secret] Berhasil menghapus dari Mikrotik.`);
+            } catch (e) {
+                console.error(`[Delete Secret] [ERROR] Gagal menghapus dari Mikrotik: ${e.message}`);
+                // Kita tidak throw error di sini agar database tetap bisa dibersihkan
+            }
+        }
+
+        // 3. Bersihkan data di Database MySQL jika nama secret diketahui
+        if (secretName) {
+            console.log(`[Delete Secret] [STEP 4] Membersihkan database untuk secret name: ${secretName}`);
+            
+            // A. Hapus foto rumah jika ada
+            try {
+                const [clientPhoto] = await pool.query(
+                    'SELECT photo_url FROM clients WHERE pppoe_secret_name = ? AND workspace_id = ?', 
+                    [secretName, workspace_id]
+                );
+                
+                if (clientPhoto.length > 0 && clientPhoto[0].photo_url) {
+                    const photoPath = path.join(__dirname, '../../', clientPhoto[0].photo_url);
+                    if (fs.existsSync(photoPath)) {
+                        fs.unlinkSync(photoPath);
+                        console.log(`[Delete Secret] Foto berhasil dihapus: ${photoPath}`);
+                    }
+                }
+            } catch (photoErr) {
+                console.warn(`[Delete Secret] Gagal menghapus foto: ${photoErr.message}`);
+            }
+
+            // B. Hapus hubungan line dengan ODP
             await pool.query(
                 'DELETE FROM odp_user_connections WHERE workspace_id = ? AND pppoe_secret_name = ?',
                 [workspace_id, secretName]
             );
 
-            // Hapus koordinat client dari peta
+            // C. Hapus koordinat client dari peta
             const [result] = await pool.query(
                 'DELETE FROM clients WHERE pppoe_secret_name = ? AND workspace_id = ?',
                 [secretName, workspace_id]
             );
 
             if (result.affectedRows > 0) {
-                console.log(`[Delete Secret] Client map data untuk ${secretName} berhasil dihapus dari database.`);
+                console.log(`[Delete Secret] Data client map "${secretName}" berhasil dihapus dari database.`);
             }
-        }
-        
-        // Trigger refresh agar UI langsung update
-        refreshSecretsNow(workspace_id, deviceId);
-        if (secretName) {
+            
+            // D. Broadcast penghapusan ke WebSocket agar UI terupdate real-time
             broadcast.broadcastSinglePppoeRemove(workspace_id, deviceId, secretName);
         }
         
-        res.status(200).json({ message: 'Secret dan data client map berhasil dihapus.' });
+        // Trigger background refresh agar cache mikrotikStoreSinkron
+        refreshSecretsNow(workspace_id, deviceId);
+        
+        console.log(`[Delete Secret] [STEP 5] Proses selesai untuk user: ${secretName || id}`);
+        res.status(200).json({ 
+            success: true,
+            message: 'Secret berhasil dihapus (Mikrotik & Database).',
+            router_synced: !!mikrotikId
+        });
     } catch (error) {
-        console.error(`[Delete Secret] Gagal hapus id: ${id}: ${error.message}`);
+        console.error(`[Delete Secret] [CRITICAL ERROR] Gagal total hapus id ${id}: ${error.message}`);
         res.status(500).json({ message: error.message });
     }
 };

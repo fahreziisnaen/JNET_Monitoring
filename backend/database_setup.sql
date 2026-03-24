@@ -168,13 +168,15 @@ CREATE TABLE `pending_registrations` (
 CREATE TABLE `ip_pools` (
   `id` int NOT NULL AUTO_INCREMENT,
   `workspace_id` int NOT NULL,
+  `device_id` int NOT NULL,
   `profile_name` varchar(100) NOT NULL,
   `ip_start` varchar(45) NOT NULL,
   `ip_end` varchar(45) NOT NULL,
   `gateway` varchar(45) NOT NULL,
   PRIMARY KEY (`id`),
-  UNIQUE KEY `workspace_profile` (`workspace_id`,`profile_name`),
-  CONSTRAINT `fk_ip_pools_workspace` FOREIGN KEY (`workspace_id`) REFERENCES `workspaces` (`id`) ON DELETE CASCADE
+  UNIQUE KEY `unique_pool_per_device` (`workspace_id`, `device_id`, `profile_name`),
+  CONSTRAINT `fk_ip_pools_workspace` FOREIGN KEY (`workspace_id`) REFERENCES `workspaces` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_ip_pools_device` FOREIGN KEY (`device_id`) REFERENCES `mikrotik_devices` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE `network_assets` (

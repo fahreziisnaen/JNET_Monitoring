@@ -3,10 +3,16 @@ const { runCommandForWorkspace } = require('../utils/apiConnection');
 
 exports.getPools = async (req, res) => {
     const workspaceId = req.user.workspace_id;
+    const deviceId = req.query.deviceId ? parseInt(req.query.deviceId) : null;
+    
+    if (!deviceId) {
+        return res.status(400).json({ message: 'Device ID wajib disertakan.' });
+    }
+
     try {
         const [pools] = await pool.query(
-            'SELECT * FROM ip_pools WHERE workspace_id = ? ORDER BY profile_name ASC',
-            [workspaceId]
+            'SELECT * FROM ip_pools WHERE workspace_id = ? AND device_id = ? ORDER BY profile_name ASC',
+            [workspaceId, deviceId]
         );
         // Return pools dengan info apakah database kosong
         res.json({
@@ -93,10 +99,13 @@ exports.syncPoolsFromMikrotik = async (req, res) => {
             // Gunakan Promise.all untuk insert secara parallel (lebih cepat dari sequential)
             const insertPromises = poolsToInsert.map(poolData => {
                 const sql = `
-                    INSERT INTO ip_pools (workspace_id, profile_name, ip_start, ip_end, gateway) 
-                    VALUES (?, ?, ?, ?, ?)
+                    INSERT INTO ip_pools (workspace_id, device_id, profile_name, ip_start, ip_end, gateway) 
+                    VALUES (?, ?, ?, ?, ?, ?)
                     ON DUPLICATE KEY UPDATE ip_start=VALUES(ip_start), ip_end=VALUES(ip_end), gateway=VALUES(gateway)`;
-                return pool.query(sql, poolData);
+                // poolData: [workspaceId, profileName, ipStart, ipEnd, gateway]
+                // Perlu disisipkan deviceId di posisi ke-2
+                const fullPoolData = [poolData[0], deviceId, poolData[1], poolData[2], poolData[3], poolData[4]];
+                return pool.query(sql, fullPoolData);
             });
             
             await Promise.all(insertPromises);
@@ -116,16 +125,22 @@ exports.syncPoolsFromMikrotik = async (req, res) => {
 
 exports.addPool = async (req, res) => {
     const workspaceId = req.user.workspace_id;
+    const deviceId = req.query.deviceId ? parseInt(req.query.deviceId) : (req.body.deviceId ? parseInt(req.body.deviceId) : null);
     const { profile_name, ip_start, ip_end, gateway } = req.body;
+    
+    if (!deviceId) {
+        return res.status(400).json({ message: 'Device ID wajib disertakan.' });
+    }
+
     if (!profile_name || !ip_start || !ip_end || !gateway) {
         return res.status(400).json({ message: 'Semua field wajib diisi.' });
     }
     try {
         const sql = `
-            INSERT INTO ip_pools (workspace_id, profile_name, ip_start, ip_end, gateway) 
-            VALUES (?, ?, ?, ?, ?)
+            INSERT INTO ip_pools (workspace_id, device_id, profile_name, ip_start, ip_end, gateway) 
+            VALUES (?, ?, ?, ?, ?, ?)
             ON DUPLICATE KEY UPDATE ip_start=VALUES(ip_start), ip_end=VALUES(ip_end), gateway=VALUES(gateway)`;
-        await pool.query(sql, [workspaceId, profile_name, ip_start, ip_end, gateway]);
+        await pool.query(sql, [workspaceId, deviceId, profile_name, ip_start, ip_end, gateway]);
         res.status(201).json({ message: `IP Pool untuk profil ${profile_name} berhasil disimpan.` });
     } catch (error) {
         res.status(500).json({ message: 'Gagal menyimpan IP Pool.' });

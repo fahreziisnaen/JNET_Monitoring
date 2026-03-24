@@ -35,9 +35,10 @@ const IpPoolManagerModal = ({ isOpen, onClose }: IpPoolManagerModalProps) => {
     setLoading(true);
     setError('');
     try {
+      const deviceQuery = selectedDeviceId ? `?deviceId=${selectedDeviceId}` : '';
       const [poolsRes, profilesRes] = await Promise.all([
-        apiFetch(`${apiUrl}/api/ip-pools`),
-        apiFetch(`${apiUrl}/api/pppoe/profiles`)
+        apiFetch(`${apiUrl}/api/ip-pools${deviceQuery}`),
+        apiFetch(`${apiUrl}/api/pppoe/profiles${deviceQuery}`)
       ]);
       if (!poolsRes.ok || !profilesRes.ok) throw new Error("Gagal memuat data.");
       const poolsResponse = await poolsRes.json();
@@ -84,8 +85,9 @@ const IpPoolManagerModal = ({ isOpen, onClose }: IpPoolManagerModalProps) => {
 
           if (syncRes.ok) {
             // Setelah sync berhasil, fetch ulang data
+            const deviceQuery = selectedDeviceId ? `?deviceId=${selectedDeviceId}` : '';
             const [newPoolsRes] = await Promise.all([
-              apiFetch(`${apiUrl}/api/ip-pools`)
+              apiFetch(`${apiUrl}/api/ip-pools${deviceQuery}`)
             ]);
             if (newPoolsRes.ok) {
               const newPoolsResponse = await newPoolsRes.json();
@@ -180,8 +182,8 @@ const IpPoolManagerModal = ({ isOpen, onClose }: IpPoolManagerModalProps) => {
   };
 
   useEffect(() => {
-    if (isOpen) fetchData();
-  }, [isOpen]);
+    if (isOpen && selectedDeviceId) fetchData();
+  }, [isOpen, selectedDeviceId]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
@@ -218,7 +220,8 @@ const IpPoolManagerModal = ({ isOpen, onClose }: IpPoolManagerModalProps) => {
     setLoading(true);
     setError('');
     try {
-      const res = await apiFetch(`${apiUrl}/api/ip-pools`, {
+      const saveDeviceQuery = selectedDeviceId ? `?deviceId=${selectedDeviceId}` : '';
+      const res = await apiFetch(`${apiUrl}/api/ip-pools${saveDeviceQuery}`, {
         method: 'POST',
         body: JSON.stringify(formData)
       });
@@ -226,8 +229,9 @@ const IpPoolManagerModal = ({ isOpen, onClose }: IpPoolManagerModalProps) => {
       if (!res.ok) throw new Error(data.message);
 
       // Setelah submit berhasil, refresh data dan update form dengan data yang baru disimpan
+      const refreshDeviceQuery = selectedDeviceId ? `?deviceId=${selectedDeviceId}` : '';
       const [poolsRes] = await Promise.all([
-        apiFetch(`${apiUrl}/api/ip-pools`)
+        apiFetch(`${apiUrl}/api/ip-pools${refreshDeviceQuery}`)
       ]);
       if (poolsRes.ok) {
         const poolsResponse = await poolsRes.json();
