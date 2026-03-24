@@ -460,6 +460,10 @@ const PppoeSecretsTable = ({ refreshTrigger, onActionComplete, initialFilter = '
         deviceQuery += `${deviceQuery ? '&' : '?'}workspaceId=${targetWorkspaceId}`;
       }
       await apiFetch(`${apiUrl}/api/pppoe/secrets/${encodedId}${deviceQuery}`, { method: 'DELETE' });
+      
+      // Update local state immediately so it disappears from UI instantly
+      setAllSecrets(prev => prev.filter(s => s.name !== secretToDelete.name));
+      
       toast.success("Berhasil Menghapus Secret", { id: toastId, description: `Secret untuk ${secretToDelete.name} telah dihapus.` });
       onActionComplete();
     } catch (error: any) {

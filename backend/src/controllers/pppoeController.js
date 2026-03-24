@@ -257,30 +257,7 @@ exports.addSecret = async (req, res) => {
     try {
         const targetDeviceId = req.query.deviceId ? parseInt(req.query.deviceId) : (req.body.deviceId ? parseInt(req.body.deviceId) : null);
 
-        try {
-            console.log(`[Add Secret][${requestId}] Pengecekan proaktif via database (instant)...`);
-            
-            let checkQuery = 'SELECT 1 FROM pppoe_secrets WHERE workspace_id = ? AND name = ?';
-            let checkParams = [workspaceId, name];
-            if (targetDeviceId) {
-                checkQuery += ' AND device_id = ?';
-                checkParams.push(targetDeviceId);
-            }
-            const [existing] = await pool.query(checkQuery, checkParams);
-
-            if (existing.length > 0) {
-                console.log(`[Add Secret][${requestId}] Proactive Detect (Cache): Secret sudah ada. Menanggapi sukses.`);
-                return res.status(201).json({
-                    message: `Secret untuk ${name} sudah siap di MikroTik.`,
-                    isIdempotent: true
-                });
-            }
-
-            // Jika tidak ada di cache, kita boleh lanjut tetap melakukan /add langsung
-            // Mencegah lambatnya /print di router yang sedang sibuk.
-        } catch (checkError) {
-            console.warn(`[Add Secret][${requestId}] Pengecekan cache gagal, lanjut ke upaya pembuatan...`);
-        }
+        // Proactive check removed to ensure real router verification.
 
         const params = [
             `=name=${name}`,
@@ -594,8 +571,18 @@ exports.deleteSecret = async (req, res) => {
                 console.log(`[Delete Secret] Menemukan secret di router: ${secretName} (${mikrotikId})`);
             } else {
                 console.warn(`[Delete Secret] Secret "${id}" tidak ditemukan di router Mikrotik.`);
-                // Jika id tidak diawali *, kemungkinan besar itu adalah nama. Gunakan itu sebagai fallback untuk hapus DB.
-                if (!id.startsWith('*')) {
+                
+                // Fallback: Cari nama asli dari database jika id yang dikirim adalah Mikrotik ID (*1, dsb)
+                if (id.startsWith('*')) {
+                    const [dbSecret] = await pool.query(
+                        'SELECT name FROM pppoe_secrets WHERE workspace_id = ? AND device_id = ? AND (name = ? OR `active_connection_id` = ?)',
+                        [workspace_id, deviceId, id, id]
+                    );
+                    if (dbSecret.length > 0) {
+                        secretName = dbSecret[0].name;
+                        console.log(`[Delete Secret] Resolve nama dari DB: ${secretName}`);
+                    }
+                } else {
                     secretName = id;
                 }
             }
