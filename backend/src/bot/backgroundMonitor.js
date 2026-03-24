@@ -215,7 +215,12 @@ async function startPhysicalMonitor(group, broadcastCallback) {
                     const currentSecrets = mikrotikStore.getSecrets(inst.workspace_id, inst.id) || [];
                     const enriched = currentSecrets.map(secret => {
                         const activeInfo = activeMap.get(secret.name);
-                        const enrichedSecret = { ...secret, isActive: !!activeInfo };
+                        const enrichedSecret = { 
+                            ...secret, 
+                            isActive: !!activeInfo,
+                            router_name: inst.name,
+                            workspace_name: inst.workspace_name
+                        };
                         if (activeInfo?.uptime) enrichedSecret.uptime = activeInfo.uptime;
                         if (activeInfo?.['.id']) enrichedSecret.activeConnectionId = activeInfo['.id'];
                         if (activeInfo?.address) {
