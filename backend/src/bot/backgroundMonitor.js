@@ -213,22 +213,24 @@ async function startPhysicalMonitor(group, broadcastCallback) {
             for (const inst of group.devices) {
                 try {
                     const currentSecrets = mikrotikStore.getSecrets(inst.workspace_id, inst.id) || [];
-                    const enriched = currentSecrets.map(secret => {
-                        const activeInfo = activeMap.get(secret.name);
-                        const enrichedSecret = { 
-                            ...secret, 
-                            isActive: !!activeInfo,
-                            router_name: inst.name,
-                            workspace_name: inst.workspace_name
-                        };
-                        if (activeInfo?.uptime) enrichedSecret.uptime = activeInfo.uptime;
-                        if (activeInfo?.['.id']) enrichedSecret.activeConnectionId = activeInfo['.id'];
-                        if (activeInfo?.address) {
-                            enrichedSecret.currentAddress = activeInfo.address;
-                            if (!enrichedSecret['remote-address']) enrichedSecret['remote-address'] = activeInfo.address;
-                        }
-                        return enrichedSecret;
-                    });
+                    const enriched = currentSecrets
+                        .filter(s => !mikrotikStore.isPendingDelete(inst.workspace_id, inst.id, s.name))
+                        .map(secret => {
+                            const activeInfo = activeMap.get(secret.name);
+                            const enrichedSecret = { 
+                                ...secret, 
+                                isActive: !!activeInfo,
+                                router_name: inst.name,
+                                workspace_name: inst.workspace_name
+                            };
+                            if (activeInfo?.uptime) enrichedSecret.uptime = activeInfo.uptime;
+                            if (activeInfo?.['.id']) enrichedSecret.activeConnectionId = activeInfo['.id'];
+                            if (activeInfo?.address) {
+                                enrichedSecret.currentAddress = activeInfo.address;
+                                if (!enrichedSecret['remote-address']) enrichedSecret['remote-address'] = activeInfo.address;
+                            }
+                            return enrichedSecret;
+                        });
 
                     const activeUsers = enriched.filter(s => s.isActive);
                     const inactiveNames = enriched.filter(s => !s.isActive).map(s => s.name);

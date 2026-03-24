@@ -671,6 +671,7 @@ exports.deleteSecret = async (req, res) => {
             }
             
             // D. Broadcast penghapusan ke WebSocket agar UI terupdate real-time
+            mikrotikStore.markPendingDelete(workspace_id, deviceId, secretName);
             broadcast.broadcastSinglePppoeRemove(workspace_id, deviceId, secretName);
         }
         

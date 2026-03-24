@@ -8,8 +8,24 @@ const workspaceActive = new Map();  // Map<workspaceId_deviceId, active[]>
 const deviceStatus = new Map();     // Map<workspaceId_deviceId, status>
 const deviceResource = new Map();   // Map<workspaceId_deviceId, resource{}>
 const deviceInfo = new Map();       // Map<workspaceId_deviceId, { name, workspaceName }>
+const pendingDeletes = new Map();   // Map<workspaceId_deviceId_name, expirationTime>
 
 module.exports = {
+    markPendingDelete: (workspaceId, deviceId, name) => {
+        const key = `${workspaceId}_${deviceId}_${name}`;
+        pendingDeletes.set(key, Date.now() + 15000); // 15 detik ghost prevention
+    },
+
+    isPendingDelete: (workspaceId, deviceId, name) => {
+        const key = `${workspaceId}_${deviceId}_${name}`;
+        const expiry = pendingDeletes.get(key);
+        if (!expiry) return false;
+        if (Date.now() > expiry) {
+            pendingDeletes.delete(key);
+            return false;
+        }
+        return true;
+    },
     setDeviceInfo: (workspaceId, deviceId, info) => {
         deviceInfo.set(`${workspaceId}_${deviceId}`, info);
     },
@@ -52,6 +68,8 @@ module.exports = {
             } else {
                 secrets.push(attributes);
             }
+            // Jika ada pending delete untuk nama ini (misal baru dihapus lalu dibuat lagi), hapus dari blacklist
+            pendingDeletes.delete(`${workspaceId}_${deviceId}_${attributes.name}`);
         } else if (action === 'remove') {
             secrets = secrets.filter(s => s['.id'] !== attributes['.id'] && s.name !== attributes.name);
         }
