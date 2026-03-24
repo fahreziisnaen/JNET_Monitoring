@@ -75,39 +75,24 @@ const NocManagementTab: React.FC<NocManagementTabProps> = ({ workspaces }) => {
     }, []);
 
     const secrets = useMemo(() => {
-        // Merge API cache with live WS data
-        const mergedMap = new Map();
-        
-        // 1. Start with API data (stale cache)
-        apiSecrets.forEach(s => {
+        // Base structure is ALWAYS from API secrets (static list)
+        // Live WS data (allPppoeSecrets) is ONLY used to overlay status/uptime
+        return apiSecrets.map(s => {
+            const live = allPppoeSecrets.find(ls => ls.name === s.name && ls.deviceId === s.deviceId);
             const deviceStatus = allDevicesStatus[s.deviceId]?.isConnected ? 'connected' : 'disconnected';
-            mergedMap.set(`${s.deviceId}-${s.name}`, { ...s, mikrotik_status: deviceStatus });
-        });
-        
-        // 2. Overlay with Live WS data (real-time)
-        allPppoeSecrets.forEach(s => {
-            // Find the workspace name for this secret if available in API data
-            const existing = mergedMap.get(`${s.deviceId}-${s.name}`);
             
-            // Resolve workspace/router name from prop or existing data as fallback
-            const wsFromProp = workspaces.find(w => w.id === s.workspace_id);
-            const resolvedWsName = s.workspace_name || existing?.workspace_name || wsFromProp?.name || 'Loading...';
-            const resolvedRouterName = s.router_name || existing?.router_name || 'Loading...';
-            
-            mergedMap.set(`${s.deviceId}-${s.name}`, {
-                ...existing,
+            return {
                 ...s,
-                mikrotik_status: 'connected',
-                workspace_name: resolvedWsName,
-                router_name: resolvedRouterName,
-                workspace_id: s.workspace_id
-            });
-        });
-        
-        const all = Array.from(mergedMap.values()) as PppoeSecret[];
-
-        // CRITICAL: Filter to only show secrets from selected workspaces
-        return all.filter(s => workspaceIds.includes(s.workspace_id));
+                ...live, // Overlay real-time props (isActive, uptime, currentAddress)
+                mikrotik_status: deviceStatus,
+                // Ensure IDs and names from API are preserved if live is slightly different
+                name: s.name,
+                deviceId: s.deviceId,
+                workspace_id: s.workspace_id,
+                workspace_name: s.workspace_name,
+                router_name: s.router_name
+            };
+        }).filter(s => workspaceIds.includes(s.workspace_id));
     }, [apiSecrets, allPppoeSecrets, allDevicesStatus, workspaceIdsKey]);
 
     const secretsUptimeMap = useMemo(() => {
