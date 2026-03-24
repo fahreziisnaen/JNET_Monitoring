@@ -44,6 +44,7 @@ const PppoeSecretsTable = ({ refreshTrigger, onActionComplete, initialFilter = '
   const [isActionLoading, setIsActionLoading] = useState(false);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [secretToEdit, setSecretToEdit] = useState<PppoeSecret | null>(null);
+  const [recentlyDeleted, setRecentlyDeleted] = useState<Set<string>>(new Set());
   const apiUrl = process.env.NEXT_PUBLIC_API_BASE_URL;
 
   // State untuk local tick agarpendapatan uptime terlihat berjalan tiap detik
@@ -58,7 +59,9 @@ const PppoeSecretsTable = ({ refreshTrigger, onActionComplete, initialFilter = '
     }
 
     // Gunakan data WebSocket untuk tabel (sama seperti summary aktif)
-    const secretsArray = Array.isArray(pppoeSecrets) ? pppoeSecrets : [];
+    // Filter out secrets that were recently deleted to prevent ghosting
+    const secretsArray = (Array.isArray(pppoeSecrets) ? pppoeSecrets : [])
+      .filter((s: any) => !recentlyDeleted.has(s.name));
 
     // Transform secrets dari WebSocket ke format yang diharapkan
     // Data sudah di-enrich di backend dengan isActive, uptime, currentAddress, activeConnectionId
@@ -461,8 +464,12 @@ const PppoeSecretsTable = ({ refreshTrigger, onActionComplete, initialFilter = '
       }
       await apiFetch(`${apiUrl}/api/pppoe/secrets/${encodedId}${deviceQuery}`, { method: 'DELETE' });
       
-      // Update local state immediately so it disappears from UI instantly
-      setAllSecrets(prev => prev.filter(s => s.name !== secretToDelete.name));
+      // Optimasi: Tambahkan ke recentlyDeleted agar filter di useEffect langsung membuangnya
+      setRecentlyDeleted(prev => {
+        const next = new Set(prev);
+        next.add(secretToDelete.name);
+        return next;
+      });
       
       toast.success("Berhasil Menghapus Secret", { id: toastId, description: `Secret untuk ${secretToDelete.name} telah dihapus.` });
       onActionComplete();

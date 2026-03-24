@@ -366,8 +366,12 @@ const NocManagementTab: React.FC<NocManagementTabProps> = ({ workspaces }) => {
             const res = await apiFetch(`${apiUrl}/api/pppoe/secrets/${encodedId}?workspaceId=${secretToDelete.workspace_id}&deviceId=${secretToDelete.deviceId}`, { method: 'DELETE' });
             if (!res.ok) throw new Error("Gagal Menghapus Secret");
 
+            // Update local state instan agar hilang dari UI tanpa nunggu fetch/WS
+            setApiSecrets(prev => prev.filter(s => !(s.name === secretToDelete.name && s.deviceId === secretToDelete.deviceId)));
+
             toast.success("Berhasil Menghapus Secret", { id: toastId, description: `Secret untuk ${secretToDelete.name} telah dihapus.` });
             lastFetchTimeRef.current = 0;
+            // Tetap panggil fetchSecrets di background untuk sinkronisasi akhir, tapi UI sudah bersih duluan
             fetchSecrets();
         } catch (error: any) {
             toast.error("Gagal Menghapus Secret", { id: toastId, description: error.message || "Terjadi kesalahan saat menghapus data." });
