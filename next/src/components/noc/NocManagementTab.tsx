@@ -64,6 +64,7 @@ const NocManagementTab: React.FC<NocManagementTabProps> = ({ workspaces }) => {
     const lastFetchTimeRef = React.useRef<number>(0);
     const [isInitialLoad, setIsInitialLoad] = useState(true);
     const [uptimeOffset, setUptimeOffset] = useState(0);
+    const [recentlyDeleted, setRecentlyDeleted] = useState<Set<string>>(new Set());
     const memoizedSecretToEdit = useMemo(() => {
         if (!secretToEdit) return null;
         return { ...secretToEdit, disabled: secretToEdit.disabled === 'true' };
@@ -105,9 +106,12 @@ const NocManagementTab: React.FC<NocManagementTabProps> = ({ workspaces }) => {
         });
         
         const all = Array.from(mergedMap.values()) as PppoeSecret[];
+        // Filter out recently deleted items to prevent "ghosting" from slow WS/API sync
+        const filtered = all.filter(s => !recentlyDeleted.has(`${s.workspace_id}-${s.deviceId}-${s.name}`));
+
         // CRITICAL: Filter to only show secrets from selected workspaces
-        return all.filter(s => workspaceIds.includes(s.workspace_id));
-    }, [apiSecrets, allPppoeSecrets, allDevicesStatus, workspaceIdsKey]);
+        return filtered.filter(s => workspaceIds.includes(s.workspace_id));
+    }, [apiSecrets, allPppoeSecrets, allDevicesStatus, workspaceIdsKey, recentlyDeleted]);
 
     const secretsUptimeMap = useMemo(() => {
         const map = new Map<string, string>();
@@ -374,8 +378,10 @@ const NocManagementTab: React.FC<NocManagementTabProps> = ({ workspaces }) => {
             if (!res.ok) throw new Error("Gagal Menghapus Secret");
 
             // Update local state instan agar hilang dari UI tanpa nunggu fetch/WS
+            const deleteKey = `${secretToDelete.workspace_id}-${secretToDelete.deviceId}-${secretToDelete.name}`;
+            setRecentlyDeleted(prev => new Set(prev).add(deleteKey));
             setApiSecrets(prev => prev.filter(s => !(s.name === secretToDelete.name && s.deviceId === secretToDelete.deviceId)));
-
+            
             toast.success("Berhasil Menghapus Secret", { id: toastId, description: `Secret untuk ${secretToDelete.name} telah dihapus.` });
             lastFetchTimeRef.current = 0;
             // Tetap panggil fetchSecrets di background untuk sinkronisasi akhir, tapi UI sudah bersih duluan
