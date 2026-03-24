@@ -13,7 +13,20 @@ exports.listDevices = async (req, res) => {
 
     try {
         if (user.is_super_admin) {
-            // Superadmin can see ALL devices in ALL workspaces
+            // Jika Superadmin minta workspace spesifik, filter berdasarkan itu.
+            // Jika tidak, baru tampilkan SEMUA.
+            if (req.query.workspaceId) {
+                const targetWsId = parseInt(req.query.workspaceId);
+                const [devices] = await pool.query(`
+                    SELECT d.id, d.name, d.host, d.user, d.port, d.workspace_id, w.name as workspace_name 
+                    FROM mikrotik_devices d
+                    JOIN workspaces w ON d.workspace_id = w.id
+                    WHERE d.workspace_id = ?
+                `, [targetWsId]);
+                return res.status(200).json(devices);
+            }
+
+            // Default Superadmin: Tampilkan SEMUA
             const [devices] = await pool.query(`
                 SELECT d.id, d.name, d.host, d.user, d.port, d.workspace_id, w.name as workspace_name 
                 FROM mikrotik_devices d
