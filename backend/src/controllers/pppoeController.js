@@ -272,11 +272,23 @@ exports.addSecret = async (req, res) => {
 
         console.log(`[Add Secret][${requestId}] Mengirim command /add ke MikroTik...`);
         await runCommandForWorkspace(workspaceId, '/ppp/secret/add', params, targetDeviceId);
-        console.log(`[Add Secret][${requestId}] Berhasil membuat secret.`);
-        
-        // Trigger refresh agar UI langsung update
-        refreshSecretsNow(workspaceId, targetDeviceId);
+        // 2. Langsung perbarui cache (Manually) agar UI bisa update seketika
+        mikrotikStore.updateSecret(workspaceId, targetDeviceId, 'add', {
+            name,
+            password,
+            profile,
+            'remote-address': remoteAddress || null,
+            disabled: 'false',
+            isActive: false,
+            uptime: '0s',
+            deviceId: targetDeviceId
+        });
+
+        // 3. Broadcast ke UI seketika
         broadcast.broadcastSinglePppoeUpdate(workspaceId, targetDeviceId, name);
+
+        // 4. Trigger refresh latar belakang (Optimized) untuk polling rincian asli
+        refreshSecretsNow(workspaceId, targetDeviceId);
         
         res.status(201).json({ message: `Secret untuk ${name} berhasil dibuat.` });
     } catch (error) {
@@ -381,8 +393,14 @@ exports.setSecretStatus = async (req, res) => {
         const realId = await resolveSecretId(workspaceId, id, deviceId);
         await runCommandForWorkspace(workspaceId, '/ppp/secret/set', [`=.id=${realId}`, `=disabled=${disabled}`], deviceId);
         
-        // Optimasi: Update DB segera agar broadcast mendapatkan data terbaru secara instant
+        // Optimasi: Update cache global & DB segera agar UI update instan
         const isDisabled = disabled === 'true' || disabled === 'yes';
+        mikrotikStore.updateSecret(workspaceId, deviceId, 'change', { 
+            name: id.startsWith('*') ? null : id, 
+            '.id': realId,
+            disabled: disabled 
+        });
+
         let dbQuery = 'UPDATE pppoe_secrets SET disabled = ? WHERE workspace_id = ? AND name = ?';
         let dbParams = [isDisabled ? 1 : 0, workspaceId, id];
         if (deviceId) {
@@ -513,9 +531,17 @@ exports.updateSecret = async (req, res) => {
         }
         await runCommandForWorkspace(workspace_id, '/ppp/secret/set', params, deviceId);
         
-        // Trigger refresh agar UI langsung update
+        // 2. Update cache lokal (mikrotikStore) agar UI update instan
+        mikrotikStore.updateSecret(workspace_id, deviceId, 'change', {
+            '.id': realId,
+            name: name || oldName,
+            profile: profile,
+            password: password || undefined
+        });
+
+        // 3. Trigger refresh agar UI langsung update
         refreshSecretsNow(workspace_id, deviceId);
-        broadcast.broadcastSinglePppoeUpdate(workspace_id, deviceId, name || id);
+        broadcast.broadcastSinglePppoeUpdate(workspace_id, deviceId, name || oldName || id);
         
         // Update database references if name changed
         if (name && oldName && name !== oldName) {
@@ -759,6 +785,13 @@ exports.isolateSecret = async (req, res) => {
             await pool.query('UPDATE pppoe_secrets SET is_active = 0, active_connection_id = NULL WHERE workspace_id = ? AND name = ?', [workspaceId, secretName]).catch(() => {});
         }
 
+        // 5. Update cache lokal (mikrotikStore) agar UI update instan
+        mikrotikStore.updateSecret(workspaceId, deviceId, 'change', {
+            name: secretName,
+            profile: 'Isolir',
+            isActive: false // Karena di-kick
+        });
+
         refreshSecretsNow(workspaceId, deviceId);
         broadcast.broadcastSinglePppoeUpdate(workspaceId, deviceId, secretName);
         console.log(`[Isolate Secret] Success for ${secretName}`);
@@ -830,6 +863,13 @@ exports.unisolateSecret = async (req, res) => {
             // Update DB cache segera agar status "OFFLINE" langsung broadcast
             await pool.query('UPDATE pppoe_secrets SET is_active = 0, active_connection_id = NULL WHERE workspace_id = ? AND name = ?', [workspaceId, secretName]).catch(() => {});
         }
+
+        // 6. Update cache lokal (mikrotikStore) agar UI update instan
+        mikrotikStore.updateSecret(workspaceId, deviceId, 'change', {
+            name: secretName,
+            profile: targetProfile,
+            isActive: false // Karena di-kick
+        });
 
         // Trigger refresh agar UI langsung update
         refreshSecretsNow(workspaceId, deviceId);

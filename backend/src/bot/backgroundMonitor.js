@@ -356,12 +356,28 @@ async function startPhysicalMonitor(group, broadcastCallback) {
         }
     };
 
-    const intervalId = setInterval(() => runCycle(), POLLING_INTERVAL_MS);
-    state.intervalId = intervalId;
+    state.runCycle = async (isManual = false) => {
+        if (state.isRunning) {
+            if (isManual) state.lastSecretFetch = 0;
+            return;
+        }
+
+        if (state.timeoutId) {
+            clearTimeout(state.timeoutId);
+            state.timeoutId = null;
+        }
+
+        state.isRunning = true;
+        try {
+            await runCycle();
+        } finally {
+            state.isRunning = false;
+            state.timeoutId = setTimeout(() => state.runCycle(), POLLING_INTERVAL_MS);
+        }
+    };
+
     physicalMonitors.set(physicalKey, state);
-    
-    // Initial run
-    setTimeout(() => runCycle(), 500);
+    state.timeoutId = setTimeout(() => state.runCycle(), 500);
 }
 
 async function startBackgroundMonitoring(broadcastCallback = null) {
@@ -436,7 +452,12 @@ async function refreshSecretsNow(workspaceId, deviceId) {
     const physicalKey = logicalToPhysical.get(logicalKey);
     if (physicalKey) {
         const state = physicalMonitors.get(physicalKey);
-        if (state) state.lastSecretFetch = 0;
+        if (state) {
+            console.log(`[Sync] Triggering immediate refresh for device ${deviceId} (Workspace: ${workspaceId})`);
+            state.lastSecretFetch = 0; // Force heavy fetch
+            // Trigger siklus sekarang juga tanpa menunggu timeout 3 detik
+            state.runCycle(true).catch(() => {});
+        }
     }
 }
 
