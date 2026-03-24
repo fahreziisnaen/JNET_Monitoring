@@ -378,7 +378,11 @@ async function startPhysicalMonitor(group, broadcastCallback) {
 async function startBackgroundMonitoring(broadcastCallback = null) {
     console.error('[Sistem] Memulai layanan pemantauan latar belakang (Optimized)...');
     try {
-        const [devices] = await pool.query(`SELECT * FROM mikrotik_devices`);
+        const [devices] = await pool.query(`
+            SELECT d.*, w.name as workspace_name 
+            FROM mikrotik_devices d 
+            JOIN workspaces w ON d.workspace_id = w.id
+        `);
         console.error(`[Sistem] Menemukan ${devices.length} perangkat di database`);
         
         const groups = new Map();
@@ -392,6 +396,12 @@ async function startBackgroundMonitoring(broadcastCallback = null) {
             }
             groups.get(key).devices.push(device);
             logicalToPhysical.set(`${device.workspace_id}:${device.id}`, key);
+            
+            // Simpan metadata ke global store untuk broadcast yang lebih lengkap
+            mikrotikStore.setDeviceInfo(device.workspace_id, device.id, {
+                name: device.name,
+                workspaceName: device.workspace_name
+            });
         });
 
         console.error(`[Sistem] Berhasil membuat ${groups.size} grup pemantauan fisik`);

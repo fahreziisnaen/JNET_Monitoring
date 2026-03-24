@@ -7,8 +7,16 @@ const workspaceSecrets = new Map(); // Map<workspaceId_deviceId, secrets[]>
 const workspaceActive = new Map();  // Map<workspaceId_deviceId, active[]>
 const deviceStatus = new Map();     // Map<workspaceId_deviceId, status>
 const deviceResource = new Map();   // Map<workspaceId_deviceId, resource{}>
+const deviceInfo = new Map();       // Map<workspaceId_deviceId, { name, workspaceName }>
 
 module.exports = {
+    setDeviceInfo: (workspaceId, deviceId, info) => {
+        deviceInfo.set(`${workspaceId}_${deviceId}`, info);
+    },
+
+    getDeviceInfo: (workspaceId, deviceId) => {
+        return deviceInfo.get(`${workspaceId}_${deviceId}`) || {};
+    },
     setDeviceStatus: (workspaceId, deviceId, status) => {
         deviceStatus.set(`${workspaceId}_${deviceId}`, status);
     },

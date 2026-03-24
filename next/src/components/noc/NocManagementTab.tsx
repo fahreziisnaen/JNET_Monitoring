@@ -89,15 +89,17 @@ const NocManagementTab: React.FC<NocManagementTabProps> = ({ workspaces }) => {
             // Find the workspace name for this secret if available in API data
             const existing = mergedMap.get(`${s.deviceId}-${s.name}`);
             
-            // Resolve workspace name from prop if not in API cache or WS data
+            // Resolve workspace/router name from prop or existing data as fallback
             const wsFromProp = workspaces.find(w => w.id === s.workspace_id);
-            const resolvedWsName = existing?.workspace_name || s.workspace_name || wsFromProp?.name || 'Loading...';
+            const resolvedWsName = s.workspace_name || existing?.workspace_name || wsFromProp?.name || 'Loading...';
+            const resolvedRouterName = s.router_name || existing?.router_name || 'Loading...';
             
             mergedMap.set(`${s.deviceId}-${s.name}`, {
                 ...existing,
                 ...s,
                 mikrotik_status: 'connected',
                 workspace_name: resolvedWsName,
+                router_name: resolvedRouterName,
                 workspace_id: s.workspace_id
             });
         });

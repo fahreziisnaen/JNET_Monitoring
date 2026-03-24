@@ -35,7 +35,15 @@ const broadcastSinglePppoeUpdate = (workspaceId, deviceId, secretName) => {
     const activeInfo = activeUsers.find(u => u.name === secretName);
     const isActive = !!activeInfo;
     
-    const enriched = { ...secret, deviceId, isActive };
+    const deviceInfo = mikrotikStore.getDeviceInfo(workspaceId, deviceId);
+    
+    const enriched = { 
+        ...secret, 
+        deviceId, 
+        isActive,
+        router_name: deviceInfo.name,
+        workspace_name: deviceInfo.workspaceName
+    };
     if (isActive) {
         if (activeInfo.uptime) enriched.uptime = activeInfo.uptime;
         if (activeInfo['.id']) enriched.activeConnectionId = activeInfo['.id'];
