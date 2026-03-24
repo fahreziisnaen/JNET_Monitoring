@@ -171,8 +171,6 @@ exports.getNextIp = async (req, res) => {
         }
 
         const { ip_start, ip_end, gateway } = pools[0];
-
-        const deviceId = req.query.deviceId ? parseInt(req.query.deviceId) : null;
         
         let query = 'SELECT remote_address as `remote-address`, current_address as address FROM pppoe_secrets WHERE workspace_id = ?';
         let params = [workspace_id];
