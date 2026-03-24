@@ -59,8 +59,6 @@ async function startPhysicalMonitor(group, broadcastCallback) {
     console.error(`[Pemantauan] Monitor FISIK AKTIF: ${label}`);
 
     const runCycle = async () => {
-        if (state.isRunning) return;
-        state.isRunning = true;
         const now = Date.now();
 
         try {

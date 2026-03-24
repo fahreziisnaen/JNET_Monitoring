@@ -232,71 +232,74 @@ async function startWorkspaceMonitoring(workspaceId, connectionKey, deviceId = n
             broadcast.broadcastSinglePppoeUpdate(workspaceId, deviceId, secretName);
         };
 
+        let listenerCleanup = null;
         try {
             // Ambil detail device untuk listener
             const [devices] = await pool.query(
                 'SELECT * FROM mikrotik_devices WHERE id = ? AND workspace_id = ?',
                 [deviceId, workspaceId]
             );
-
+            
             if (devices && devices[0]) {
                 const device = devices[0];
-                setupPppoeListeners(device, {
-                    onSecretUpdate: (action, attributes) => {
-                        console.log(`[RealTime][Secret] ${action.toUpperCase()}: ${attributes.name}`);
-                        // Update lokal cache di server.js
-                        if (action === 'add' || action === 'change') {
-                            const index = cachedSecrets.findIndex(s => s['.id'] === attributes['.id'] || s.name === attributes.name);
-                            if (index !== -1) {
-                                cachedSecrets[index] = { ...cachedSecrets[index], ...attributes };
-                            } else {
-                                cachedSecrets.push(attributes);
+                try {
+                    const setupResult = await setupPppoeListeners(device, {
+                        onSecretUpdate: (action, attributes) => {
+                            console.log(`[RealTime][Secret] ${action.toUpperCase()}: ${attributes.name}`);
+                            // Update lokal cache di server.js
+                            if (action === 'add' || action === 'change') {
+                                const index = cachedSecrets.findIndex(s => s['.id'] === attributes['.id'] || s.name === attributes.name);
+                                if (index !== -1) {
+                                    cachedSecrets[index] = { ...cachedSecrets[index], ...attributes };
+                                } else {
+                                    cachedSecrets.push(attributes);
+                                }
+                                
+                                // Update global store
+                                mikrotikStore.updateSecret(workspaceId, deviceId, action, attributes);
+                                
+                                // Granular Broadcast
+                                broadcastSinglePppoeUpdate(attributes.name);
+                            } else if (action === 'remove') {
+                                cachedSecrets = cachedSecrets.filter(s => s['.id'] !== attributes['.id'] && s.name !== attributes.name);
+                                mikrotikStore.updateSecret(workspaceId, deviceId, action, attributes);
+                                
+                                broadcastToWorkspace(workspaceId, deviceId, {
+                                    type: 'pppoe-single-remove',
+                                    payload: { name: attributes.name }
+                                });
                             }
-                            
-                            // Update global store
-                            mikrotikStore.updateSecret(workspaceId, deviceId, action, attributes);
-                            
+                        },
+                        onActiveUpdate: (action, attributes) => {
+                            console.log(`[RealTime][Active] ${action.toUpperCase()}: ${attributes.name}`);
+                            const currentActive = mikrotikStore.getActive(workspaceId, deviceId);
+                            let updatedActive = [...currentActive];
+    
+                            if (action === 'add' || action === 'change') {
+                                const index = updatedActive.findIndex(a => a['.id'] === attributes['.id'] || a.name === attributes.name);
+                                if (index !== -1) {
+                                    updatedActive[index] = { ...updatedActive[index], ...attributes };
+                                } else {
+                                    updatedActive.push(attributes);
+                                }
+                            } else if (action === 'remove') {
+                                updatedActive = updatedActive.filter(a => a['.id'] !== attributes['.id'] && a.name !== attributes.name);
+                            }
+    
+                            mikrotikStore.setActive(workspaceId, deviceId, updatedActive);
+    
                             // Granular Broadcast
                             broadcastSinglePppoeUpdate(attributes.name);
-                        } else if (action === 'remove') {
-                            cachedSecrets = cachedSecrets.filter(s => s['.id'] !== attributes['.id'] && s.name !== attributes.name);
-                            mikrotikStore.updateSecret(workspaceId, deviceId, action, attributes);
-                            
-                            broadcastToWorkspace(workspaceId, deviceId, {
-                                type: 'pppoe-single-remove',
-                                payload: { name: attributes.name }
-                            });
+                        },
+                        onError: (err) => {
+                            console.error(`[RealTime] Listener error untuk workspace ${workspaceId}:`, err.message);
                         }
-                    },
-                    onActiveUpdate: (action, attributes) => {
-                        console.log(`[RealTime][Active] ${action.toUpperCase()}: ${attributes.name}`);
-                        const currentActive = mikrotikStore.getActive(workspaceId, deviceId);
-                        let updatedActive = [...currentActive];
-
-                        if (action === 'add' || action === 'change') {
-                            const index = updatedActive.findIndex(a => a['.id'] === attributes['.id'] || a.name === attributes.name);
-                            if (index !== -1) {
-                                updatedActive[index] = { ...updatedActive[index], ...attributes };
-                            } else {
-                                updatedActive.push(attributes);
-                            }
-                        } else if (action === 'remove') {
-                            updatedActive = updatedActive.filter(a => a['.id'] !== attributes['.id'] && a.name !== attributes.name);
-                        }
-
-                        mikrotikStore.setActive(workspaceId, deviceId, updatedActive);
-
-                        // Granular Broadcast
-                        broadcastSinglePppoeUpdate(attributes.name);
-                    },
-                    onError: (err) => {
-                        console.error(`[RealTime] Listener error untuk workspace ${workspaceId}:`, err.message);
-                    }
-                }).then(setupResult => {
+                    });
+                    
                     listenerCleanup = setupResult.cleanup;
-                }).catch(listenerError => {
+                } catch (listenerError) {
                     console.warn(`[RealTime] Gagal inisialisasi listener untuk workspace ${workspaceId}:`, listenerError.message);
-                });
+                }
             }
         } catch (error) {
             console.error(`[RealTime] Error menyiapkan listener database untuk workspace ${workspaceId}:`, error.message);
