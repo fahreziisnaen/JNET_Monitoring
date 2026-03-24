@@ -252,6 +252,31 @@ async function startPhysicalMonitor(group, broadcastCallback) {
                             await pool.query(`UPDATE pppoe_user_status SET is_active=FALSE WHERE workspace_id=? AND device_id=? AND pppoe_user IN (?)`, [inst.workspace_id, inst.id, inactiveNames]).catch(() => {});
                         }
 
+                        // --- AUTO PRUNING ---
+                        // Jika secret ada di database JNET tapi sudah tidak ada di Mikrotik (dihapus via WinBox), 
+                        // maka hapus juga dari database agar sinkron.
+                        const allFetchedNames = enriched.map(s => s.name);
+                        if (allFetchedNames.length > 0) {
+                            // 1. Hapus dari pppoe_secrets
+                            await pool.query(
+                                'DELETE FROM pppoe_secrets WHERE workspace_id = ? AND device_id = ? AND name NOT IN (?)',
+                                [inst.workspace_id, inst.id, allFetchedNames]
+                            ).catch(e => console.error(`[Pruning] Gagal hapus pppoe_secrets: ${e.message}`));
+
+                            // 2. Hapus dari clients (Data Map / Koordinat)
+                            // User meminta ini otomatis juga ("iya buat auto")
+                            await pool.query(
+                                'DELETE FROM clients WHERE workspace_id = ? AND device_id = ? AND pppoe_secret_name NOT IN (?)',
+                                [inst.workspace_id, inst.id, allFetchedNames]
+                            ).catch(e => console.error(`[Pruning] Gagal hapus clients: ${e.message}`));
+
+                            // 3. Hapus dari odp_user_connections
+                            await pool.query(
+                                'DELETE FROM odp_user_connections WHERE workspace_id = ? AND pppoe_secret_name NOT IN (?)',
+                                [inst.workspace_id, allFetchedNames]
+                            ).catch(e => console.error(`[Pruning] Gagal hapus odp_user_connections: ${e.message}`));
+                        }
+
                         // --- SLA TRACKING ---
                         if (activeUsers.length > 0) {
                             await pool.query(`UPDATE downtime_events SET end_time=NOW(), duration_seconds=TIMESTAMPDIFF(SECOND, start_time, NOW()) WHERE workspace_id=? AND device_id=? AND pppoe_user IN (?) AND end_time IS NULL`, [inst.workspace_id, inst.id, activeUsers.map(u=>u.name)]).catch(() => {});
