@@ -23,6 +23,7 @@ interface PppoeSecret {
   isActive?: boolean; // Status aktif dari backend
   activeConnectionId?: string; // .id dari active connection untuk keperluan kick
   deviceId?: number;
+  uptime?: string;
 }
 
 interface PppoeSecretsTableProps {
@@ -46,9 +47,6 @@ const PppoeSecretsTable = ({ refreshTrigger, onActionComplete, initialFilter = '
   const [secretToEdit, setSecretToEdit] = useState<PppoeSecret | null>(null);
   const [recentlyDeleted, setRecentlyDeleted] = useState<Set<string>>(new Set());
   const apiUrl = process.env.NEXT_PUBLIC_API_BASE_URL;
-
-  // State untuk local tick agarpendapatan uptime terlihat berjalan tiap detik
-  const [uptimeOffset, setUptimeOffset] = useState(0);
 
   // Update secrets dari WebSocket data (sama seperti summary aktif)
   useEffect(() => {
@@ -74,102 +72,25 @@ const PppoeSecretsTable = ({ refreshTrigger, onActionComplete, initialFilter = '
         disabled: secret.disabled || 'false',
         isActive: secret.isActive === true,
         activeConnectionId: secret.activeConnectionId || undefined,
-        deviceId: secret.deviceId || selectedDeviceId
+        deviceId: secret.deviceId || selectedDeviceId,
+        uptime: secret.uptime || 'N/A'
       };
       return secretData;
     });
 
     setAllSecrets(transformedSecrets);
 
-    // Setiap kali data dari server masuk, reset offset local tick ke 0
-    // Karena data dari server adalah source of truth terbaru
-    setUptimeOffset(0);
-
     // HANYA set loading false jika kita punya data. 
     // JANGAN set loading true di sini karena ini dipicu oleh WebSocket yang berjalan terus menerus.
     if (transformedSecrets.length > 0) {
       setLoading(false);
     }
-  }, [pppoeSecrets, selectedDeviceId]); // Hapus refreshTrigger dari dependency untuk menghindari reset state yang tidak perlu
-
-  // Effect untuk menambahkan 1 detik ke uptime secara local setiap detiknya
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setUptimeOffset(prev => prev + 1);
-    }, 1000);
-    return () => clearInterval(interval);
-  }, []);
-
-  // Map untuk lookup uptime dari secrets yang aktif
-  const secretsUptimeMap = useMemo(() => {
-    const map = new Map();
-    pppoeSecrets?.forEach((secret: any) => {
-      if (secret.name && secret.isActive && secret.uptime) {
-        map.set(secret.name, secret.uptime);
-      }
-    });
-    return map;
-  }, [pppoeSecrets]);
+  }, [pppoeSecrets, selectedDeviceId]);
 
   // Fungsi untuk menentukan apakah secret aktif
   const isSecretActive = useCallback((secret: PppoeSecret): boolean => {
     return secret.isActive === true;
   }, []);
-
-  // Mem-parsing string uptime Mikrotik menjadi total detik
-  const parseUptimeToSeconds = (uptime: string | null): number => {
-    if (!uptime || uptime === 'N/A' || uptime === '...') return 0;
-
-    const weekMatch = uptime.match(/(\d+)w/);
-    const dayMatch = uptime.match(/(\d+)d/);
-    const hourMatch = uptime.match(/(\d+)h/);
-    const minuteMatch = uptime.match(/(\d+)m/);
-    const secondMatch = uptime.match(/(\d+)s/);
-
-    let totalSeconds = 0;
-    if (weekMatch) totalSeconds += parseInt(weekMatch[1]) * 7 * 24 * 60 * 60;
-    if (dayMatch) totalSeconds += parseInt(dayMatch[1]) * 24 * 60 * 60;
-    if (hourMatch) totalSeconds += parseInt(hourMatch[1]) * 60 * 60;
-    if (minuteMatch) totalSeconds += parseInt(minuteMatch[1]) * 60;
-    if (secondMatch) totalSeconds += parseInt(secondMatch[1]);
-
-    return totalSeconds;
-  };
-
-  // Mengubah total detik kembali ke string uptime Mikrotik (w/d/h/m/s)
-  const formatSecondsToUptime = (totalSeconds: number): string => {
-    if (totalSeconds <= 0) return '0s';
-
-    const weeks = Math.floor(totalSeconds / (7 * 24 * 60 * 60));
-    let remaining = totalSeconds % (7 * 24 * 60 * 60);
-    const days = Math.floor(remaining / (24 * 60 * 60));
-    remaining %= (24 * 60 * 60);
-    const hours = Math.floor(remaining / (60 * 60));
-    remaining %= (60 * 60);
-    const minutes = Math.floor(remaining / 60);
-    const seconds = remaining % 60;
-
-    const parts = [];
-    if (weeks > 0) parts.push(`${weeks}w`);
-    if (days > 0) parts.push(`${days}d`);
-    if (hours > 0) parts.push(`${hours}h`);
-    if (minutes > 0) parts.push(`${minutes}m`);
-    if (seconds > 0 || parts.length === 0) parts.push(`${seconds}s`);
-
-    return parts.join('');
-  };
-
-
-  // Fungsi untuk mendapatkan uptime dari secret yang ditambah local tick
-  const getUptime = useCallback((secretName: string): string => {
-    const baseUptime = secretsUptimeMap.get(secretName) || '00:00:00';
-    if (baseUptime === '00:00:00' || baseUptime === 'N/A') return baseUptime;
-
-    const baseSeconds = parseUptimeToSeconds(baseUptime);
-    // Tambahkan delay offset. Kita limit max 5 agar tidak desync terlalu jauh dengan server
-    const currentSeconds = baseSeconds + (uptimeOffset > 5 ? 5 : uptimeOffset);
-    return formatSecondsToUptime(currentSeconds);
-  }, [secretsUptimeMap, uptimeOffset]);
 
   const handleSort = (column: string) => {
     if (sortColumn === column) {
@@ -270,8 +191,8 @@ const PppoeSecretsTable = ({ refreshTrigger, onActionComplete, initialFilter = '
             break;
           }
           case 'uptime': {
-            const aUptime = getUptime(a.name);
-            const bUptime = getUptime(b.name);
+            const aUptime = a.uptime || 'N/A';
+            const bUptime = b.uptime || 'N/A';
             // Parse uptime string to seconds for comparison
             // Format MikroTik: "1w2d3h4m5s" (w=week, d=day, h=hour, m=minute, s=second)
             const parseUptime = (uptime: string | null): number => {
@@ -308,7 +229,7 @@ const PppoeSecretsTable = ({ refreshTrigger, onActionComplete, initialFilter = '
     }
 
     return filtered;
-  }, [allSecrets, isSecretActive, initialFilter, searchQuery, sortColumn, sortDirection, getUptime]);
+  }, [allSecrets, isSecretActive, initialFilter, searchQuery, sortColumn, sortDirection]);
 
   const handleAction = async (action: 'enable' | 'disable' | 'kick' | 'isolate' | 'unisolate', secret: PppoeSecret) => {
     setIsActionLoading(true);
@@ -595,7 +516,7 @@ const PppoeSecretsTable = ({ refreshTrigger, onActionComplete, initialFilter = '
                 ) : filteredSecrets.length > 0 ? (
                   filteredSecrets.map((user, i) => {
                     const isActive = isSecretActive(user);
-                    const uptime = getUptime(user.name);
+                    const uptime = user.uptime || 'N/A';
                     // Gunakan kombinasi .id dan name untuk key yang unik
                     // Jika .id tidak ada, gunakan name sebagai fallback (name harus unik)
                     const uniqueKey = user['.id'] || `secret-${user.name}-${i}`;
@@ -634,8 +555,12 @@ const PppoeSecretsTable = ({ refreshTrigger, onActionComplete, initialFilter = '
                           )}
                         </td>
                         <td className="p-2 sm:p-4 font-mono text-[10px] sm:text-xs whitespace-nowrap">
-                          <span className="sm:hidden">{formatCompactUptime(uptime)}</span>
-                          <span className="hidden sm:inline">{formatUptime(uptime)}</span>
+                          {isActive && uptime !== 'N/A' && uptime !== '00:00:00' ? (
+                            <span className="flex flex-col sm:block">
+                              <span className="sm:hidden">{formatCompactUptime(uptime)}</span>
+                              <span className="hidden sm:inline">{formatUptime(uptime)}</span>
+                            </span>
+                          ) : '-'}
                         </td>
                         <td className="p-2 sm:p-4 text-center">
                           <DropdownMenu>

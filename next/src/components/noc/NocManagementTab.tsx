@@ -39,46 +39,13 @@ interface NocManagementTabProps {
     workspaces: { id: number, name: string }[];
 }
 
-const parseUptimeToSeconds = (uptime: string): number => {
-    if (!uptime) return 0;
-    const w = uptime.match(/(\d+)w/); const d = uptime.match(/(\d+)d/);
-    const h = uptime.match(/(\d+)h/); const m = uptime.match(/(\d+)m/);
-    const s = uptime.match(/(\d+)s/);
-    return (w ? +w[1] * 604800 : 0) + (d ? +d[1] * 86400 : 0) +
-        (h ? +h[1] * 3600 : 0) + (m ? +m[1] * 60 : 0) + (s ? +s[1] : 0);
-};
-
-const formatSecondsToUptime = (total: number): string => {
-    if (total <= 0) return '0s';
-    const w = Math.floor(total / 604800); total %= 604800;
-    const d = Math.floor(total / 86400); total %= 86400;
-    const h = Math.floor(total / 3600); total %= 3600;
-    const m = Math.floor(total / 60); const sec = total % 60;
-    return (w ? w + 'w' : '') + (d ? d + 'd' : '') + (h ? h + 'h' : '') + (m ? m + 'm' : '') + sec + 's';
-};
-
 const UptimeDisplay = React.memo(({ baseUptime, isActive }: { baseUptime: string | undefined, isActive: boolean | undefined }) => {
-    const [offset, setOffset] = useState(0);
-
-    useEffect(() => {
-        setOffset(0);
-    }, [baseUptime]);
-
-    useEffect(() => {
-        if (!isActive || !baseUptime || baseUptime === '-' || baseUptime === 'N/A') return;
-        const interval = setInterval(() => setOffset(prev => prev + 1), 1000);
-        return () => clearInterval(interval);
-    }, [baseUptime, isActive]);
-
     if (!isActive || !baseUptime || baseUptime === '-' || baseUptime === 'N/A') return <span>-</span>;
     
-    const totalSeconds = parseUptimeToSeconds(baseUptime) + offset;
-    const uptimeStr = formatSecondsToUptime(totalSeconds);
-
     return (
         <span className="flex flex-col sm:block">
-            <span className="sm:hidden">{formatCompactUptime(uptimeStr)}</span>
-            <span className="hidden sm:inline">{formatUptime(uptimeStr)}</span>
+            <span className="sm:hidden">{formatCompactUptime(baseUptime)}</span>
+            <span className="hidden sm:inline">{formatUptime(baseUptime)}</span>
         </span>
     );
 });
@@ -195,7 +162,6 @@ const NocManagementTab: React.FC<NocManagementTabProps> = ({ workspaces }) => {
     const [selectedWorkspaceForAdd, setSelectedWorkspaceForAdd] = useState<number | null>(null);
     const [isNocWorkspaceSelectorOpen, setIsNocWorkspaceSelectorOpen] = useState(false);
 
-    const lastFetchTimeRef = React.useRef<number>(0);
     const [isInitialLoad, setIsInitialLoad] = useState(true);
     const memoizedSecretToEdit = useMemo(() => {
         if (!secretToEdit) return null;
@@ -275,11 +241,6 @@ const NocManagementTab: React.FC<NocManagementTabProps> = ({ workspaces }) => {
             setIsInitialLoad(false);
         }
     }, [workspaceIdsKey, token]);
-
-    // Reset debounce ref saat workspaceIds berubah agar filter switch langsung fetch
-    useEffect(() => {
-        lastFetchTimeRef.current = 0;
-    }, [workspaceIdsKey]);
 
     useEffect(() => {
         fetchSecrets();
@@ -454,7 +415,6 @@ const NocManagementTab: React.FC<NocManagementTabProps> = ({ workspaces }) => {
             }
 
             toast.success("Aksi Berhasil", { id: toastId, description: `Perintah ${action} selesai dieksekusi.` });
-            lastFetchTimeRef.current = 0;
             fetchSecrets();
         } catch (error: any) {
             toast.error(`Gagal Melakukan Aksi`, { id: toastId, description: error.message });
@@ -488,8 +448,6 @@ const NocManagementTab: React.FC<NocManagementTabProps> = ({ workspaces }) => {
             setApiSecrets(prev => prev.filter(s => !(s.name === secretToDelete.name && s.deviceId === secretToDelete.deviceId)));
             
             toast.success("Berhasil Menghapus Secret", { id: toastId, description: `Secret untuk ${secretToDelete.name} telah dihapus.` });
-            lastFetchTimeRef.current = 0;
-            // Tetap panggil fetchSecrets di background untuk sinkronisasi akhir
             fetchSecrets();
         } catch (error: any) {
             toast.error("Gagal Menghapus Secret", { id: toastId, description: error.message || "Terjadi kesalahan saat menghapus data." });
@@ -605,19 +563,14 @@ const NocManagementTab: React.FC<NocManagementTabProps> = ({ workspaces }) => {
                     isOpen={isEditModalOpen}
                     onClose={() => setIsEditModalOpen(false)}
                     secretToEdit={memoizedSecretToEdit}
-                    onSuccess={() => {
-                        lastFetchTimeRef.current = 0;
-                        fetchSecrets();
-                    }}
+                    onSuccess={fetchSecrets}
                     nocWorkspaceId={secretToEdit.workspace_id}
                 />
             )}
             <AddPppoeSecretModal 
                 isOpen={isAddModalOpen}
                 onClose={() => setIsAddModalOpen(false)}
-                onSuccess={() => {
-                    fetchSecrets();
-                }}
+                onSuccess={fetchSecrets}
                 nocWorkspaceId={selectedWorkspaceForAdd || undefined}
             />
             <NocWorkspaceSelectorModal
