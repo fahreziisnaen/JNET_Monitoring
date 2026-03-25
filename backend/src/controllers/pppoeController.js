@@ -289,6 +289,20 @@ exports.addSecret = async (req, res) => {
 
         // 4. Trigger refresh latar belakang (Optimized) untuk polling rincian asli
         refreshSecretsNow(workspaceId, targetDeviceId);
+
+        // 5. Update database cache (pppoe_secrets) agar fetch NOC langsung sinkron
+        try {
+            await pool.query(
+                `INSERT INTO pppoe_secrets 
+                (name, password, profile, service, remote_address, disabled, is_active, workspace_id, device_id)
+                VALUES (?, ?, ?, ?, ?, 0, 0, ?, ?)
+                ON DUPLICATE KEY UPDATE 
+                password = VALUES(password), profile = VALUES(profile), remote_address = VALUES(remote_address), disabled = 0`,
+                [name, password, profile, service, remoteAddress || null, workspaceId, targetDeviceId]
+            );
+        } catch (dbCacheErr) {
+            console.warn(`[Add Secret Cache] Gagal update table pppoe_secrets: ${dbCacheErr.message}`);
+        }
         
         res.status(201).json({ message: `Secret untuk ${name} berhasil dibuat.` });
     } catch (error) {
@@ -543,7 +557,17 @@ exports.updateSecret = async (req, res) => {
         refreshSecretsNow(workspace_id, deviceId);
         broadcast.broadcastSinglePppoeUpdate(workspace_id, deviceId, name || oldName || id);
         
-        // Update database references if name changed
+        // 4. Update database cache (pppoe_secrets) agar fetch NOC langsung sinkron
+        try {
+            await pool.query(
+                'UPDATE pppoe_secrets SET name = ?, profile = ?, password = ? WHERE workspace_id = ? AND device_id = ? AND name = ?',
+                [name || oldName, profile, password || undefined, workspace_id, deviceId, oldName || id]
+            );
+        } catch (dbCacheErr) {
+            console.warn(`[Update Secret Cache] Gagal update table pppoe_secrets: ${dbCacheErr.message}`);
+        }
+        
+        // 5. Update database references if name changed
         if (name && oldName && name !== oldName) {
             try {
                 // Update map clients

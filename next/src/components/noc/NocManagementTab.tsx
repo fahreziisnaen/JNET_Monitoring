@@ -39,6 +39,140 @@ interface NocManagementTabProps {
     workspaces: { id: number, name: string }[];
 }
 
+const parseUptimeToSeconds = (uptime: string): number => {
+    if (!uptime) return 0;
+    const w = uptime.match(/(\d+)w/); const d = uptime.match(/(\d+)d/);
+    const h = uptime.match(/(\d+)h/); const m = uptime.match(/(\d+)m/);
+    const s = uptime.match(/(\d+)s/);
+    return (w ? +w[1] * 604800 : 0) + (d ? +d[1] * 86400 : 0) +
+        (h ? +h[1] * 3600 : 0) + (m ? +m[1] * 60 : 0) + (s ? +s[1] : 0);
+};
+
+const formatSecondsToUptime = (total: number): string => {
+    if (total <= 0) return '0s';
+    const w = Math.floor(total / 604800); total %= 604800;
+    const d = Math.floor(total / 86400); total %= 86400;
+    const h = Math.floor(total / 3600); total %= 3600;
+    const m = Math.floor(total / 60); const sec = total % 60;
+    return (w ? w + 'w' : '') + (d ? d + 'd' : '') + (h ? h + 'h' : '') + (m ? m + 'm' : '') + sec + 's';
+};
+
+const UptimeDisplay = React.memo(({ baseUptime, isActive }: { baseUptime: string | undefined, isActive: boolean | undefined }) => {
+    const [offset, setOffset] = useState(0);
+
+    useEffect(() => {
+        setOffset(0);
+    }, [baseUptime]);
+
+    useEffect(() => {
+        if (!isActive || !baseUptime || baseUptime === '-' || baseUptime === 'N/A') return;
+        const interval = setInterval(() => setOffset(prev => prev + 1), 1000);
+        return () => clearInterval(interval);
+    }, [baseUptime, isActive]);
+
+    if (!isActive || !baseUptime || baseUptime === '-' || baseUptime === 'N/A') return <span>-</span>;
+    
+    const totalSeconds = parseUptimeToSeconds(baseUptime) + offset;
+    const uptimeStr = formatSecondsToUptime(totalSeconds);
+
+    return (
+        <span className="flex flex-col sm:block">
+            <span className="sm:hidden">{formatCompactUptime(uptimeStr)}</span>
+            <span className="hidden sm:inline">{formatUptime(uptimeStr)}</span>
+        </span>
+    );
+});
+UptimeDisplay.displayName = 'UptimeDisplay';
+
+interface SecretRowProps {
+    user: PppoeSecret;
+    onEdit: (user: PppoeSecret) => void;
+    onAction: (action: 'enable' | 'disable' | 'kick' | 'isolate' | 'unisolate', user: PppoeSecret) => void;
+    onDelete: (user: PppoeSecret) => void;
+}
+
+const SecretRow = React.memo(({ user, onEdit, onAction, onDelete }: SecretRowProps) => {
+    return (
+        <tr className="border-b hover:bg-muted/30 transition-colors">
+            <td className="p-2 sm:p-4">
+                {user.disabled === 'true' ?
+                    (<span className="flex items-center gap-1 text-muted-foreground"><PowerOff size={14} /> <span className="hidden sm:inline">Disabled</span></span>) :
+                    user.isActive ?
+                        (<span className="flex items-center gap-1 text-green-500"><Power size={14} className="animate-pulse" /> <span className="hidden sm:inline">Active</span></span>) :
+                        (<span className="flex items-center gap-1 text-red-500"><PowerOff size={14} /> <span className="hidden sm:inline">Inactive</span></span>)
+                }
+            </td>
+            <td className="p-2 sm:p-4">
+                <div className="flex flex-col gap-0.5">
+                    <span className="font-bold sm:font-medium truncate max-w-[120px] sm:max-w-[200px]" title={user.name}>{user.name}</span>
+                    <div className="flex flex-col sm:hidden gap-0.5">
+                        <span className="text-[10px] text-muted-foreground truncate max-w-[120px]" title={`Profile: ${user.profile}`}>
+                            {user.profile}
+                        </span>
+                        <span className="text-[10px] text-primary/80 font-mono truncate max-w-[120px]">
+                            {user['remote-address'] || 'No IP'}
+                        </span>
+                        <span className="text-[10px] text-muted-foreground md:hidden truncate max-w-[120px]" title="Router">
+                            {user.router_name || user.workspace_name}
+                        </span>
+                    </div>
+                </div>
+            </td>
+            <td className="p-2 sm:p-4 hidden md:table-cell">
+                <span className="inline-flex items-center px-2 py-1 rounded-full text-[10px] font-medium bg-primary/10 text-primary truncate max-w-[120px] lg:max-w-[180px]" title={user.router_name || user.workspace_name}>
+                    {user.router_name || user.workspace_name}
+                </span>
+            </td>
+            <td className="p-2 sm:p-4 hidden sm:table-cell">
+                <span className="truncate max-w-[100px] lg:max-w-[150px] block" title={user.profile}>{user.profile}</span>
+            </td>
+            <td className="p-2 sm:p-4 hidden lg:table-cell">
+                <span className="text-[10px] text-primary/80 font-mono truncate max-w-[120px]">
+                    {user['remote-address'] || '-'}
+                </span>
+            </td>
+            <td className="p-2 sm:p-4 font-mono text-[10px] sm:text-xs whitespace-nowrap">
+                <UptimeDisplay baseUptime={user.uptime} isActive={user.isActive} />
+            </td>
+            <td className="p-2 sm:p-4 text-center">
+                <DropdownMenu>
+                    <DropdownMenuTrigger asChild><Button variant="ghost" size="icon"><MoreHorizontal size={16} /></Button></DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                        <DropdownMenuItem onClick={() => onEdit(user)}>
+                            <Edit className="mr-2 h-4 w-4" /> Edit
+                        </DropdownMenuItem>
+                        <DropdownMenuSeparator />
+                        {user.profile === 'Isolir' ? (
+                            <DropdownMenuItem onClick={() => onAction('unisolate', user)}>
+                                <ZapOff className="mr-2 h-4 w-4 text-green-500" /> Buka Isolir
+                            </DropdownMenuItem>
+                        ) : (
+                            <DropdownMenuItem onClick={() => onAction('isolate', user)}>
+                                <ZapOff className="mr-2 h-4 w-4 text-orange-500" /> Isolir User
+                            </DropdownMenuItem>
+                        )}
+                        <DropdownMenuSeparator />
+                        {user.isActive &&
+                            <DropdownMenuItem onClick={() => onAction('kick', user)}>
+                                <ZapOff className="mr-2 h-4 w-4" /> Kick User
+                            </DropdownMenuItem>
+                        }
+                        {user.disabled === 'true' ?
+                            (<DropdownMenuItem onClick={() => onAction('enable', user)}> <Power className="mr-2 h-4 w-4" /> Enable </DropdownMenuItem>) :
+                            (<DropdownMenuItem onClick={() => onAction('disable', user)}> <PowerOff className="mr-2 h-4 w-4" /> Disable </DropdownMenuItem>)
+                        }
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem className="text-destructive focus:bg-destructive/10 focus:text-destructive" onClick={() => onDelete(user)}>
+                            <Trash2 className="mr-2 h-4 w-4" /> Hapus
+                        </DropdownMenuItem>
+                    </DropdownMenuContent>
+                </DropdownMenu>
+            </td>
+        </tr>
+    );
+});
+SecretRow.displayName = 'SecretRow';
+
 const NocManagementTab: React.FC<NocManagementTabProps> = ({ workspaces }) => {
     const workspaceIds = workspaces.map(w => w.id);
     const workspaceIdsKey = useMemo(() => [...workspaceIds].sort().join(','), [workspaceIds]);
@@ -63,66 +197,48 @@ const NocManagementTab: React.FC<NocManagementTabProps> = ({ workspaces }) => {
 
     const lastFetchTimeRef = React.useRef<number>(0);
     const [isInitialLoad, setIsInitialLoad] = useState(true);
-    const [uptimeOffset, setUptimeOffset] = useState(0);
     const memoizedSecretToEdit = useMemo(() => {
         if (!secretToEdit) return null;
         return { ...secretToEdit, disabled: secretToEdit.disabled === 'true' };
     }, [secretToEdit]);
 
-    useEffect(() => {
-        const interval = setInterval(() => setUptimeOffset(prev => prev + 1), 1000);
-        return () => clearInterval(interval);
-    }, []);
-
     const secrets = useMemo(() => {
-        // Base structure is ALWAYS from API secrets (static list)
-        // Live WS data (allPppoeSecrets) is ONLY used to overlay status/uptime
-        return apiSecrets.map(s => {
-            const live = allPppoeSecrets.find(ls => ls.name === s.name && ls.deviceId === s.deviceId);
+        // Merge API cache with live WS data
+        const mergedMap = new Map();
+        
+        // 1. Start with API data (stale cache)
+        apiSecrets.forEach(s => {
             const deviceStatus = allDevicesStatus[s.deviceId]?.isConnected ? 'connected' : 'disconnected';
+            mergedMap.set(`${s.deviceId}-${s.name}`, { ...s, mikrotik_status: deviceStatus });
+        });
+        
+        // 2. Overlay with Live WS data (real-time)
+        // This will now ALSO add new items from WebSocket (Zero-latency Create)
+        allPppoeSecrets.forEach(s => {
+            const existing = mergedMap.get(`${s.deviceId}-${s.name}`);
             
-            return {
+            // Resolve workspace/router name from prop or existing data as fallback
+            const wsFromProp = workspaces.find(w => w.id === s.workspace_id);
+            const resolvedWsName = s.workspace_name || existing?.workspace_name || wsFromProp?.name || 'Loading...';
+            const resolvedRouterName = s.router_name || existing?.router_name || 'Loading...';
+            
+            mergedMap.set(`${s.deviceId}-${s.name}`, {
+                ...existing,
                 ...s,
-                ...live, // Overlay real-time props (isActive, uptime, currentAddress)
-                mikrotik_status: deviceStatus,
-                // Ensure IDs and names from API are preserved if live is slightly different
-                name: s.name,
-                deviceId: s.deviceId,
-                workspace_id: s.workspace_id,
-                workspace_name: s.workspace_name,
-                router_name: s.router_name
-            };
-        }).filter(s => workspaceIds.includes(s.workspace_id));
+                mikrotik_status: 'connected',
+                workspace_name: resolvedWsName,
+                router_name: resolvedRouterName,
+                workspace_id: s.workspace_id
+            });
+        });
+        
+        const all = Array.from(mergedMap.values()) as PppoeSecret[];
+
+        // CRITICAL: Filter to only show secrets from selected workspaces
+        return all.filter(s => workspaceIds.includes(s.workspace_id));
     }, [apiSecrets, allPppoeSecrets, allDevicesStatus, workspaceIdsKey]);
 
-    const secretsUptimeMap = useMemo(() => {
-        const map = new Map<string, string>();
-        secrets.forEach(s => { if (s.name && s.isActive && s.uptime) map.set(`${s.deviceId}-${s.name}`, s.uptime); });
-        return map;
-    }, [secrets]);
 
-    const parseUptimeToSeconds = (uptime: string): number => {
-        const w = uptime.match(/(\d+)w/); const d = uptime.match(/(\d+)d/);
-        const h = uptime.match(/(\d+)h/); const m = uptime.match(/(\d+)m/);
-        const s = uptime.match(/(\d+)s/);
-        return (w ? +w[1] * 604800 : 0) + (d ? +d[1] * 86400 : 0) +
-            (h ? +h[1] * 3600 : 0) + (m ? +m[1] * 60 : 0) + (s ? +s[1] : 0);
-    };
-
-    const formatSecondsToUptime = (total: number): string => {
-        if (total <= 0) return '0s';
-        const w = Math.floor(total / 604800); total %= 604800;
-        const d = Math.floor(total / 86400); total %= 86400;
-        const h = Math.floor(total / 3600); total %= 3600;
-        const m = Math.floor(total / 60); const sec = total % 60;
-        return (w ? w + 'w' : '') + (d ? d + 'd' : '') + (h ? h + 'h' : '') + (m ? m + 'm' : '') + sec + 's';
-    };
-
-    const getUptime = useCallback((name: string, deviceId: number): string => {
-        const base = secretsUptimeMap.get(`${deviceId}-${name}`);
-        if (!base || base === 'N/A') return base || '-';
-        return formatSecondsToUptime(parseUptimeToSeconds(base) + Math.min(uptimeOffset, 5));
-    }, [secretsUptimeMap, uptimeOffset]);
 
     const fetchSecrets = useCallback(async () => {
         if (workspaceIds.length === 0) {
@@ -151,7 +267,6 @@ const NocManagementTab: React.FC<NocManagementTabProps> = ({ workspaces }) => {
                     deviceId: s.device_id || s.deviceId
                 }));
                 setApiSecrets(mappedSecrets);
-                setUptimeOffset(0);
             }
         } catch (error) {
             console.error("Failed to fetch NOC secrets", error);
@@ -264,7 +379,7 @@ const NocManagementTab: React.FC<NocManagementTabProps> = ({ workspaces }) => {
             .map(([name]) => name);
     }, [secrets]);
 
-    const handleAction = async (action: 'enable' | 'disable' | 'kick' | 'isolate' | 'unisolate', secret: PppoeSecret) => {
+    const handleAction = useCallback(async (action: 'enable' | 'disable' | 'kick' | 'isolate' | 'unisolate', secret: PppoeSecret) => {
         setIsActionLoading(true);
         const apiUrl = process.env.NEXT_PUBLIC_API_BASE_URL;
         const toastId = toast.loading(`Memproses ${action} untuk ${secret.name}...`);
@@ -346,9 +461,19 @@ const NocManagementTab: React.FC<NocManagementTabProps> = ({ workspaces }) => {
         } finally {
             setIsActionLoading(false);
         }
-    };
+    }, [fetchSecrets]);
 
-    const handleDeleteConfirm = async () => {
+    const handleEditClick = useCallback((user: PppoeSecret) => {
+        setSecretToEdit(user);
+        setIsEditModalOpen(true);
+    }, []);
+
+    const handleDeleteClick = useCallback((user: PppoeSecret) => {
+        setSecretToDelete(user);
+        setIsDeleteModalOpen(true);
+    }, []);
+
+    const handleDeleteConfirm = useCallback(async () => {
         if (!secretToDelete) return;
         setIsActionLoading(true);
         const apiUrl = process.env.NEXT_PUBLIC_API_BASE_URL;
@@ -373,7 +498,7 @@ const NocManagementTab: React.FC<NocManagementTabProps> = ({ workspaces }) => {
             setIsDeleteModalOpen(false);
             setSecretToDelete(null);
         }
-    };
+    }, [secretToDelete, fetchSecrets]);
 
     const renderSummaryCard = (title: string, count: number, icon: React.ReactNode, color: string, filter: 'all' | 'active' | 'inactive') => (
         <button onClick={() => setActiveFilter(filter)} className={`w-full text-left rounded-lg transition-all ${activeFilter === filter ? 'ring-2 ring-primary ring-offset-2 ring-offset-background' : ''}`}>
@@ -447,87 +572,13 @@ const NocManagementTab: React.FC<NocManagementTabProps> = ({ workspaces }) => {
                                     <tr><td colSpan={6} className="text-center p-10"><Loader2 className="h-6 w-6 animate-spin mx-auto text-muted-foreground" /></td></tr>
                                 ) : filteredSecrets.length > 0 ? (
                                     filteredSecrets.map((user, i) => (
-                                        <tr key={`${user.workspace_id}-${user['.id'] || user.name}-${i}`} className="border-b hover:bg-muted/30 transition-colors">
-                                            <td className="p-2 sm:p-4">
-                                                {user.disabled === 'true' ?
-                                                    (<span className="flex items-center gap-1 text-muted-foreground"><PowerOff size={14} /> <span className="hidden sm:inline">Disabled</span></span>) :
-                                                    user.isActive ?
-                                                        (<span className="flex items-center gap-1 text-green-500"><Power size={14} className="animate-pulse" /> <span className="hidden sm:inline">Active</span></span>) :
-                                                        (<span className="flex items-center gap-1 text-red-500"><PowerOff size={14} /> <span className="hidden sm:inline">Inactive</span></span>)
-                                                }
-                                            </td>
-                                            <td className="p-2 sm:p-4">
-                                                <div className="flex flex-col gap-0.5">
-                                                    <span className="font-bold sm:font-medium truncate max-w-[120px] sm:max-w-[200px]" title={user.name}>{user.name}</span>
-                                                    <div className="flex flex-col sm:hidden gap-0.5">
-                                                        <span className="text-[10px] text-muted-foreground truncate max-w-[120px]" title={`Profile: ${user.profile}`}>
-                                                            {user.profile}
-                                                        </span>
-                                                        <span className="text-[10px] text-primary/80 font-mono truncate max-w-[120px]">
-                                                            {user['remote-address'] || 'No IP'}
-                                                        </span>
-                                                        <span className="text-[10px] text-muted-foreground md:hidden truncate max-w-[120px]" title="Router">
-                                                            {user.router_name || user.workspace_name}
-                                                        </span>
-                                                    </div>
-                                                </div>
-                                            </td>
-                                            <td className="p-2 sm:p-4 hidden md:table-cell">
-                                                <span className="inline-flex items-center px-2 py-1 rounded-full text-[10px] font-medium bg-primary/10 text-primary truncate max-w-[120px] lg:max-w-[180px]" title={user.router_name || user.workspace_name}>
-                                                    {user.router_name || user.workspace_name}
-                                                </span>
-                                            </td>
-                                            <td className="p-2 sm:p-4 hidden sm:table-cell">
-                                                <span className="truncate max-w-[100px] lg:max-w-[150px] block" title={user.profile}>{user.profile}</span>
-                                            </td>
-                                            <td className="p-2 sm:p-4 hidden lg:table-cell">
-                                                <span className="text-[10px] text-primary/80 font-mono truncate max-w-[120px]">
-                                                    {user['remote-address'] || '-'}
-                                                </span>
-                                            </td>
-                                            <td className="p-2 sm:p-4 font-mono text-[10px] sm:text-xs whitespace-nowrap">
-                                                {user.isActive ? (
-                                                    <span className="flex flex-col sm:block">
-                                                        <span className="sm:hidden">{formatCompactUptime(getUptime(user.name, user.deviceId))}</span>
-                                                        <span className="hidden sm:inline">{formatUptime(getUptime(user.name, user.deviceId))}</span>
-                                                    </span>
-                                                ) : '-'}
-                                            </td>
-                                            <td className="p-2 sm:p-4 text-center">
-                                                <DropdownMenu>
-                                                    <DropdownMenuTrigger asChild><Button variant="ghost" size="icon"><MoreHorizontal size={16} /></Button></DropdownMenuTrigger>
-                                                    <DropdownMenuContent align="end">
-                                                        <DropdownMenuItem onClick={() => { setSecretToEdit(user); setIsEditModalOpen(true); }}>
-                                                            <Edit className="mr-2 h-4 w-4" /> Edit
-                                                        </DropdownMenuItem>
-                                                        <DropdownMenuSeparator />
-                                                        {user.profile === 'Isolir' ? (
-                                                            <DropdownMenuItem onClick={() => handleAction('unisolate', user)}>
-                                                                <ZapOff className="mr-2 h-4 w-4 text-green-500" /> Buka Isolir
-                                                            </DropdownMenuItem>
-                                                        ) : (
-                                                            <DropdownMenuItem onClick={() => handleAction('isolate', user)}>
-                                                                <ZapOff className="mr-2 h-4 w-4 text-orange-500" /> Isolir User
-                                                            </DropdownMenuItem>
-                                                        )}
-                                                        <DropdownMenuSeparator />
-                                                        {user.isActive &&
-                                                            <DropdownMenuItem onClick={() => handleAction('kick', user)}>
-                                                                <ZapOff className="mr-2 h-4 w-4" /> Kick User
-                                                            </DropdownMenuItem>
-                                                        }
-                                                        {user.disabled === 'true' ?
-                                                            (<DropdownMenuItem onClick={() => handleAction('enable', user)}> <Power className="mr-2 h-4 w-4" /> Enable </DropdownMenuItem>) :
-                                                            (<DropdownMenuItem onClick={() => handleAction('disable', user)}> <PowerOff className="mr-2 h-4 w-4" /> Disable </DropdownMenuItem>)
-                                                        }
-                                                        <DropdownMenuSeparator />
-                                                        <DropdownMenuItem className="text-destructive focus:bg-destructive/10 focus:text-destructive" onClick={() => { setSecretToDelete(user); setIsDeleteModalOpen(true); }}>
-                                                            <Trash2 className="mr-2 h-4 w-4" /> Hapus
-                                                        </DropdownMenuItem>
-                                                    </DropdownMenuContent>
-                                                </DropdownMenu>
-                                            </td>
-                                        </tr>
+                                        <SecretRow
+                                            key={`${user.workspace_id}-${user['.id'] || user.name}-${i}`}
+                                            user={user}
+                                            onEdit={handleEditClick}
+                                            onAction={handleAction}
+                                            onDelete={handleDeleteClick}
+                                        />
                                     ))
                                 ) : (
                                     <tr><td colSpan={6} className="text-center p-10 text-muted-foreground">Tidak ada secret yang cocok.</td></tr>
