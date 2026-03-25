@@ -24,11 +24,42 @@ const NocPage = () => {
     const [allWorkspaces, setAllWorkspaces] = useState<Workspace[]>([]);
     const [selectedWorkspaceIds, setSelectedWorkspaceIds] = useState<number[]>([]);
     const [activeTab, setActiveTab] = useState<'management' | 'map'>('management');
+    const [isInitialized, setIsInitialized] = useState(false);
 
-    // Sync NOC selection to MikrotikProvider for WebSocket management
+    // Initial load from localStorage
+    useEffect(() => {
+        if (typeof window !== 'undefined') {
+            const saved = localStorage.getItem('noc_selected_workspaces');
+            if (saved) {
+                try {
+                    setSelectedWorkspaceIds(JSON.parse(saved));
+                } catch (e) {}
+            }
+            setIsInitialized(true);
+        }
+    }, []);
+
+    // Sync NOC selection to MikrotikProvider for WebSocket management and save to storage
     useEffect(() => {
         setNocWorkspaceIds(selectedWorkspaceIds);
-    }, [selectedWorkspaceIds, setNocWorkspaceIds]);
+        if (isInitialized && typeof window !== 'undefined') {
+            localStorage.setItem('noc_selected_workspaces', JSON.stringify(selectedWorkspaceIds));
+        }
+    }, [selectedWorkspaceIds, setNocWorkspaceIds, isInitialized]);
+
+    const handleWorkspacesFetched = (workspaces: Workspace[]) => {
+        setAllWorkspaces(workspaces);
+        
+        // Auto-select ONLY if it's the first time ever loading NOC dashboard (no saved config)
+        if (typeof window !== 'undefined') {
+            const saved = localStorage.getItem('noc_selected_workspaces');
+            if (!saved && workspaces.length > 0) {
+                const allIds = workspaces.map(w => w.id);
+                setSelectedWorkspaceIds(allIds);
+                localStorage.setItem('noc_selected_workspaces', JSON.stringify(allIds));
+            }
+        }
+    };
 
     const activeWorkspaces = allWorkspaces.filter(ws => selectedWorkspaceIds.includes(ws.id));
 
@@ -65,7 +96,7 @@ const NocPage = () => {
                     <NocWorkspaceSelector
                         selectedWorkspaceIds={selectedWorkspaceIds}
                         onChange={setSelectedWorkspaceIds}
-                        onWorkspacesFetched={setAllWorkspaces}
+                        onWorkspacesFetched={handleWorkspacesFetched}
                     />
                 </div>
 

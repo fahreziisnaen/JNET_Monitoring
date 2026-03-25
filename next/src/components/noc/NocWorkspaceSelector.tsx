@@ -38,11 +38,6 @@ const NocWorkspaceSelector: React.FC<NocWorkspaceSelectorProps> = ({ selectedWor
                 const data = await response.json();
                 setWorkspaces(data);
                 if (onWorkspacesFetched) onWorkspacesFetched(data);
-
-                // Pilih semua workspace secara default jika belum ada yang terpilih
-                if (selectedWorkspaceIds.length === 0 && data.length > 0) {
-                    onChange(data.map((w: Workspace) => w.id));
-                }
             }
         } catch (error) {
             console.error("Failed to fetch workspaces", error);
