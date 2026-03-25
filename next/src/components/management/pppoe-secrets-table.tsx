@@ -29,7 +29,7 @@ interface PppoeSecret {
 interface PppoeSecretsTableProps {
   refreshTrigger: number;
   onActionComplete: () => void;
-  initialFilter?: 'all' | 'active' | 'inactive';
+  initialFilter?: 'all' | 'active' | 'inactive' | 'isolate';
 }
 
 const PppoeSecretsTable = ({ refreshTrigger, onActionComplete, initialFilter = 'all' }: PppoeSecretsTableProps) => {
@@ -114,6 +114,8 @@ const PppoeSecretsTable = ({ refreshTrigger, onActionComplete, initialFilter = '
       // Inactive: semua yang tidak aktif (termasuk yang disabled)
       // Ini sesuai dengan perhitungan summary: inactive = total - active
       filtered = filtered.filter(secret => !isSecretActive(secret));
+    } else if (initialFilter === 'isolate') {
+      filtered = filtered.filter(secret => secret.profile.toLowerCase() === 'isolir');
     }
 
     // Filter berdasarkan search query

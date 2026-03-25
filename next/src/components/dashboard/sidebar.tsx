@@ -57,6 +57,7 @@ const DeviceInfoCard = ({ deviceId, data, connected, name }: { deviceId: number,
   const pppoeSecrets = data?.pppoeSecrets || [];
   const totalSecrets = pppoeSecrets.length;
   const activeSecrets = pppoeSecrets.filter((secret: { isActive: boolean }) => secret.isActive === true).length;
+  const isolateSecrets = pppoeSecrets.filter((secret: { profile: string }) => (secret.profile || '').toLowerCase() === 'isolir').length;
   const inactiveSecrets = totalSecrets - activeSecrets;
   
   const cpuLoad = parseInt(resource['cpu-load'] || '0', 10);
@@ -105,7 +106,7 @@ const DeviceInfoCard = ({ deviceId, data, connected, name }: { deviceId: number,
                 </div>
             </div>
 
-            <div className="grid grid-cols-3 gap-2 py-1 text-[10px] font-bold uppercase tracking-tight">
+            <div className="grid grid-cols-2 gap-2 py-1 text-[10px] font-bold uppercase tracking-tight">
                 <div className="bg-blue-500/10 border border-blue-500/20 p-2 rounded-lg text-center">
                     <p className="text-blue-500/70 mb-0.5">Total Secret</p>
                     <p className="text-blue-500 text-sm">{totalSecrets}</p>
@@ -117,6 +118,10 @@ const DeviceInfoCard = ({ deviceId, data, connected, name }: { deviceId: number,
                 <div className="bg-red-500/10 border border-red-500/20 p-2 rounded-lg text-center">
                     <p className="text-red-500/70 mb-0.5">Tidak Aktif</p>
                     <p className="text-red-500 text-sm">{inactiveSecrets}</p>
+                </div>
+                <div className="bg-orange-500/10 border border-orange-500/20 p-2 rounded-lg text-center">
+                    <p className="text-orange-500/70 mb-0.5">Isolir</p>
+                    <p className="text-orange-500 text-sm">{isolateSecrets}</p>
                 </div>
             </div>
 

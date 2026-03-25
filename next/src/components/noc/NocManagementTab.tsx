@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { motion } from '@/components/motion';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
-import { Power, PowerOff, Loader2, Search, ArrowUpDown, ChevronUp, ChevronDown, Users, UserCheck, UserX, MoreHorizontal, Edit, ZapOff, Trash2, X } from 'lucide-react';
+import { Power, PowerOff, Loader2, Search, ArrowUpDown, ChevronUp, ChevronDown, Users, UserCheck, UserX, MoreHorizontal, Edit, ZapOff, Trash2, X, ShieldAlert } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { useAuth } from '../providers/auth-provider';
 import { useMikrotik } from '../providers/mikrotik-provider';
@@ -150,7 +150,7 @@ const NocManagementTab: React.FC<NocManagementTabProps> = ({ workspaces }) => {
     const [searchQuery, setSearchQuery] = useState('');
     const [sortColumn, setSortColumn] = useState<string | null>(null);
     const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
-    const [activeFilter, setActiveFilter] = useState<'all' | 'active' | 'inactive'>('all');
+    const [activeFilter, setActiveFilter] = useState<'all' | 'active' | 'inactive' | 'isolate'>('all');
     const searchInputRef = React.useRef<HTMLInputElement>(null);
 
     const [isActionLoading, setIsActionLoading] = useState(false);
@@ -265,6 +265,8 @@ const NocManagementTab: React.FC<NocManagementTabProps> = ({ workspaces }) => {
             filtered = filtered.filter(secret => secret.isActive && secret.disabled === 'false');
         } else if (activeFilter === 'inactive') {
             filtered = filtered.filter(secret => !secret.isActive);
+        } else if (activeFilter === 'isolate') {
+            filtered = filtered.filter(secret => secret.profile.toLowerCase() === 'isolir');
         }
 
         if (searchQuery.trim()) {
@@ -323,10 +325,12 @@ const NocManagementTab: React.FC<NocManagementTabProps> = ({ workspaces }) => {
         const onlineSecrets = secrets.filter(s => s.mikrotik_status === 'connected');
         const total = onlineSecrets.length;
         const active = onlineSecrets.filter(s => s.isActive && s.disabled === 'false').length;
+        const isolate = onlineSecrets.filter(s => s.profile.toLowerCase() === 'isolir').length;
         return {
             total,
             active,
-            inactive: Math.max(0, total - active)
+            inactive: Math.max(0, total - active),
+            isolate
         };
     }, [secrets]);
 
@@ -460,7 +464,7 @@ const NocManagementTab: React.FC<NocManagementTabProps> = ({ workspaces }) => {
         }
     }, [secretToDelete, fetchSecrets]);
 
-    const renderSummaryCard = (title: string, count: number, icon: React.ReactNode, color: string, filter: 'all' | 'active' | 'inactive') => (
+    const renderSummaryCard = (title: string, count: number, icon: React.ReactNode, color: string, filter: 'all' | 'active' | 'inactive' | 'isolate') => (
         <button onClick={() => setActiveFilter(filter)} className={`w-full text-left rounded-lg transition-all ${activeFilter === filter ? 'ring-2 ring-primary ring-offset-2 ring-offset-background' : ''}`}>
             <SummaryCard title={title} count={loading && secrets.length === 0 ? <Loader2 className="animate-spin" /> : count} icon={icon} colorClass={color} />
         </button>
@@ -490,10 +494,11 @@ const NocManagementTab: React.FC<NocManagementTabProps> = ({ workspaces }) => {
 
     return (
         <div className="space-y-6">
-            <div className="grid grid-cols-3 gap-2 sm:gap-4">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-2 sm:gap-4">
                 {renderSummaryCard("Total", summary.total, <Users />, "bg-gradient-to-br from-blue-500 to-blue-700", 'all')}
                 {renderSummaryCard("Aktif", summary.active, <UserCheck />, "bg-gradient-to-br from-green-500 to-green-700", 'active')}
                 {renderSummaryCard("Tidak Aktif", summary.inactive, <UserX />, "bg-gradient-to-br from-red-500 to-red-700", 'inactive')}
+                {renderSummaryCard("Isolir", summary.isolate, <ShieldAlert />, "bg-gradient-to-br from-orange-500 to-orange-700", 'isolate')}
             </div>
 
             {offlineRouters.length > 0 && (

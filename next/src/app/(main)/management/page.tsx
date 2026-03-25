@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { Users, UserCheck, UserX, Plus, Settings, Loader2 } from 'lucide-react';
+import { Users, UserCheck, UserX, Plus, Settings, Loader2, ShieldAlert } from 'lucide-react';
 import { useAuth } from '@/components/providers/auth-provider';
 import { useMikrotik } from '@/components/providers/mikrotik-provider';
 import { DeviceSelector } from '@/components/ui/device-selector';
@@ -20,14 +20,14 @@ const ManagementPage = () => {
   const { selectedDeviceId, setSelectedDeviceId, pppoeSecrets, forceRefresh, isConnected } = useMikrotik() || {};
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [isIpPoolModalOpen, setIsIpPoolModalOpen] = useState(false);
-  const [summary, setSummary] = useState({ total: 0, active: 0, inactive: 0 });
+  const [summary, setSummary] = useState({ total: 0, active: 0, inactive: 0, isolate: 0 });
   // loading = true saat pertama load atau habis ganti device (grace period)
   const [loading, setLoading] = useState(true);
   // isInitializing = true selama grace period setelah ganti device
   // UI menampilkan loading spinner bukan "Terputus" saat grace period aktif
   const [isInitializing, setIsInitializing] = useState(false);
   const [refreshTrigger, setRefreshTrigger] = useState(0);
-  const [activeFilter, setActiveFilter] = useState<'all' | 'active' | 'inactive'>('all');
+  const [activeFilter, setActiveFilter] = useState<'all' | 'active' | 'inactive' | 'isolate'>('all');
   const [hasDevices, setHasDevices] = useState<boolean | null>(null);
   // Track previous device so we can detect an actual change
   const prevDeviceIdRef = React.useRef<number | null>(null);
@@ -96,7 +96,7 @@ const ManagementPage = () => {
   // Update summary secara real-time dari WebSocket data (sama seperti summary aktif)
   useEffect(() => {
     if (!selectedDeviceId) {
-      setSummary({ total: 0, active: 0, inactive: 0 });
+      setSummary({ total: 0, active: 0, inactive: 0, isolate: 0 });
       setLoading(false);
       return;
     }
@@ -106,11 +106,12 @@ const ManagementPage = () => {
     const totalSecrets = secretsArray.length;
     const activeCount = secretsArray.filter((secret: any) => secret.isActive === true).length;
     const inactiveCount = Math.max(0, totalSecrets - activeCount);
+    const isolateCount = secretsArray.filter((secret: any) => (secret.profile || '').toLowerCase() === 'isolir').length;
 
     // Selalu update summary (termasuk saat data dikosongkan saat ganti device)
     setSummary(prev => {
-      if (prev.total !== totalSecrets || prev.active !== activeCount || prev.inactive !== inactiveCount) {
-        return { total: totalSecrets, active: activeCount, inactive: inactiveCount };
+      if (prev.total !== totalSecrets || prev.active !== activeCount || prev.inactive !== inactiveCount || prev.isolate !== isolateCount) {
+        return { total: totalSecrets, active: activeCount, inactive: inactiveCount, isolate: isolateCount };
       }
       return prev;
     });
@@ -128,7 +129,7 @@ const ManagementPage = () => {
     }
   };
 
-  const renderSummaryCard = (title: string, count: number, icon: React.ReactNode, color: string, filter: 'all' | 'active' | 'inactive') => (
+  const renderSummaryCard = (title: string, count: number, icon: React.ReactNode, color: string, filter: 'all' | 'active' | 'inactive' | 'isolate') => (
     <button onClick={() => setActiveFilter(filter)} className={`w-full text-left rounded-lg transition-all ${activeFilter === filter ? 'ring-2 ring-primary ring-offset-2 ring-offset-background' : ''}`}>
       <SummaryCard title={title} count={loading ? <Loader2 className="animate-spin" /> : count} icon={icon} colorClass={color} />
     </button>
@@ -200,10 +201,11 @@ const ManagementPage = () => {
           </div>
         ) : (
           <>
-            <div className="grid grid-cols-3 gap-2 sm:gap-4 lg:gap-6">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-2 sm:gap-4 lg:gap-6">
               {renderSummaryCard("Total", summary.total, <Users />, "bg-gradient-to-br from-blue-500 to-blue-700", 'all')}
               {renderSummaryCard("Aktif", summary.active, <UserCheck />, "bg-gradient-to-br from-green-500 to-green-700", 'active')}
               {renderSummaryCard("Tidak Aktif", summary.inactive, <UserX />, "bg-gradient-to-br from-red-500 to-red-700", 'inactive')}
+              {renderSummaryCard("Isolir", summary.isolate, <ShieldAlert />, "bg-gradient-to-br from-orange-500 to-orange-700", 'isolate')}
             </div>
             <div className="mt-8">
               <PppoeSecretsTable refreshTrigger={refreshTrigger} onActionComplete={handleSuccess} initialFilter={activeFilter} />
