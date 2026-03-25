@@ -56,11 +56,17 @@ interface SecretRowProps {
     onEdit: (user: PppoeSecret) => void;
     onAction: (action: 'enable' | 'disable' | 'kick' | 'isolate' | 'unisolate', user: PppoeSecret) => void;
     onDelete: (user: PppoeSecret) => void;
+    index: number;
 }
 
-const SecretRow = React.memo(({ user, onEdit, onAction, onDelete }: SecretRowProps) => {
+const SecretRow = React.memo(({ user, onEdit, onAction, onDelete, index }: SecretRowProps) => {
     return (
-        <tr className="border-b hover:bg-muted/30 transition-colors">
+        <motion.tr 
+            className="border-b hover:bg-muted/30 transition-colors"
+            initial={{ opacity: 0 }} 
+            animate={{ opacity: 1 }} 
+            transition={{ delay: (index % 20) * 0.05 }}
+        >
             <td className="p-2 sm:p-4">
                 {user.disabled === 'true' ?
                     (<span className="flex items-center gap-1 text-muted-foreground"><PowerOff size={14} /> <span className="hidden sm:inline">Disabled</span></span>) :
@@ -135,7 +141,7 @@ const SecretRow = React.memo(({ user, onEdit, onAction, onDelete }: SecretRowPro
                     </DropdownMenuContent>
                 </DropdownMenu>
             </td>
-        </tr>
+        </motion.tr>
     );
 });
 SecretRow.displayName = 'SecretRow';
@@ -536,15 +542,19 @@ const NocManagementTab: React.FC<NocManagementTabProps> = ({ workspaces }) => {
                                 {loading && secrets.length === 0 ? (
                                     <tr><td colSpan={7} className="text-center p-10"><Loader2 className="h-6 w-6 animate-spin mx-auto text-muted-foreground" /></td></tr>
                                 ) : filteredSecrets.length > 0 ? (
-                                    filteredSecrets.map((user) => (
-                                        <SecretRow
-                                            key={`${user.workspace_id}-${user['.id'] || user.name}`}
-                                            user={user}
-                                            onEdit={handleEditClick}
-                                            onAction={handleAction}
-                                            onDelete={handleDeleteClick}
-                                        />
-                                    ))
+                                    filteredSecrets.map((user, i) => {
+                                        const uniqueKey = user['.id'] || `secret-${user.name}-${i}`;
+                                        return (
+                                            <SecretRow
+                                                key={`${user.workspace_id}-${uniqueKey}`}
+                                                user={user}
+                                                index={i}
+                                                onEdit={handleEditClick}
+                                                onAction={handleAction}
+                                                onDelete={handleDeleteClick}
+                                            />
+                                        );
+                                    })
                                 ) : (
                                     <tr><td colSpan={7} className="text-center p-10 text-muted-foreground">Tidak ada secret yang cocok.</td></tr>
                                 )}
