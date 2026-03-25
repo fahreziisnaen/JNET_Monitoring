@@ -466,6 +466,28 @@ const NocManagementTab: React.FC<NocManagementTabProps> = ({ workspaces }) => {
         </button>
     );
 
+    const tableBody = useMemo(() => {
+        return (
+            <tbody>
+                {loading && secrets.length === 0 ? (
+                    <tr><td colSpan={7} className="text-center p-10"><Loader2 className="h-6 w-6 animate-spin mx-auto text-muted-foreground" /></td></tr>
+                ) : filteredSecrets.length > 0 ? (
+                    filteredSecrets.map((user) => (
+                        <SecretRow
+                            key={`${user.workspace_id}-${user['.id'] || user.name}`}
+                            user={user}
+                            onEdit={handleEditClick}
+                            onAction={handleAction}
+                            onDelete={handleDeleteClick}
+                        />
+                    ))
+                ) : (
+                    <tr><td colSpan={7} className="text-center p-10 text-muted-foreground">Tidak ada secret yang cocok.</td></tr>
+                )}
+            </tbody>
+        );
+    }, [loading, secrets.length, filteredSecrets, handleEditClick, handleAction, handleDeleteClick]);
+
     return (
         <div className="space-y-6">
             <div className="grid grid-cols-3 gap-2 sm:gap-4">
@@ -527,23 +549,7 @@ const NocManagementTab: React.FC<NocManagementTabProps> = ({ workspaces }) => {
                                     <th className="p-2 sm:p-4 font-semibold text-center w-[50px] sm:w-[80px]">Aksi</th>
                                 </tr>
                             </thead>
-                            <tbody>
-                                {loading && secrets.length === 0 ? (
-                                    <tr><td colSpan={6} className="text-center p-10"><Loader2 className="h-6 w-6 animate-spin mx-auto text-muted-foreground" /></td></tr>
-                                ) : filteredSecrets.length > 0 ? (
-                                    filteredSecrets.map((user) => (
-                                        <SecretRow
-                                            key={`${user.workspace_id}-${user['.id'] || user.name}`}
-                                            user={user}
-                                            onEdit={handleEditClick}
-                                            onAction={handleAction}
-                                            onDelete={handleDeleteClick}
-                                        />
-                                    ))
-                                ) : (
-                                    <tr><td colSpan={6} className="text-center p-10 text-muted-foreground">Tidak ada secret yang cocok.</td></tr>
-                                )}
-                            </tbody>
+                            {tableBody}
                         </table>
                     </div>
                 </CardContent>
