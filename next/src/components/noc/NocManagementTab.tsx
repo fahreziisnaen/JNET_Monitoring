@@ -178,14 +178,16 @@ const NocManagementTab: React.FC<NocManagementTabProps> = ({ workspaces }) => {
             mergedMap.set(`${s.deviceId}-${s.name}`, { ...s, mikrotik_status: deviceStatus });
         });
         
+        // Pre-compute workspace Map for O(1) lookups
+        const workspacesMap = new Map(workspaces.map(w => [w.id, w.name]));
+
         // 2. Overlay with Live WS data (real-time)
         // This will now ALSO add new items from WebSocket (Zero-latency Create)
         allPppoeSecrets.forEach(s => {
             const existing = mergedMap.get(`${s.deviceId}-${s.name}`);
             
             // Resolve workspace/router name from prop or existing data as fallback
-            const wsFromProp = workspaces.find(w => w.id === s.workspace_id);
-            const resolvedWsName = s.workspace_name || existing?.workspace_name || wsFromProp?.name || 'Loading...';
+            const resolvedWsName = s.workspace_name || existing?.workspace_name || workspacesMap.get(s.workspace_id) || 'Loading...';
             const resolvedRouterName = s.router_name || existing?.router_name || 'Loading...';
             
             mergedMap.set(`${s.deviceId}-${s.name}`, {
@@ -202,7 +204,7 @@ const NocManagementTab: React.FC<NocManagementTabProps> = ({ workspaces }) => {
 
         // CRITICAL: Filter to only show secrets from selected workspaces
         return all.filter(s => workspaceIds.includes(s.workspace_id));
-    }, [apiSecrets, allPppoeSecrets, allDevicesStatus, workspaceIdsKey]);
+    }, [apiSecrets, allPppoeSecrets, allDevicesStatus, workspaceIdsKey, workspaces]);
 
 
 
@@ -529,9 +531,9 @@ const NocManagementTab: React.FC<NocManagementTabProps> = ({ workspaces }) => {
                                 {loading && secrets.length === 0 ? (
                                     <tr><td colSpan={6} className="text-center p-10"><Loader2 className="h-6 w-6 animate-spin mx-auto text-muted-foreground" /></td></tr>
                                 ) : filteredSecrets.length > 0 ? (
-                                    filteredSecrets.map((user, i) => (
+                                    filteredSecrets.map((user) => (
                                         <SecretRow
-                                            key={`${user.workspace_id}-${user['.id'] || user.name}-${i}`}
+                                            key={`${user.workspace_id}-${user['.id'] || user.name}`}
                                             user={user}
                                             onEdit={handleEditClick}
                                             onAction={handleAction}
