@@ -238,47 +238,42 @@ const NocManagementTab: React.FC<NocManagementTabProps> = ({ workspaces }) => {
         }
     }, [searchQuery, activeFilter]);
 
-    const secrets = useMemo(() => {
-        // Merge API cache with live WS data
-        const mergedMap = new Map();
-        
+    // Merge API cache + live WS data → update state (ikuti pola Management table)
+    const [mergedSecrets, setMergedSecrets] = useState<PppoeSecret[]>([]);
+
+    useEffect(() => {
+        const mergedMap = new Map<string, PppoeSecret>();
+
         // 1. Start with API data (stale cache)
         apiSecrets.forEach(s => {
-            // Gunakan status dari allDevicesStatus jika tersedia, default ke 'connected'
-            // agar data API tidak dibuang saat WS belum terhubung
             const deviceConnected = allDevicesStatus[s.deviceId];
             const mikrotik_status = deviceConnected === undefined ? 'connected' : (deviceConnected.isConnected ? 'connected' : 'disconnected');
             mergedMap.set(`${s.deviceId}-${s.name}`, { ...s, mikrotik_status });
         });
-        
-        // Pre-compute workspace Map for O(1) lookups
+
+        // 2. Pre-compute workspace Map
         const workspacesMap = new Map(workspaces.map(w => [w.id, w.name]));
 
-        // 2. Overlay with Live WS data (real-time)
-        // This will now ALSO add new items from WebSocket (Zero-latency Create)
+        // 3. Overlay dengan Live WS data
         allPppoeSecrets.forEach(s => {
             const existing = mergedMap.get(`${s.deviceId}-${s.name}`);
-            
-            // Resolve workspace/router name from prop or existing data as fallback
             const resolvedWsName = s.workspace_name || existing?.workspace_name || workspacesMap.get(s.workspace_id) || 'Loading...';
             const resolvedRouterName = s.router_name || existing?.router_name || 'Loading...';
-            
             mergedMap.set(`${s.deviceId}-${s.name}`, {
                 ...existing,
                 ...s,
                 mikrotik_status: 'connected',
                 workspace_name: resolvedWsName,
                 router_name: resolvedRouterName,
-                workspace_id: s.workspace_id
-            });
+                workspace_id: s.workspace_id,
+            } as PppoeSecret);
         });
-        
-        const all = Array.from(mergedMap.values()) as PppoeSecret[];
 
-        // CRITICAL: Filter to only show secrets from selected workspaces
-        return all.filter(s => workspaceIds.includes(s.workspace_id));
-    }, [apiSecrets, allPppoeSecrets, allDevicesStatus, workspaceIdsKey, workspaceIds]);
-
+        const all = Array.from(mergedMap.values());
+        // Filter hanya workspace yang dipilih
+        const filtered = all.filter(s => workspaceIds.includes(s.workspace_id));
+        setMergedSecrets(filtered);
+    }, [apiSecrets, allPppoeSecrets, allDevicesStatus, workspaceIds, workspaces]);
 
 
     const fetchSecrets = useCallback(async () => {
@@ -332,7 +327,7 @@ const NocManagementTab: React.FC<NocManagementTabProps> = ({ workspaces }) => {
 
     const filteredSecrets = useMemo(() => {
         // Filter out secrets from offline routers to prevent confusion
-        let filtered = secrets.filter(s => s.mikrotik_status === 'connected');
+        let filtered = mergedSecrets.filter(s => s.mikrotik_status === 'connected');
 
         if (activeFilter === 'active') {
             filtered = filtered.filter(secret => secret.isActive && secret.disabled === 'false');
@@ -392,10 +387,10 @@ const NocManagementTab: React.FC<NocManagementTabProps> = ({ workspaces }) => {
         }
 
         return filtered;
-    }, [secrets, activeFilter, searchQuery, sortColumn, sortDirection]);
+    }, [mergedSecrets, activeFilter, searchQuery, sortColumn, sortDirection]);
 
     const summary = useMemo(() => {
-        const onlineSecrets = secrets.filter(s => s.mikrotik_status === 'connected');
+        const onlineSecrets = mergedSecrets.filter(s => s.mikrotik_status === 'connected');
         const total = onlineSecrets.length;
         const active = onlineSecrets.filter(s => s.isActive && s.disabled === 'false').length;
         const isolate = onlineSecrets.filter(s => s.profile.toLowerCase() === 'isolir').length;
@@ -405,11 +400,11 @@ const NocManagementTab: React.FC<NocManagementTabProps> = ({ workspaces }) => {
             inactive: Math.max(0, total - active),
             isolate
         };
-    }, [secrets]);
+    }, [mergedSecrets]);
 
     const offlineRouters = useMemo(() => {
         const uniqueRouters = new Map();
-        secrets.forEach(s => {
+        mergedSecrets.forEach(s => {
             if (!uniqueRouters.has(s.router_name || s.workspace_name)) {
                 uniqueRouters.set(s.router_name || s.workspace_name, s.mikrotik_status);
             }
@@ -417,7 +412,7 @@ const NocManagementTab: React.FC<NocManagementTabProps> = ({ workspaces }) => {
         return Array.from(uniqueRouters.entries())
             .filter(([_, status]) => status !== 'connected')
             .map(([name]) => name);
-    }, [secrets]);
+    }, [mergedSecrets]);
 
     const handleAction = useCallback(async (action: 'enable' | 'disable' | 'kick' | 'isolate' | 'unisolate', secret: PppoeSecret) => {
         setIsActionLoading(true);
@@ -539,7 +534,7 @@ const NocManagementTab: React.FC<NocManagementTabProps> = ({ workspaces }) => {
 
     const renderSummaryCard = (title: string, count: number, icon: React.ReactNode, color: string, filter: 'all' | 'active' | 'inactive' | 'isolate') => (
         <button onClick={() => setActiveFilter(filter)} className={`w-full text-left rounded-lg transition-all ${activeFilter === filter ? 'ring-2 ring-primary ring-offset-2 ring-offset-background' : ''}`}>
-            <SummaryCard title={title} count={loading && secrets.length === 0 ? <Loader2 className="animate-spin" /> : count} icon={icon} colorClass={color} />
+            <SummaryCard title={title} count={loading && mergedSecrets.length === 0 ? <Loader2 className="animate-spin" /> : count} icon={icon} colorClass={color} />
         </button>
     );
 
@@ -615,7 +610,7 @@ const NocManagementTab: React.FC<NocManagementTabProps> = ({ workspaces }) => {
                                 </tr>
                             </thead>
                             <tbody>
-                                {loading && secrets.length === 0 ? (
+                                {loading && mergedSecrets.length === 0 ? (
                                     <tr><td colSpan={7} className="text-center p-10"><Loader2 className="h-6 w-6 animate-spin mx-auto text-muted-foreground" /></td></tr>
                                 ) : filteredSecrets.length > 0 ? (
                                     filteredSecrets.map((user, i) => {
