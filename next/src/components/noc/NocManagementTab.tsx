@@ -39,16 +39,72 @@ interface NocManagementTabProps {
     workspaces: { id: number, name: string }[];
 }
 
-const UptimeDisplay = React.memo(({ baseUptime, isActive }: { baseUptime: string | undefined, isActive: boolean | undefined }) => {
+// Parse MikroTik uptime string (e.g. "1w2d3h4m5s") ke total seconds
+function parseMikrotikUptimeToSeconds(uptimeStr: string): number {
+    const w = uptimeStr.match(/(\d+)w/);
+    const d = uptimeStr.match(/(\d+)d/);
+    const h = uptimeStr.match(/(\d+)h/);
+    const m = uptimeStr.match(/(\d+)m/);
+    const s = uptimeStr.match(/(\d+)s/);
+    return (
+        (w ? parseInt(w[1]) * 7 * 24 * 3600 : 0) +
+        (d ? parseInt(d[1]) * 24 * 3600 : 0) +
+        (h ? parseInt(h[1]) * 3600 : 0) +
+        (m ? parseInt(m[1]) * 60 : 0) +
+        (s ? parseInt(s[1]) : 0)
+    );
+}
+
+// Convert total seconds kembali ke format MikroTik string
+function secondsToMikrotikStr(totalSecs: number): string {
+    const w = Math.floor(totalSecs / (7 * 24 * 3600));
+    totalSecs %= 7 * 24 * 3600;
+    const d = Math.floor(totalSecs / (24 * 3600));
+    totalSecs %= 24 * 3600;
+    const h = Math.floor(totalSecs / 3600);
+    totalSecs %= 3600;
+    const m = Math.floor(totalSecs / 60);
+    const s = totalSecs % 60;
+    let str = '';
+    if (w) str += `${w}w`;
+    if (d) str += `${d}d`;
+    if (h) str += `${h}h`;
+    if (m) str += `${m}m`;
+    str += `${s}s`;
+    return str;
+}
+
+const UptimeDisplay = ({ baseUptime, isActive }: { baseUptime: string | undefined, isActive: boolean | undefined }) => {
+    // Simpan base seconds dan waktu mount untuk menghitung elapsed
+    const mountTimeRef = React.useRef<number>(Date.now());
+    const baseSecondsRef = React.useRef<number>(0);
+    const [elapsedDisplay, setElapsedDisplay] = useState<string>('');
+
+    useEffect(() => {
+        if (!isActive || !baseUptime || baseUptime === '-' || baseUptime === 'N/A') return;
+        // Reset ketika baseUptime berubah (data baru dari WS)
+        mountTimeRef.current = Date.now();
+        baseSecondsRef.current = parseMikrotikUptimeToSeconds(baseUptime);
+        // Set initial display
+        setElapsedDisplay(secondsToMikrotikStr(baseSecondsRef.current));
+        // Tick setiap detik
+        const timer = setInterval(() => {
+            const elapsed = Math.floor((Date.now() - mountTimeRef.current) / 1000);
+            setElapsedDisplay(secondsToMikrotikStr(baseSecondsRef.current + elapsed));
+        }, 1000);
+        return () => clearInterval(timer);
+    }, [isActive, baseUptime]);
+
     if (!isActive || !baseUptime || baseUptime === '-' || baseUptime === 'N/A') return <span>-</span>;
-    
+
+    const displayStr = elapsedDisplay || baseUptime;
     return (
         <span className="flex flex-col sm:block">
-            <span className="sm:hidden">{formatCompactUptime(baseUptime)}</span>
-            <span className="hidden sm:inline">{formatUptime(baseUptime)}</span>
+            <span className="sm:hidden">{formatCompactUptime(displayStr)}</span>
+            <span className="hidden sm:inline">{formatUptime(displayStr)}</span>
         </span>
     );
-});
+};
 UptimeDisplay.displayName = 'UptimeDisplay';
 
 interface SecretRowProps {
@@ -59,7 +115,7 @@ interface SecretRowProps {
     index: number;
 }
 
-const SecretRow = React.memo(({ user, onEdit, onAction, onDelete, index }: SecretRowProps) => {
+const SecretRow = ({ user, onEdit, onAction, onDelete, index }: SecretRowProps) => {
     return (
         <motion.tr 
             className="border-b hover:bg-muted/30 transition-colors"
@@ -143,7 +199,7 @@ const SecretRow = React.memo(({ user, onEdit, onAction, onDelete, index }: Secre
             </td>
         </motion.tr>
     );
-});
+};
 SecretRow.displayName = 'SecretRow';
 
 const NocManagementTab: React.FC<NocManagementTabProps> = ({ workspaces }) => {
@@ -188,8 +244,11 @@ const NocManagementTab: React.FC<NocManagementTabProps> = ({ workspaces }) => {
         
         // 1. Start with API data (stale cache)
         apiSecrets.forEach(s => {
-            const deviceStatus = allDevicesStatus[s.deviceId]?.isConnected ? 'connected' : 'disconnected';
-            mergedMap.set(`${s.deviceId}-${s.name}`, { ...s, mikrotik_status: deviceStatus });
+            // Gunakan status dari allDevicesStatus jika tersedia, default ke 'connected'
+            // agar data API tidak dibuang saat WS belum terhubung
+            const deviceConnected = allDevicesStatus[s.deviceId];
+            const mikrotik_status = deviceConnected === undefined ? 'connected' : (deviceConnected.isConnected ? 'connected' : 'disconnected');
+            mergedMap.set(`${s.deviceId}-${s.name}`, { ...s, mikrotik_status });
         });
         
         // Pre-compute workspace Map for O(1) lookups
