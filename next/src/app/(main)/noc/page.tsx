@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '@/components/providers/auth-provider';
 import { useRouter } from 'next/navigation';
 import { Activity, Map } from 'lucide-react';
@@ -61,7 +61,10 @@ const NocPage = () => {
         }
     };
 
-    const activeWorkspaces = allWorkspaces.filter(ws => selectedWorkspaceIds.includes(ws.id));
+    const activeWorkspaces = useMemo(
+        () => allWorkspaces.filter(ws => selectedWorkspaceIds.includes(ws.id)),
+        [allWorkspaces, selectedWorkspaceIds]
+    );
 
     // Proteksi rute NOC hanya untuk superadmin dan role noc
     useEffect(() => {

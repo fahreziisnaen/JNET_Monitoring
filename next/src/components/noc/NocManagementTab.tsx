@@ -147,7 +147,7 @@ const SecretRow = React.memo(({ user, onEdit, onAction, onDelete, index }: Secre
 SecretRow.displayName = 'SecretRow';
 
 const NocManagementTab: React.FC<NocManagementTabProps> = ({ workspaces }) => {
-    const workspaceIds = workspaces.map(w => w.id);
+    const workspaceIds = useMemo(() => workspaces.map(w => w.id), [workspaces]);
     const workspaceIdsKey = useMemo(() => [...workspaceIds].sort().join(','), [workspaceIds]);
     const { token } = useAuth();
     const { allPppoeSecrets, allDevicesStatus } = useMikrotik();
@@ -158,6 +158,7 @@ const NocManagementTab: React.FC<NocManagementTabProps> = ({ workspaces }) => {
     const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
     const [activeFilter, setActiveFilter] = useState<'all' | 'active' | 'inactive' | 'isolate'>('all');
     const searchInputRef = React.useRef<HTMLInputElement>(null);
+    const tableContainerRef = React.useRef<HTMLDivElement>(null);
 
     const [isActionLoading, setIsActionLoading] = useState(false);
     const [isEditModalOpen, setIsEditModalOpen] = useState(false);
@@ -173,6 +174,13 @@ const NocManagementTab: React.FC<NocManagementTabProps> = ({ workspaces }) => {
         if (!secretToEdit) return null;
         return { ...secretToEdit, disabled: secretToEdit.disabled === 'true' };
     }, [secretToEdit]);
+
+    // Reset scroll ke atas saat search atau filter berubah
+    useEffect(() => {
+        if (tableContainerRef.current) {
+            tableContainerRef.current.scrollTop = 0;
+        }
+    }, [searchQuery, activeFilter]);
 
     const secrets = useMemo(() => {
         // Merge API cache with live WS data
@@ -210,7 +218,7 @@ const NocManagementTab: React.FC<NocManagementTabProps> = ({ workspaces }) => {
 
         // CRITICAL: Filter to only show secrets from selected workspaces
         return all.filter(s => workspaceIds.includes(s.workspace_id));
-    }, [apiSecrets, allPppoeSecrets, allDevicesStatus, workspaceIdsKey, workspaces]);
+    }, [apiSecrets, allPppoeSecrets, allDevicesStatus, workspaceIdsKey, workspaceIds]);
 
 
 
@@ -520,12 +528,21 @@ const NocManagementTab: React.FC<NocManagementTabProps> = ({ workspaces }) => {
                                     onChange={(e) => setSearchQuery(e.target.value)}
                                     className="pl-9 pr-8 bg-input h-9 text-sm"
                                 />
+                                {searchQuery && (
+                                    <button
+                                        onClick={() => setSearchQuery('')}
+                                        className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                                        aria-label="Hapus pencarian"
+                                    >
+                                        <X size={14} />
+                                    </button>
+                                )}
                             </div>
                         </div>
                     </div>
                 </CardHeader>
                 <CardContent className="p-0">
-                    <div className="h-[60vh] overflow-y-auto overflow-x-auto overscroll-contain">
+                    <div ref={tableContainerRef} className="h-[60vh] overflow-y-auto overflow-x-auto overscroll-contain">
                         <table className="w-full text-xs sm:text-sm">
                             <thead className="text-left bg-secondary sticky top-0 z-10">
                                 <tr>
