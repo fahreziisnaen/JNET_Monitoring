@@ -521,12 +521,9 @@ const NocManagementTab: React.FC<NocManagementTabProps> = ({ workspaces }) => {
                                     filteredSecrets.map((user, i) => {
                                         const uniqueKey = user['.id'] || `secret-${user.name}-${i}`;
                                         return (
-                                            <motion.tr 
+                                            <tr 
                                                 key={`${user.workspace_id}-${uniqueKey}`}
                                                 className="border-b hover:bg-muted/30 transition-colors"
-                                                initial={{ opacity: 0 }} 
-                                                animate={{ opacity: 1 }} 
-                                                transition={{ delay: (i % 20) * 0.05 }}
                                             >
                                                 <td className="p-2 sm:p-4">
                                                     {user.disabled === 'true' ?
@@ -602,7 +599,7 @@ const NocManagementTab: React.FC<NocManagementTabProps> = ({ workspaces }) => {
                                                         </DropdownMenuContent>
                                                     </DropdownMenu>
                                                 </td>
-                                            </motion.tr>
+                                            </tr>
                                         );
                                     })
                                 ) : (
