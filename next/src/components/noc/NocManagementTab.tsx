@@ -518,8 +518,8 @@ const NocManagementTab: React.FC<NocManagementTabProps> = ({ workspaces }) => {
                                 {loading && mergedSecrets.length === 0 ? (
                                     <tr><td colSpan={7} className="text-center p-10"><Loader2 className="h-6 w-6 animate-spin mx-auto text-muted-foreground" /></td></tr>
                                 ) : filteredSecrets.length > 0 ? (
-                                    filteredSecrets.map((user, i) => {
-                                        const uniqueKey = user['.id'] || `secret-${user.name}-${i}`;
+                                    filteredSecrets.map((user) => {
+                                        const uniqueKey = user['.id'] || user.name;
                                         return (
                                             <tr 
                                                 key={`${user.workspace_id}-${uniqueKey}`}
