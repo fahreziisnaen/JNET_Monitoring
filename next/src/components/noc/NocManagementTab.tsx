@@ -1,11 +1,9 @@
 'use client';
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { motion } from '@/components/motion';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
-import { Power, PowerOff, Loader2, Search, ArrowUpDown, ChevronUp, ChevronDown, Users, UserCheck, UserX, MoreHorizontal, Edit, ZapOff, Trash2, X, ShieldAlert } from 'lucide-react';
+import { Power, PowerOff, Loader2, Search, Users, UserCheck, UserX, MoreHorizontal, Edit, ZapOff, Trash2, X, ShieldAlert } from 'lucide-react';
 import { Input } from '@/components/ui/input';
-import { useAuth } from '../providers/auth-provider';
 import { useMikrotik } from '../providers/mikrotik-provider';
 import { formatUptime, formatCompactUptime } from '@/utils/format';
 import SummaryCard from '../dashboard/summary-card';
@@ -32,14 +30,14 @@ interface PppoeSecret {
     workspace_id: number;
     deviceId: number;
     router_name?: string;
-    mikrotik_status?: 'connected' | 'disconnected' | 'connecting';
 }
 
 interface NocManagementTabProps {
     workspaces: { id: number, name: string }[];
 }
 
-// Parse MikroTik uptime string (e.g. "1w2d3h4m5s") ke total seconds
+// ─── Live Uptime Counter ─────────────────────────────────────────────────────
+
 function parseMikrotikUptimeToSeconds(uptimeStr: string): number {
     const w = uptimeStr.match(/(\d+)w/);
     const d = uptimeStr.match(/(\d+)d/);
@@ -55,7 +53,6 @@ function parseMikrotikUptimeToSeconds(uptimeStr: string): number {
     );
 }
 
-// Convert total seconds kembali ke format MikroTik string
 function secondsToMikrotikStr(totalSecs: number): string {
     const w = Math.floor(totalSecs / (7 * 24 * 3600));
     totalSecs %= 7 * 24 * 3600;
@@ -75,19 +72,15 @@ function secondsToMikrotikStr(totalSecs: number): string {
 }
 
 const UptimeDisplay = ({ baseUptime, isActive }: { baseUptime: string | undefined, isActive: boolean | undefined }) => {
-    // Simpan base seconds dan waktu mount untuk menghitung elapsed
     const mountTimeRef = React.useRef<number>(Date.now());
     const baseSecondsRef = React.useRef<number>(0);
     const [elapsedDisplay, setElapsedDisplay] = useState<string>('');
 
     useEffect(() => {
         if (!isActive || !baseUptime || baseUptime === '-' || baseUptime === 'N/A') return;
-        // Reset ketika baseUptime berubah (data baru dari WS)
         mountTimeRef.current = Date.now();
         baseSecondsRef.current = parseMikrotikUptimeToSeconds(baseUptime);
-        // Set initial display
         setElapsedDisplay(secondsToMikrotikStr(baseSecondsRef.current));
-        // Tick setiap detik
         const timer = setInterval(() => {
             const elapsed = Math.floor((Date.now() - mountTimeRef.current) / 1000);
             setElapsedDisplay(secondsToMikrotikStr(baseSecondsRef.current + elapsed));
@@ -105,20 +98,20 @@ const UptimeDisplay = ({ baseUptime, isActive }: { baseUptime: string | undefine
         </span>
     );
 };
-UptimeDisplay.displayName = 'UptimeDisplay';
+
+// ─── Main Component ───────────────────────────────────────────────────────────
 
 const NocManagementTab: React.FC<NocManagementTabProps> = ({ workspaces }) => {
     const workspaceIds = useMemo(() => workspaces.map(w => w.id), [workspaces]);
-    const workspaceIdsKey = useMemo(() => [...workspaceIds].sort().join(','), [workspaceIds]);
-    const { token } = useAuth();
-    const { allPppoeSecrets, allDevicesStatus } = useMikrotik();
-    const [apiSecrets, setApiSecrets] = useState<PppoeSecret[]>([]);
-    const [loading, setLoading] = useState(false);
+    const { allPppoeSecrets } = useMikrotik();
+
+    // ── State (identik dengan Management Table) ──────────────────────────────
+    const [allSecrets, setAllSecrets] = useState<PppoeSecret[]>([]);
+    const [loading, setLoading] = useState(true);
     const [searchQuery, setSearchQuery] = useState('');
     const [sortColumn, setSortColumn] = useState<string | null>(null);
     const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
     const [activeFilter, setActiveFilter] = useState<'all' | 'active' | 'inactive' | 'isolate'>('all');
-    const searchInputRef = React.useRef<HTMLInputElement>(null);
     const tableContainerRef = React.useRef<HTMLDivElement>(null);
 
     const [isActionLoading, setIsActionLoading] = useState(false);
@@ -129,98 +122,65 @@ const NocManagementTab: React.FC<NocManagementTabProps> = ({ workspaces }) => {
     const [isAddModalOpen, setIsAddModalOpen] = useState(false);
     const [selectedWorkspaceForAdd, setSelectedWorkspaceForAdd] = useState<number | null>(null);
     const [isNocWorkspaceSelectorOpen, setIsNocWorkspaceSelectorOpen] = useState(false);
+    const [recentlyDeleted, setRecentlyDeleted] = useState<Set<string>>(new Set());
 
-    const [isInitialLoad, setIsInitialLoad] = useState(true);
     const memoizedSecretToEdit = useMemo(() => {
         if (!secretToEdit) return null;
         return { ...secretToEdit, disabled: secretToEdit.disabled === 'true' };
     }, [secretToEdit]);
 
-    // Reset scroll ke atas saat search atau filter berubah
+    // Reset scroll posisi saat filter/search berubah
     useEffect(() => {
         if (tableContainerRef.current) {
             tableContainerRef.current.scrollTop = 0;
         }
     }, [searchQuery, activeFilter]);
 
-    // Merge API cache + live WS data → update state (ikuti pola Management table)
-    const [mergedSecrets, setMergedSecrets] = useState<PppoeSecret[]>([]);
-
+    // ── Data dari WebSocket (IDENTIK dengan Management Table) ─────────────────
     useEffect(() => {
-        const mergedMap = new Map<string, PppoeSecret>();
-
-        // 1. Start with API data (stale cache)
-        apiSecrets.forEach(s => {
-            const deviceConnected = allDevicesStatus[s.deviceId];
-            const mikrotik_status = deviceConnected === undefined ? 'connected' : (deviceConnected.isConnected ? 'connected' : 'disconnected');
-            mergedMap.set(`${s.deviceId}-${s.name}`, { ...s, mikrotik_status });
-        });
-
-        // 2. Pre-compute workspace Map
-        const workspacesMap = new Map(workspaces.map(w => [w.id, w.name]));
-
-        // 3. Overlay dengan Live WS data
-        allPppoeSecrets.forEach(s => {
-            const existing = mergedMap.get(`${s.deviceId}-${s.name}`);
-            const resolvedWsName = s.workspace_name || existing?.workspace_name || workspacesMap.get(s.workspace_id) || 'Loading...';
-            const resolvedRouterName = s.router_name || existing?.router_name || 'Loading...';
-            mergedMap.set(`${s.deviceId}-${s.name}`, {
-                ...existing,
-                ...s,
-                mikrotik_status: 'connected',
-                workspace_name: resolvedWsName,
-                router_name: resolvedRouterName,
-                workspace_id: s.workspace_id,
-            } as PppoeSecret);
-        });
-
-        const all = Array.from(mergedMap.values());
-        // Filter hanya workspace yang dipilih
-        const filtered = all.filter(s => workspaceIds.includes(s.workspace_id));
-        setMergedSecrets(filtered);
-    }, [apiSecrets, allPppoeSecrets, allDevicesStatus, workspaceIds, workspaces]);
-
-
-    const fetchSecrets = useCallback(async () => {
         if (workspaceIds.length === 0) {
-            setApiSecrets([]);
+            setAllSecrets([]);
             setLoading(false);
-            setIsInitialLoad(false);
             return;
         }
 
-        // Hanya tampilkan spinner loading pada fetch pertama
-        setLoading(true);
-        try {
-            const response = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/api/noc/secrets`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${token}`
-                },
-                body: JSON.stringify({ workspaceIds })
-            });
+        const secretsArray = (Array.isArray(allPppoeSecrets) ? allPppoeSecrets : [])
+            .filter((s: any) =>
+                workspaceIds.includes(s.workspace_id) &&
+                !recentlyDeleted.has(`${s.deviceId}-${s.name}`)
+            );
 
-            if (response.ok) {
-                const data = await response.json();
-                const mappedSecrets = (data.secrets || []).map((s: any) => ({
-                    ...s,
-                    deviceId: s.device_id || s.deviceId
-                }));
-                setApiSecrets(mappedSecrets);
-            }
-        } catch (error) {
-            console.error("Failed to fetch NOC secrets", error);
-        } finally {
+        const transformedSecrets: PppoeSecret[] = secretsArray.map((secret: any) => ({
+            '.id': secret['.id'] || '',
+            name: secret.name || '',
+            profile: secret.profile || '',
+            'remote-address': secret.currentAddress || secret['remote-address'] || undefined,
+            disabled: secret.disabled || 'false',
+            isActive: secret.isActive === true,
+            activeConnectionId: secret.activeConnectionId || undefined,
+            deviceId: secret.deviceId,
+            workspace_id: secret.workspace_id,
+            workspace_name: secret.workspace_name || '',
+            router_name: secret.router_name || '',
+            uptime: secret.uptime || 'N/A',
+        }));
+
+        setAllSecrets(transformedSecrets);
+
+        if (transformedSecrets.length > 0) {
             setLoading(false);
-            setIsInitialLoad(false);
         }
-    }, [workspaceIdsKey, token]);
+    }, [allPppoeSecrets, workspaceIds, recentlyDeleted]);
 
+    // Fallback: matikan loading setelah 5 detik
     useEffect(() => {
-        fetchSecrets();
-    }, [fetchSecrets]);
+        if (workspaceIds.length > 0) {
+            const timer = setTimeout(() => setLoading(false), 5000);
+            return () => clearTimeout(timer);
+        }
+    }, [workspaceIds]);
 
+    // ── Sorting ───────────────────────────────────────────────────────────────
     const handleSort = (column: string) => {
         if (sortColumn === column) {
             setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc');
@@ -230,219 +190,137 @@ const NocManagementTab: React.FC<NocManagementTabProps> = ({ workspaces }) => {
         }
     };
 
+    // ── Filtering & Sorting (IDENTIK dengan Management Table) ─────────────────
     const filteredSecrets = useMemo(() => {
-        // Filter out secrets from offline routers to prevent confusion
-        let filtered = mergedSecrets.filter(s => s.mikrotik_status === 'connected');
+        let filtered = allSecrets;
 
         if (activeFilter === 'active') {
-            filtered = filtered.filter(secret => secret.isActive && secret.disabled === 'false');
+            filtered = filtered.filter(s => s.isActive && s.disabled === 'false');
         } else if (activeFilter === 'inactive') {
-            filtered = filtered.filter(secret => !secret.isActive);
+            filtered = filtered.filter(s => !s.isActive);
         } else if (activeFilter === 'isolate') {
-            filtered = filtered.filter(secret => secret.profile.toLowerCase() === 'isolir');
+            filtered = filtered.filter(s => s.profile.toLowerCase() === 'isolir');
         }
 
         if (searchQuery.trim()) {
             const query = searchQuery.toLowerCase().trim();
-            filtered = filtered.filter(secret => {
-                return (
-                    secret.name.toLowerCase().includes(query) ||
-                    secret.profile.toLowerCase().includes(query) ||
-                    (secret['remote-address'] || '').toLowerCase().includes(query) ||
-                    secret.workspace_name.toLowerCase().includes(query) ||
-                    (secret.router_name || '').toLowerCase().includes(query)
-                );
-            });
+            filtered = filtered.filter(s =>
+                s.name.toLowerCase().includes(query) ||
+                s.profile.toLowerCase().includes(query) ||
+                (s['remote-address'] || '').toLowerCase().includes(query) ||
+                (s.workspace_name || '').toLowerCase().includes(query) ||
+                (s.router_name || '').toLowerCase().includes(query)
+            );
         }
 
         if (sortColumn) {
             filtered = [...filtered].sort((a, b) => {
-                let aValue: any;
-                let bValue: any;
-
+                let aVal: any, bVal: any;
                 switch (sortColumn) {
                     case 'status':
-                        aValue = a.disabled === 'true' ? 0 : (a.isActive ? 1 : 2);
-                        bValue = b.disabled === 'true' ? 0 : (b.isActive ? 1 : 2);
+                        aVal = a.disabled === 'true' ? 0 : (a.isActive ? 1 : 2);
+                        bVal = b.disabled === 'true' ? 0 : (b.isActive ? 1 : 2);
                         break;
                     case 'name':
-                        aValue = a.name.toLowerCase();
-                        bValue = b.name.toLowerCase();
+                        aVal = a.name.toLowerCase();
+                        bVal = b.name.toLowerCase();
                         break;
                     case 'workspace':
-                        aValue = (a.router_name || a.workspace_name).toLowerCase();
-                        bValue = (b.router_name || b.workspace_name).toLowerCase();
+                        aVal = (a.router_name || a.workspace_name).toLowerCase();
+                        bVal = (b.router_name || b.workspace_name).toLowerCase();
                         break;
                     case 'profile':
-                        aValue = a.profile.toLowerCase();
-                        bValue = b.profile.toLowerCase();
+                        aVal = a.profile.toLowerCase();
+                        bVal = b.profile.toLowerCase();
                         break;
                     case 'remote-address':
-                        aValue = (a['remote-address'] || '').toLowerCase();
-                        bValue = (b['remote-address'] || '').toLowerCase();
+                        aVal = (a['remote-address'] || '').toLowerCase();
+                        bVal = (b['remote-address'] || '').toLowerCase();
                         break;
-                    default:
-                        return 0;
+                    default: return 0;
                 }
-
-                if (aValue < bValue) return sortDirection === 'asc' ? -1 : 1;
-                if (aValue > bValue) return sortDirection === 'asc' ? 1 : -1;
+                if (aVal < bVal) return sortDirection === 'asc' ? -1 : 1;
+                if (aVal > bVal) return sortDirection === 'asc' ? 1 : -1;
                 return 0;
             });
         }
 
         return filtered;
-    }, [mergedSecrets, activeFilter, searchQuery, sortColumn, sortDirection]);
+    }, [allSecrets, activeFilter, searchQuery, sortColumn, sortDirection]);
 
+    // ── Summary Cards ─────────────────────────────────────────────────────────
     const summary = useMemo(() => {
-        const onlineSecrets = mergedSecrets.filter(s => s.mikrotik_status === 'connected');
-        const total = onlineSecrets.length;
-        const active = onlineSecrets.filter(s => s.isActive && s.disabled === 'false').length;
-        const isolate = onlineSecrets.filter(s => s.profile.toLowerCase() === 'isolir').length;
-        return {
-            total,
-            active,
-            inactive: Math.max(0, total - active),
-            isolate
-        };
-    }, [mergedSecrets]);
+        const total = allSecrets.length;
+        const active = allSecrets.filter(s => s.isActive && s.disabled === 'false').length;
+        const isolate = allSecrets.filter(s => s.profile.toLowerCase() === 'isolir').length;
+        return { total, active, inactive: Math.max(0, total - active), isolate };
+    }, [allSecrets]);
 
-    const offlineRouters = useMemo(() => {
-        const uniqueRouters = new Map();
-        mergedSecrets.forEach(s => {
-            if (!uniqueRouters.has(s.router_name || s.workspace_name)) {
-                uniqueRouters.set(s.router_name || s.workspace_name, s.mikrotik_status);
-            }
-        });
-        return Array.from(uniqueRouters.entries())
-            .filter(([_, status]) => status !== 'connected')
-            .map(([name]) => name);
-    }, [mergedSecrets]);
-
+    // ── Actions ───────────────────────────────────────────────────────────────
     const handleAction = useCallback(async (action: 'enable' | 'disable' | 'kick' | 'isolate' | 'unisolate', secret: PppoeSecret) => {
         setIsActionLoading(true);
         const apiUrl = process.env.NEXT_PUBLIC_API_BASE_URL;
         const toastId = toast.loading(`Memproses ${action} untuk ${secret.name}...`);
-
         try {
             if (action === 'isolate' || action === 'unisolate') {
-                const encodedId = encodeURIComponent(secret.name);
-                const res = await apiFetch(`${apiUrl}/api/pppoe/secrets/${encodedId}/${action}?workspaceId=${secret.workspace_id}&deviceId=${secret.deviceId}`, {
-                    method: 'POST'
-                });
-                
-                if (!res.ok) {
-                    const errData = await res.json();
-                    throw new Error(errData.message || `Gagal melakukan ${action}`);
-                }
-                
-                toast.success(action === 'isolate' ? "User Berhasil Di-Isolir" : "Isolir Berhasil Dibuka", {
-                    description: action === 'isolate' ? `User ${secret.name} telah dipindahkan ke profil Isolir.` : `Profil user ${secret.name} telah dikembalikan.`
-                });
+                const res = await apiFetch(`${apiUrl}/api/pppoe/secrets/${encodeURIComponent(secret.name)}/${action}?workspaceId=${secret.workspace_id}&deviceId=${secret.deviceId}`, { method: 'POST' });
+                if (!res.ok) { const e = await res.json(); throw new Error(e.message); }
+                toast.success(action === 'isolate' ? "User Berhasil Di-Isolir" : "Isolir Berhasil Dibuka", { id: toastId, description: `${secret.name}` });
             } else if (action === 'kick') {
-                if (!secret.isActive) {
-                    throw new Error("User tidak aktif, tidak bisa di-kick.");
-                }
-                if (!secret.activeConnectionId) {
-                    throw new Error("ID koneksi aktif tidak ditemukan. Silakan refresh halaman.");
-                }
-
-                try {
-                    const encodedId = encodeURIComponent(secret.activeConnectionId);
-                    const res = await apiFetch(`${apiUrl}/api/pppoe/active/${encodedId}/kick?workspaceId=${secret.workspace_id}&deviceId=${secret.deviceId}`, {
-                        method: 'POST'
-                    });
-                    if (!res.ok) {
-                        const errData = await res.json();
-                        throw new Error(errData.message || "Aksi gagal");
-                    }
-                } catch (error: any) {
-                    throw new Error(error.message || "Gagal melakukan kick");
-                }
+                if (!secret.isActive) throw new Error("User tidak aktif.");
+                if (!secret.activeConnectionId) throw new Error("ID koneksi tidak ditemukan.");
+                const res = await apiFetch(`${apiUrl}/api/pppoe/active/${encodeURIComponent(secret.activeConnectionId)}/kick?workspaceId=${secret.workspace_id}&deviceId=${secret.deviceId}`, { method: 'POST' });
+                if (!res.ok) { const e = await res.json(); throw new Error(e.message); }
+                toast.success("Kick Berhasil", { id: toastId, description: `${secret.name} telah di-kick.` });
             } else if (action === 'disable') {
-                const encodedId = encodeURIComponent(secret.name);
-                const res = await apiFetch(`${apiUrl}/api/pppoe/secrets/${encodedId}/status?workspaceId=${secret.workspace_id}&deviceId=${secret.deviceId}`, {
-                    method: 'PUT',
-                    body: JSON.stringify({ disabled: 'yes' })
-                });
-                if (!res.ok) {
-                    const errData = await res.json();
-                    throw new Error(errData.message || "Aksi gagal");
-                }
-
+                const res = await apiFetch(`${apiUrl}/api/pppoe/secrets/${encodeURIComponent(secret.name)}/status?workspaceId=${secret.workspace_id}&deviceId=${secret.deviceId}`, { method: 'PUT', body: JSON.stringify({ disabled: 'yes' }) });
+                if (!res.ok) { const e = await res.json(); throw new Error(e.message); }
                 if (secret.isActive && secret.activeConnectionId) {
-                    try {
-                        const encodedActiveId = encodeURIComponent(secret.activeConnectionId);
-                        await apiFetch(`${apiUrl}/api/pppoe/active/${encodedActiveId}/kick?workspaceId=${secret.workspace_id}&deviceId=${secret.deviceId}`, {
-                            method: 'POST'
-                        });
-                    } catch (kickError: any) {
-                        console.warn('Error saat kick user setelah disable:', kickError.message);
-                    }
+                    try { await apiFetch(`${apiUrl}/api/pppoe/active/${encodeURIComponent(secret.activeConnectionId)}/kick?workspaceId=${secret.workspace_id}&deviceId=${secret.deviceId}`, { method: 'POST' }); } catch { }
                 }
+                toast.success("Disable Berhasil", { id: toastId, description: `${secret.name} di-disable.` });
             } else {
-                // Enable
-                const encodedId = encodeURIComponent(secret.name);
-                const res = await apiFetch(`${apiUrl}/api/pppoe/secrets/${encodedId}/status?workspaceId=${secret.workspace_id}&deviceId=${secret.deviceId}`, {
-                    method: 'PUT',
-                    body: JSON.stringify({ disabled: 'no' })
-                });
-                if (!res.ok) {
-                    const errData = await res.json();
-                    throw new Error(errData.message || "Aksi gagal");
-                }
+                const res = await apiFetch(`${apiUrl}/api/pppoe/secrets/${encodeURIComponent(secret.name)}/status?workspaceId=${secret.workspace_id}&deviceId=${secret.deviceId}`, { method: 'PUT', body: JSON.stringify({ disabled: 'no' }) });
+                if (!res.ok) { const e = await res.json(); throw new Error(e.message); }
+                toast.success("Enable Berhasil", { id: toastId, description: `${secret.name} di-enable.` });
             }
-
-            toast.success("Aksi Berhasil", { id: toastId, description: `Perintah ${action} selesai dieksekusi.` });
-            fetchSecrets();
-        } catch (error: any) {
-            toast.error(`Gagal Melakukan Aksi`, { id: toastId, description: error.message });
+        } catch (err: any) {
+            toast.error("Gagal", { id: toastId, description: err.message });
         } finally {
             setIsActionLoading(false);
         }
-    }, [fetchSecrets]);
-
-    const handleEditClick = useCallback((user: PppoeSecret) => {
-        setSecretToEdit(user);
-        setIsEditModalOpen(true);
     }, []);
 
-    const handleDeleteClick = useCallback((user: PppoeSecret) => {
-        setSecretToDelete(user);
-        setIsDeleteModalOpen(true);
-    }, []);
+    const handleEditClick = useCallback((user: PppoeSecret) => { setSecretToEdit(user); setIsEditModalOpen(true); }, []);
+    const handleDeleteClick = useCallback((user: PppoeSecret) => { setSecretToDelete(user); setIsDeleteModalOpen(true); }, []);
 
     const handleDeleteConfirm = useCallback(async () => {
         if (!secretToDelete) return;
         setIsActionLoading(true);
         const apiUrl = process.env.NEXT_PUBLIC_API_BASE_URL;
-
-        const toastId = toast.loading(`Menghapus secret ${secretToDelete.name}...`);
+        const toastId = toast.loading(`Menghapus ${secretToDelete.name}...`);
         try {
-            const encodedId = encodeURIComponent(secretToDelete.name);
-            const res = await apiFetch(`${apiUrl}/api/pppoe/secrets/${encodedId}?workspaceId=${secretToDelete.workspace_id}&deviceId=${secretToDelete.deviceId}`, { method: 'DELETE' });
-            if (!res.ok) throw new Error("Gagal Menghapus Secret");
-
-            // Update local state instan agar hilang dari UI tanpa nunggu fetch/WS
-            setApiSecrets(prev => prev.filter(s => !(s.name === secretToDelete.name && s.deviceId === secretToDelete.deviceId)));
-            
-            toast.success("Berhasil Menghapus Secret", { id: toastId, description: `Secret untuk ${secretToDelete.name} telah dihapus.` });
-            fetchSecrets();
-        } catch (error: any) {
-            toast.error("Gagal Menghapus Secret", { id: toastId, description: error.message || "Terjadi kesalahan saat menghapus data." });
+            const res = await apiFetch(`${apiUrl}/api/pppoe/secrets/${encodeURIComponent(secretToDelete.name)}?workspaceId=${secretToDelete.workspace_id}&deviceId=${secretToDelete.deviceId}`, { method: 'DELETE' });
+            if (!res.ok) throw new Error("Gagal menghapus");
+            setRecentlyDeleted(prev => { const next = new Set(prev); next.add(`${secretToDelete.deviceId}-${secretToDelete.name}`); return next; });
+            toast.success("Berhasil Menghapus Secret", { id: toastId });
+        } catch (err: any) {
+            toast.error("Gagal Menghapus", { id: toastId, description: err.message });
         } finally {
             setIsActionLoading(false);
             setIsDeleteModalOpen(false);
             setSecretToDelete(null);
         }
-    }, [secretToDelete, fetchSecrets]);
+    }, [secretToDelete]);
 
+    // ── Summary Card Helper ───────────────────────────────────────────────────
     const renderSummaryCard = (title: string, count: number, icon: React.ReactNode, color: string, filter: 'all' | 'active' | 'inactive' | 'isolate') => (
         <button onClick={() => setActiveFilter(filter)} className={`w-full text-left rounded-lg transition-all ${activeFilter === filter ? 'ring-2 ring-primary ring-offset-2 ring-offset-background' : ''}`}>
-            <SummaryCard title={title} count={loading && mergedSecrets.length === 0 ? <Loader2 className="animate-spin" /> : count} icon={icon} colorClass={color} />
+            <SummaryCard title={title} count={loading && allSecrets.length === 0 ? <Loader2 className="animate-spin" /> : count} icon={icon} colorClass={color} />
         </button>
     );
 
+    // ── JSX ───────────────────────────────────────────────────────────────────
     return (
         <div className="space-y-6">
             <div className="grid grid-cols-2 md:grid-cols-4 gap-2 sm:gap-4">
@@ -452,51 +330,47 @@ const NocManagementTab: React.FC<NocManagementTabProps> = ({ workspaces }) => {
                 {renderSummaryCard("Isolir", summary.isolate, <ShieldAlert />, "bg-gradient-to-br from-orange-500 to-orange-700", 'isolate')}
             </div>
 
-            {offlineRouters.length > 0 && (
-                <div className="bg-destructive/10 border border-destructive/20 rounded-lg p-3 flex items-center gap-3 text-destructive animate-in fade-in slide-in-from-top-4">
-                    <ZapOff size={18} className="shrink-0" />
-                    <div className="text-sm">
-                        <span className="font-bold">Beberapa router sedang offline: </span>
-                        {offlineRouters.join(', ')}. 
-                        Data dari router ini disembunyikan untuk akurasi.
-                    </div>
-                </div>
-            )}
-
             <Card>
                 <CardHeader>
-                    <div className="flex flex-col lg:flex-row lg:justify-between lg:items-center gap-4">
-                        <CardTitle className="text-lg sm:text-xl">Secret PPPoE ({isInitialLoad ? '...' : filteredSecrets.length})</CardTitle>
-                        <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center flex-1 lg:justify-end">
-                            <div className="flex gap-2 items-center">
-                                <Button 
-                                    size="sm" 
-                                    className="h-9 px-3"
-                                    onClick={() => setIsNocWorkspaceSelectorOpen(true)}
-                                >
-                                    <Plus size={16} className="mr-1" /> <span className="hidden sm:inline">Tambah Secret</span>
-                                </Button>
-                            </div>
-                            <div className="relative w-full lg:max-w-xs">
+                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                        <CardTitle className="text-lg sm:text-xl">
+                            Secret PPPoE ({loading && allSecrets.length === 0 ? '...' : filteredSecrets.length})
+                        </CardTitle>
+                        <div className="flex items-center gap-2">
+                            <div className="relative flex-1 sm:w-64">
                                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                                 <Input
-                                    ref={searchInputRef}
                                     type="text"
-                                    placeholder="Cari user, IP, atau workspace..."
+                                    placeholder="Cari nama, profil, IP, router..."
                                     value={searchQuery}
                                     onChange={(e) => setSearchQuery(e.target.value)}
-                                    className="pl-9 pr-8 bg-input h-9 text-sm"
+                                    className="pl-9 pr-8 bg-input h-9"
                                 />
                                 {searchQuery && (
                                     <button
+                                        type="button"
+                                        className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
                                         onClick={() => setSearchQuery('')}
-                                        className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
-                                        aria-label="Hapus pencarian"
                                     >
                                         <X size={14} />
                                     </button>
                                 )}
                             </div>
+                            <Button
+                                size="sm"
+                                className="shrink-0"
+                                onClick={() => {
+                                    if (workspaces.length === 1) {
+                                        setSelectedWorkspaceForAdd(workspaces[0].id);
+                                        setIsAddModalOpen(true);
+                                    } else {
+                                        setIsNocWorkspaceSelectorOpen(true);
+                                    }
+                                }}
+                            >
+                                <Plus className="h-4 w-4 mr-1 sm:mr-2" />
+                                <span className="hidden sm:inline">Tambah</span>
+                            </Button>
                         </div>
                     </div>
                 </CardHeader>
@@ -515,13 +389,13 @@ const NocManagementTab: React.FC<NocManagementTabProps> = ({ workspaces }) => {
                                 </tr>
                             </thead>
                             <tbody>
-                                {loading && mergedSecrets.length === 0 ? (
+                                {loading && allSecrets.length === 0 ? (
                                     <tr><td colSpan={7} className="text-center p-10"><Loader2 className="h-6 w-6 animate-spin mx-auto text-muted-foreground" /></td></tr>
                                 ) : filteredSecrets.length > 0 ? (
                                     filteredSecrets.map((user) => {
                                         const uniqueKey = user['.id'] || user.name;
                                         return (
-                                            <tr 
+                                            <tr
                                                 key={`${user.workspace_id}-${uniqueKey}`}
                                                 className="border-b hover:bg-muted/30 transition-colors"
                                             >
@@ -537,30 +411,22 @@ const NocManagementTab: React.FC<NocManagementTabProps> = ({ workspaces }) => {
                                                     <div className="flex flex-col gap-0.5">
                                                         <span className="font-bold sm:font-medium truncate max-w-[120px] sm:max-w-[200px]" title={user.name}>{user.name}</span>
                                                         <div className="flex flex-col sm:hidden gap-0.5">
-                                                            <span className="text-[10px] text-muted-foreground truncate max-w-[120px]" title={`Profile: ${user.profile}`}>
-                                                                {user.profile}
-                                                            </span>
-                                                            <span className="text-[10px] text-primary/80 font-mono truncate max-w-[120px]">
-                                                                {user['remote-address'] || 'No IP'}
-                                                            </span>
-                                                            <span className="text-[10px] text-muted-foreground md:hidden truncate max-w-[120px]" title="Router">
-                                                                {user.router_name || user.workspace_name}
-                                                            </span>
+                                                            <span className="text-[10px] text-muted-foreground truncate max-w-[120px]">{user.profile}</span>
+                                                            <span className="text-[10px] text-primary/80 font-mono truncate max-w-[120px]">{user['remote-address'] || 'No IP'}</span>
+                                                            <span className="text-[10px] text-muted-foreground md:hidden truncate max-w-[120px]">{user.router_name || user.workspace_name}</span>
                                                         </div>
                                                     </div>
                                                 </td>
                                                 <td className="p-2 sm:p-4 hidden md:table-cell">
-                                                    <span className="inline-flex items-center px-2 py-1 rounded-full text-[10px] font-medium bg-primary/10 text-primary truncate max-w-[120px] lg:max-w-[180px]" title={user.router_name || user.workspace_name}>
+                                                    <span className="inline-flex items-center px-2 py-1 rounded-full text-[10px] font-medium bg-primary/10 text-primary truncate max-w-[120px] lg:max-w-[180px]">
                                                         {user.router_name || user.workspace_name}
                                                     </span>
                                                 </td>
                                                 <td className="p-2 sm:p-4 hidden sm:table-cell">
-                                                    <span className="truncate max-w-[100px] lg:max-w-[150px] block" title={user.profile}>{user.profile}</span>
+                                                    <span className="truncate max-w-[100px] lg:max-w-[150px] block">{user.profile}</span>
                                                 </td>
                                                 <td className="p-2 sm:p-4 hidden lg:table-cell">
-                                                    <span className="text-[10px] text-primary/80 font-mono truncate max-w-[120px]">
-                                                        {user['remote-address'] || '-'}
-                                                    </span>
+                                                    <span className="text-[10px] text-primary/80 font-mono">{user['remote-address'] || '-'}</span>
                                                 </td>
                                                 <td className="p-2 sm:p-4 font-mono text-[10px] sm:text-xs whitespace-nowrap">
                                                     <UptimeDisplay baseUptime={user.uptime} isActive={user.isActive} />
@@ -575,22 +441,22 @@ const NocManagementTab: React.FC<NocManagementTabProps> = ({ workspaces }) => {
                                                             <DropdownMenuSeparator />
                                                             {user.profile === 'Isolir' ? (
                                                                 <DropdownMenuItem onClick={() => handleAction('unisolate', user)}>
-                                                                    <ZapOff className="mr-2 h-4 w-4 text-green-500" /> Buka Isolir
+                                                                    <PowerOff className="mr-2 h-4 w-4 text-green-500" /> Buka Isolir
                                                                 </DropdownMenuItem>
                                                             ) : (
                                                                 <DropdownMenuItem onClick={() => handleAction('isolate', user)}>
-                                                                    <ZapOff className="mr-2 h-4 w-4 text-orange-500" /> Isolir User
+                                                                    <PowerOff className="mr-2 h-4 w-4 text-orange-500" /> Isolir User
                                                                 </DropdownMenuItem>
                                                             )}
                                                             <DropdownMenuSeparator />
-                                                            {user.isActive &&
+                                                            {user.isActive && (
                                                                 <DropdownMenuItem onClick={() => handleAction('kick', user)}>
-                                                                    <ZapOff className="mr-2 h-4 w-4" /> Kick User
+                                                                    <PowerOff className="mr-2 h-4 w-4" /> Kick User
                                                                 </DropdownMenuItem>
-                                                            }
+                                                            )}
                                                             {user.disabled === 'true' ?
-                                                                (<DropdownMenuItem onClick={() => handleAction('enable', user)}> <Power className="mr-2 h-4 w-4" /> Enable </DropdownMenuItem>) :
-                                                                (<DropdownMenuItem onClick={() => handleAction('disable', user)}> <PowerOff className="mr-2 h-4 w-4" /> Disable </DropdownMenuItem>)
+                                                                (<DropdownMenuItem onClick={() => handleAction('enable', user)}><Power className="mr-2 h-4 w-4" /> Enable</DropdownMenuItem>) :
+                                                                (<DropdownMenuItem onClick={() => handleAction('disable', user)}><PowerOff className="mr-2 h-4 w-4" /> Disable</DropdownMenuItem>)
                                                             }
                                                             <DropdownMenuSeparator />
                                                             <DropdownMenuItem className="text-destructive focus:bg-destructive/10 focus:text-destructive" onClick={() => handleDeleteClick(user)}>
@@ -603,7 +469,9 @@ const NocManagementTab: React.FC<NocManagementTabProps> = ({ workspaces }) => {
                                         );
                                     })
                                 ) : (
-                                    <tr><td colSpan={7} className="text-center p-10 text-muted-foreground">Tidak ada secret yang cocok.</td></tr>
+                                    <tr><td colSpan={7} className="text-center p-10 text-muted-foreground">
+                                        {searchQuery ? `Tidak ada hasil untuk "${searchQuery}"` : 'Tidak ada data secret.'}
+                                    </td></tr>
                                 )}
                             </tbody>
                         </table>
@@ -611,13 +479,12 @@ const NocManagementTab: React.FC<NocManagementTabProps> = ({ workspaces }) => {
                 </CardContent>
             </Card>
 
-            {/* Modals */}
             <ConfirmModal
                 isOpen={isDeleteModalOpen}
                 onClose={() => setIsDeleteModalOpen(false)}
                 onConfirm={handleDeleteConfirm}
                 title="Hapus Secret PPPoE"
-                description={`Apakah Anda yakin ingin menghapus secret "${secretToDelete?.name}" dari workspace ${secretToDelete?.workspace_name}? Tindakan ini tidak dapat dibatalkan.`}
+                description={`Hapus secret "${secretToDelete?.name}" dari ${secretToDelete?.workspace_name}? Tindakan ini tidak dapat dibatalkan.`}
                 confirmText="Hapus"
                 isLoading={isActionLoading}
             />
@@ -627,16 +494,18 @@ const NocManagementTab: React.FC<NocManagementTabProps> = ({ workspaces }) => {
                     isOpen={isEditModalOpen}
                     onClose={() => setIsEditModalOpen(false)}
                     secretToEdit={memoizedSecretToEdit}
-                    onSuccess={fetchSecrets}
+                    onSuccess={() => setIsEditModalOpen(false)}
                     nocWorkspaceId={secretToEdit.workspace_id}
                 />
             )}
-            <AddPppoeSecretModal 
+
+            <AddPppoeSecretModal
                 isOpen={isAddModalOpen}
                 onClose={() => setIsAddModalOpen(false)}
-                onSuccess={fetchSecrets}
+                onSuccess={() => setIsAddModalOpen(false)}
                 nocWorkspaceId={selectedWorkspaceForAdd || undefined}
             />
+
             <NocWorkspaceSelectorModal
                 isOpen={isNocWorkspaceSelectorOpen}
                 onClose={() => setIsNocWorkspaceSelectorOpen(false)}
