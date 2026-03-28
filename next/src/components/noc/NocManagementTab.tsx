@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useTransition } from 'react';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Power, PowerOff, Loader2, Search, Users, UserCheck, UserX, MoreHorizontal, Edit, ZapOff, Trash2, X, ShieldAlert } from 'lucide-react';
 import { Input } from '@/components/ui/input';
@@ -108,6 +108,7 @@ const NocManagementTab: React.FC<NocManagementTabProps> = ({ workspaces }) => {
     // ── State (identik dengan Management Table) ──────────────────────────────
     const [allSecrets, setAllSecrets] = useState<PppoeSecret[]>([]);
     const [loading, setLoading] = useState(true);
+    const [, startTransition] = useTransition();
     const [searchQuery, setSearchQuery] = useState('');
     const [sortColumn, setSortColumn] = useState<string | null>(null);
     const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
@@ -165,11 +166,12 @@ const NocManagementTab: React.FC<NocManagementTabProps> = ({ workspaces }) => {
             uptime: secret.uptime || 'N/A',
         }));
 
-        setAllSecrets(transformedSecrets);
-
-        if (transformedSecrets.length > 0) {
-            setLoading(false);
-        }
+        startTransition(() => {
+            setAllSecrets(transformedSecrets);
+            if (transformedSecrets.length > 0) {
+                setLoading(false);
+            }
+        });
     }, [allPppoeSecrets, workspaceIds, recentlyDeleted]);
 
     // Fallback: matikan loading setelah 5 detik
