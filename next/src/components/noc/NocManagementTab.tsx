@@ -14,7 +14,9 @@ import { apiFetch } from '@/utils/api';
 import ConfirmModal from '@/components/ui/confirm-modal';
 import EditPppoeSecretModal from '../management/edit-pppoe-secret-modal';
 import AddPppoeSecretModal from '../management/add-pppoe-secret-modal';
-import { Plus } from 'lucide-react';
+import { Plus, ChevronLeft, ChevronRight } from 'lucide-react';
+
+const ITEMS_PER_PAGE = 100;
 import NocWorkspaceSelectorModal from './NocWorkspaceSelectorModal';
 
 interface PppoeSecret {
@@ -121,18 +123,20 @@ const NocManagementTab: React.FC<NocManagementTabProps> = ({ workspaces }) => {
     const [selectedWorkspaceForAdd, setSelectedWorkspaceForAdd] = useState<number | null>(null);
     const [isNocWorkspaceSelectorOpen, setIsNocWorkspaceSelectorOpen] = useState(false);
     const [recentlyDeleted, setRecentlyDeleted] = useState<Set<string>>(new Set());
+    const [currentPage, setCurrentPage] = useState(1);
 
     const memoizedSecretToEdit = useMemo(() => {
         if (!secretToEdit) return null;
         return { ...secretToEdit, disabled: secretToEdit.disabled === 'true' };
     }, [secretToEdit]);
 
-    // Reset scroll posisi saat filter/search berubah
+    // Reset scroll dan halaman saat filter/search berubah
     useEffect(() => {
+        setCurrentPage(1);
         if (tableContainerRef.current) {
             tableContainerRef.current.scrollTop = 0;
         }
-    }, [searchQuery, activeFilter]);
+    }, [searchQuery, activeFilter, sortColumn, sortDirection]);
 
     // ── Data langsung dari WebSocket tanpa intermediate state ─────────────────
     // useMemo murni: tidak ada useEffect, tidak ada setState, tidak ada race condition
@@ -231,6 +235,13 @@ const NocManagementTab: React.FC<NocManagementTabProps> = ({ workspaces }) => {
 
         return filtered;
     }, [allSecrets, activeFilter, searchQuery, sortColumn, sortDirection]);
+
+    // ── Pagination ────────────────────────────────────────────────────────────
+    const totalPages = Math.max(1, Math.ceil(filteredSecrets.length / ITEMS_PER_PAGE));
+    const paginatedSecrets = useMemo(() => {
+        const start = (currentPage - 1) * ITEMS_PER_PAGE;
+        return filteredSecrets.slice(start, start + ITEMS_PER_PAGE);
+    }, [filteredSecrets, currentPage]);
 
     // ── Summary Cards ─────────────────────────────────────────────────────────
     const summary = useMemo(() => {
@@ -375,8 +386,8 @@ const NocManagementTab: React.FC<NocManagementTabProps> = ({ workspaces }) => {
                             <tbody>
                                 {loading && allSecrets.length === 0 ? (
                                     <tr><td colSpan={7} className="text-center p-10"><Loader2 className="h-6 w-6 animate-spin mx-auto text-muted-foreground" /></td></tr>
-                                ) : filteredSecrets.length > 0 ? (
-                                    filteredSecrets.map((user) => {
+                                ) : paginatedSecrets.length > 0 ? (
+                                    paginatedSecrets.map((user) => {
                                         const uniqueKey = user['.id'] || user.name;
                                         return (
                                             <tr
@@ -460,6 +471,29 @@ const NocManagementTab: React.FC<NocManagementTabProps> = ({ workspaces }) => {
                             </tbody>
                         </table>
                     </div>
+                    {/* Pagination */}
+                    {filteredSecrets.length > ITEMS_PER_PAGE && (
+                        <div className="flex items-center justify-between px-4 py-3 border-t">
+                            <span className="text-xs text-muted-foreground">
+                                Menampilkan {((currentPage - 1) * ITEMS_PER_PAGE) + 1}–{Math.min(currentPage * ITEMS_PER_PAGE, filteredSecrets.length)} dari {filteredSecrets.length}
+                            </span>
+                            <div className="flex items-center gap-1">
+                                <Button
+                                    variant="outline" size="sm" disabled={currentPage <= 1}
+                                    onClick={() => { setCurrentPage(p => p - 1); tableContainerRef.current?.scrollTo(0, 0); }}
+                                >
+                                    <ChevronLeft className="h-4 w-4" />
+                                </Button>
+                                <span className="text-xs px-2">{currentPage} / {totalPages}</span>
+                                <Button
+                                    variant="outline" size="sm" disabled={currentPage >= totalPages}
+                                    onClick={() => { setCurrentPage(p => p + 1); tableContainerRef.current?.scrollTo(0, 0); }}
+                                >
+                                    <ChevronRight className="h-4 w-4" />
+                                </Button>
+                            </div>
+                        </div>
+                    )}
                 </CardContent>
             </Card>
 
