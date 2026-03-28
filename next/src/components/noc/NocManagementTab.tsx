@@ -391,7 +391,7 @@ const NocManagementTab: React.FC<NocManagementTabProps> = ({ workspaces }) => {
                                         const uniqueKey = user['.id'] || user.name;
                                         return (
                                             <tr
-                                                key={`${user.workspace_id}-${uniqueKey}`}
+                                                key={`${user.workspace_id}-${user.deviceId}-${uniqueKey}`}
                                                 className="border-b hover:bg-muted/30 transition-colors"
                                             >
                                                 <td className="p-2 sm:p-4">
