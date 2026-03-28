@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useMemo, useCallback, useTransition } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Power, PowerOff, Loader2, Search, Users, UserCheck, UserX, MoreHorizontal, Edit, ZapOff, Trash2, X, ShieldAlert } from 'lucide-react';
 import { Input } from '@/components/ui/input';
@@ -105,10 +105,7 @@ const NocManagementTab: React.FC<NocManagementTabProps> = ({ workspaces }) => {
     const workspaceIds = useMemo(() => workspaces.map(w => w.id), [workspaces]);
     const { allPppoeSecrets } = useMikrotik();
 
-    // ── State (identik dengan Management Table) ──────────────────────────────
-    const [allSecrets, setAllSecrets] = useState<PppoeSecret[]>([]);
-    const [loading, setLoading] = useState(true);
-    const [, startTransition] = useTransition();
+    // ── State UI ───────────────────────────────────────────────────────────────
     const [searchQuery, setSearchQuery] = useState('');
     const [sortColumn, setSortColumn] = useState<string | null>(null);
     const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
@@ -137,50 +134,35 @@ const NocManagementTab: React.FC<NocManagementTabProps> = ({ workspaces }) => {
         }
     }, [searchQuery, activeFilter]);
 
-    // ── Data dari WebSocket (IDENTIK dengan Management Table) ─────────────────
-    useEffect(() => {
-        if (workspaceIds.length === 0) {
-            setAllSecrets([]);
-            setLoading(false);
-            return;
-        }
-
-        const secretsArray = (Array.isArray(allPppoeSecrets) ? allPppoeSecrets : [])
-            .filter((s: any) =>
+    // ── Data langsung dari WebSocket tanpa intermediate state ─────────────────
+    // useMemo murni: tidak ada useEffect, tidak ada setState, tidak ada race condition
+    const allSecrets = useMemo<PppoeSecret[]>(() => {
+        if (workspaceIds.length === 0) return [];
+        const arr = (Array.isArray(allPppoeSecrets) ? allPppoeSecrets : []) as any[];
+        return arr
+            .filter(s =>
                 workspaceIds.includes(s.workspace_id) &&
                 !recentlyDeleted.has(`${s.deviceId}-${s.name}`)
-            );
-
-        const transformedSecrets: PppoeSecret[] = secretsArray.map((secret: any) => ({
-            '.id': secret['.id'] || '',
-            name: secret.name || '',
-            profile: secret.profile || '',
-            'remote-address': secret.currentAddress || secret['remote-address'] || undefined,
-            disabled: secret.disabled || 'false',
-            isActive: secret.isActive === true,
-            activeConnectionId: secret.activeConnectionId || undefined,
-            deviceId: secret.deviceId,
-            workspace_id: secret.workspace_id,
-            workspace_name: secret.workspace_name || '',
-            router_name: secret.router_name || '',
-            uptime: secret.uptime || 'N/A',
-        }));
-
-        startTransition(() => {
-            setAllSecrets(transformedSecrets);
-            if (transformedSecrets.length > 0) {
-                setLoading(false);
-            }
-        });
+            )
+            .map(secret => ({
+                '.id': secret['.id'] || '',
+                name: secret.name || '',
+                profile: secret.profile || '',
+                'remote-address': secret.currentAddress || secret['remote-address'] || undefined,
+                disabled: (secret.disabled || 'false') as 'true' | 'false',
+                isActive: secret.isActive === true,
+                activeConnectionId: secret.activeConnectionId || undefined,
+                deviceId: secret.deviceId,
+                workspace_id: secret.workspace_id,
+                workspace_name: secret.workspace_name || '',
+                router_name: secret.router_name || '',
+                uptime: secret.uptime || 'N/A',
+            } as PppoeSecret));
     }, [allPppoeSecrets, workspaceIds, recentlyDeleted]);
 
-    // Fallback: matikan loading setelah 5 detik
-    useEffect(() => {
-        if (workspaceIds.length > 0) {
-            const timer = setTimeout(() => setLoading(false), 5000);
-            return () => clearTimeout(timer);
-        }
-    }, [workspaceIds]);
+    const loading = workspaceIds.length > 0 && allSecrets.length === 0;
+
+
 
     // ── Sorting ───────────────────────────────────────────────────────────────
     const handleSort = (column: string) => {
