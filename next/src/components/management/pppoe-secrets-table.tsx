@@ -537,7 +537,11 @@ const PppoeSecretsTable = ({ refreshTrigger, onActionComplete, initialFilter = '
                             <span className="font-bold sm:font-medium truncate max-w-[100px] sm:max-w-none">{user.name}</span>
                             <div className="flex flex-col sm:hidden">
                               <span className="text-[10px] text-muted-foreground truncate max-w-[100px]">{user.profile}</span>
-                              <span className="text-[10px] text-primary/80 font-mono truncate max-w-[100px]">{user['remote-address'] || 'No IP'}</span>
+                              {user['remote-address'] ? (
+                                <a href={`http://${user['remote-address']}`} target="_blank" rel="noopener noreferrer" className="text-[10px] text-primary/80 font-mono truncate max-w-[100px] underline">{user['remote-address']}</a>
+                              ) : (
+                                <span className="text-[10px] text-muted-foreground font-mono">No IP</span>
+                              )}
                             </div>
                           </div>
                         </td>

@@ -407,7 +407,11 @@ const NocManagementTab: React.FC<NocManagementTabProps> = ({ workspaces }) => {
                                                         <span className="font-bold sm:font-medium truncate max-w-[120px] sm:max-w-[200px]" title={user.name}>{user.name}</span>
                                                         <div className="flex flex-col sm:hidden gap-0.5">
                                                             <span className="text-[10px] text-muted-foreground truncate max-w-[120px]">{user.profile}</span>
-                                                            <span className="text-[10px] text-primary/80 font-mono truncate max-w-[120px]">{user['remote-address'] || 'No IP'}</span>
+                                                            {user['remote-address'] ? (
+                                                                <a href={`http://${user['remote-address']}`} target="_blank" rel="noopener noreferrer" className="text-[10px] text-primary/80 font-mono truncate max-w-[120px] underline hover:text-primary">{user['remote-address']}</a>
+                                                            ) : (
+                                                                <span className="text-[10px] text-muted-foreground font-mono">No IP</span>
+                                                            )}
                                                             <span className="text-[10px] text-muted-foreground md:hidden truncate max-w-[120px]">{user.router_name || user.workspace_name}</span>
                                                         </div>
                                                     </div>
@@ -421,7 +425,11 @@ const NocManagementTab: React.FC<NocManagementTabProps> = ({ workspaces }) => {
                                                     <span className="truncate max-w-[100px] lg:max-w-[150px] block">{user.profile}</span>
                                                 </td>
                                                 <td className="p-2 sm:p-4 hidden lg:table-cell">
-                                                    <span className="text-[10px] text-primary/80 font-mono">{user['remote-address'] || '-'}</span>
+                                                    {user['remote-address'] ? (
+                                                        <a href={`http://${user['remote-address']}`} target="_blank" rel="noopener noreferrer" className="text-[10px] text-primary/80 font-mono underline hover:text-primary">{user['remote-address']}</a>
+                                                    ) : (
+                                                        <span className="text-[10px] text-muted-foreground font-mono">-</span>
+                                                    )}
                                                 </td>
                                                 <td className="p-2 sm:p-4 font-mono text-[10px] sm:text-xs whitespace-nowrap">
                                                     <UptimeDisplay baseUptime={user.uptime} isActive={user.isActive} />
