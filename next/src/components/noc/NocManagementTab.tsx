@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
-import { Power, PowerOff, Loader2, Search, Users, UserCheck, UserX, MoreHorizontal, Edit, ZapOff, Trash2, X, ShieldAlert } from 'lucide-react';
+import { Power, PowerOff, Loader2, Search, Users, UserCheck, UserX, MoreHorizontal, Edit, ZapOff, Trash2, X, ShieldAlert, WifiOff } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { useMikrotik } from '../providers/mikrotik-provider';
 import { formatUptime, formatCompactUptime } from '@/utils/format';
@@ -105,7 +105,7 @@ const UptimeDisplay = ({ baseUptime, isActive }: { baseUptime: string | undefine
 
 const NocManagementTab: React.FC<NocManagementTabProps> = ({ workspaces }) => {
     const workspaceIds = useMemo(() => workspaces.map(w => w.id), [workspaces]);
-    const { allPppoeSecrets } = useMikrotik();
+    const { allPppoeSecrets, allDevicesStatus } = useMikrotik();
 
     // ── State UI ───────────────────────────────────────────────────────────────
     const [searchQuery, setSearchQuery] = useState('');
@@ -146,7 +146,9 @@ const NocManagementTab: React.FC<NocManagementTabProps> = ({ workspaces }) => {
         return arr
             .filter(s =>
                 workspaceIds.includes(s.workspace_id) &&
-                !recentlyDeleted.has(`${s.deviceId}-${s.name}`)
+                !recentlyDeleted.has(`${s.deviceId}-${s.name}`) &&
+                // Hide secrets from offline/disconnected routers
+                (allDevicesStatus[s.deviceId]?.isConnected !== false)
             )
             .map(secret => ({
                 '.id': secret['.id'] || '',
@@ -162,7 +164,26 @@ const NocManagementTab: React.FC<NocManagementTabProps> = ({ workspaces }) => {
                 router_name: secret.router_name || '',
                 uptime: secret.uptime || 'N/A',
             } as PppoeSecret));
-    }, [allPppoeSecrets, workspaceIds, recentlyDeleted]);
+    }, [allPppoeSecrets, workspaceIds, recentlyDeleted, allDevicesStatus]);
+
+    // ── Detect offline routers ────────────────────────────────────────────────
+    const offlineRouters = useMemo(() => {
+        if (workspaceIds.length === 0) return [];
+        const arr = (Array.isArray(allPppoeSecrets) ? allPppoeSecrets : []) as any[];
+        const routerMap = new Map<string, boolean>();
+        arr.forEach(s => {
+            if (!workspaceIds.includes(s.workspace_id)) return;
+            const routerName = s.router_name || s.workspace_name || `Device ${s.deviceId}`;
+            const isConnected = allDevicesStatus[s.deviceId]?.isConnected !== false;
+            // Only mark as offline if we explicitly know the device is disconnected
+            if (!routerMap.has(routerName) || !isConnected) {
+                routerMap.set(routerName, isConnected);
+            }
+        });
+        return Array.from(routerMap.entries())
+            .filter(([, connected]) => !connected)
+            .map(([name]) => name);
+    }, [allPppoeSecrets, workspaceIds, allDevicesStatus]);
 
     const loading = workspaceIds.length > 0 && allSecrets.length === 0;
 
@@ -324,6 +345,17 @@ const NocManagementTab: React.FC<NocManagementTabProps> = ({ workspaces }) => {
                 {renderSummaryCard("Tidak Aktif", summary.inactive, <UserX />, "bg-gradient-to-br from-red-500 to-red-700", 'inactive')}
                 {renderSummaryCard("Isolir", summary.isolate, <ShieldAlert />, "bg-gradient-to-br from-orange-500 to-orange-700", 'isolate')}
             </div>
+
+            {offlineRouters.length > 0 && (
+                <div className="bg-destructive/10 border border-destructive/20 rounded-lg p-3 flex items-center gap-3 text-destructive animate-in fade-in slide-in-from-top-4">
+                    <WifiOff size={18} className="shrink-0" />
+                    <div className="text-sm">
+                        <span className="font-bold">Beberapa router sedang offline: </span>
+                        {offlineRouters.join(', ')}. 
+                        Data dari router ini disembunyikan untuk akurasi.
+                    </div>
+                </div>
+            )}
 
             <Card>
                 <CardHeader>
