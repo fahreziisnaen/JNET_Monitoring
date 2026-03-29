@@ -202,7 +202,10 @@ export const MikrotikProvider = ({ children }: { children: React.ReactNode }) =>
                     }
                 } else if (message.type === 'connection-status' && message.payload) {
                     const connected = message.payload.status === 'connected';
-                    updateDeviceData(deviceId, { isConnected: connected });
+                    updateDeviceData(deviceId, { 
+                        isConnected: connected,
+                        name: message.payload.deviceName || prev.name 
+                    });
                     
                     // Forward event for toast notifications
                     if (selectedDeviceIdsRef.current.includes(deviceId)) {

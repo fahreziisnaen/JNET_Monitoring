@@ -1,13 +1,15 @@
 'use client';
 
-import { useEffect, useRef } from 'react';
+import { useEffect } from 'react';
 import { useAuth } from '@/components/providers/auth-provider';
 import { toast } from 'sonner';
 
+// Map disimpan di level modul agar kebal terhadap double-rendering dari React Strict Mode
+const globalToastIds = new Map<string, string | number>();
+const globalWasConnected = new Map<string, boolean>();
+
 export default function ConnectionStatusToast() {
     const { token, user } = useAuth();
-    const toastIdsRef = useRef<Map<string, string | number>>(new Map());
-    const wasConnectedRef = useRef<Map<string, boolean>>(new Map());
 
     useEffect(() => {
         if (!token || !user) return;
@@ -25,21 +27,21 @@ export default function ConnectionStatusToast() {
             }
 
             if (status === 'disconnected') {
-                wasConnectedRef.current.set(idKey, false);
+                globalWasConnected.set(idKey, false);
                 // Show persistent destructive toast
-                if (!toastIdsRef.current.has(idKey)) {
+                if (!globalToastIds.has(idKey)) {
                     const toastId = toast.error(deviceName ? `Offline: ${deviceName}` : 'Koneksi Terputus', {
                         description: message || `Koneksi ke perangkat ${deviceName || 'Mikrotik'} terputus.`,
                         duration: Infinity // Persistent until reconnected
                     });
-                    toastIdsRef.current.set(idKey, toastId);
+                    globalToastIds.set(idKey, toastId);
                 }
             } else if (status === 'connected') {
                 // If it was previously disconnected and we had a toast, dismiss it and show Reconnected
-                const currentToastId = toastIdsRef.current.get(idKey);
+                const currentToastId = globalToastIds.get(idKey);
                 if (currentToastId) {
                     toast.dismiss(currentToastId);
-                    toastIdsRef.current.delete(idKey);
+                    globalToastIds.delete(idKey);
 
                     toast.success(deviceName ? `Online: ${deviceName}` : 'Terhubung Kembali', {
                         description: message || `Koneksi ke perangkat ${deviceName || 'Mikrotik'} berhasil dipulihkan.`,
@@ -47,7 +49,7 @@ export default function ConnectionStatusToast() {
                     });
                 }
                 // Mark as successfully connected
-                wasConnectedRef.current.set(idKey, true);
+                globalWasConnected.set(idKey, true);
             }
         };
 
