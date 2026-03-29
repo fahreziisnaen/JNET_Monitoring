@@ -33,6 +33,7 @@ interface PppoeSecret {
     remoteAddress?: string;
     deviceId?: number | string;
     workspaceId?: number | string;
+    workspace_id?: number | string;
 }
 
 interface TrafficPoint {
@@ -79,7 +80,16 @@ const PppoeDetailModal: React.FC<PppoeDetailModalProps> = ({
             setIsLoading(true);
             setError(null);
             try {
-                const res = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/api/pppoe/${deviceId}/traffic-history/${encodeURIComponent(secret.name)}`, {
+                const queryParams = new URLSearchParams();
+                if (secret?.workspaceId) {
+                    queryParams.append('workspaceId', secret.workspaceId.toString());
+                } else if (secret?.workspace_id) {
+                    // Fallback in case workspaceId is under snake_case key
+                    queryParams.append('workspaceId', secret.workspace_id.toString());
+                }
+                const queryString = queryParams.toString() ? `?${queryParams.toString()}` : '';
+                
+                const res = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/api/pppoe/${deviceId}/traffic-history/${encodeURIComponent(secret.name)}${queryString}`, {
                     headers: {
                         'Authorization': `Bearer ${token}`
                     }

@@ -252,7 +252,12 @@ exports.testConnection = async (req, res) => {
 exports.getTrafficHistory = async (req, res) => {
     const { id } = req.params;
     const { interface: interfaceName, hours = 24 } = req.query;
-    const workspaceId = req.user.workspace_id;
+    let workspaceId = req.user.workspace_id;
+
+    const isSuper = req.user.is_super_admin === 1 || req.user.is_super_admin === true;
+    if (req.query.workspaceId && (req.user.role === 'admin' || req.user.role === 'noc' || isSuper)) {
+        workspaceId = parseInt(req.query.workspaceId);
+    }
 
     if (!interfaceName) {
         return res.status(400).json({ message: 'Parameter interface wajib diisi.' });
