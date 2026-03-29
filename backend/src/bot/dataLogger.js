@@ -109,6 +109,9 @@ async function checkAlarms(workspaceId, device, broadcastCallback = null) {
                 if (state.offlineCooldown !== 0) {
                     const message = `✅ *PERANGKAT ONLINE* ✅\n\nKoneksi ke perangkat *${device.name}* telah pulih.`;
                     await sendWhatsAppMessage(whatsappTarget, message);
+                    pool.query('INSERT INTO app_notifications (workspace_id, type, title, message) VALUES (?, ?, ?, ?)', [
+                        workspaceId, 'device_online', 'Router Online', `Koneksi ke perangkat ${device.name} berhasil dipulihkan.`
+                    ]).catch(() => {});
                     state.offlineCooldown = 0;
                 }
 
@@ -122,6 +125,9 @@ async function checkAlarms(workspaceId, device, broadcastCallback = null) {
                 if (cpuLoad > alarms[0].threshold_mbps) {
                     const message = `🚨 *ALARM CPU TINGGI* 🚨\n\nPerangkat *${device.name}* mengalami lonjakan CPU mencapai *${cpuLoad}%*. Segera periksa kondisi perangkat Anda!`;
                     await sendWhatsAppMessage(whatsappTarget, message);
+                    pool.query('INSERT INTO app_notifications (workspace_id, type, title, message) VALUES (?, ?, ?, ?)', [
+                        workspaceId, 'cpu_alarm', 'Alarm CPU Tinggi', `Perangkat ${device.name} mengalami lonjakan CPU mencapai ${cpuLoad}%.`
+                    ]).catch(() => {});
                     state.cpuCooldown = now + CPU_COOLDOWN_MINUTES * 60 * 1000;
                 }
             }
@@ -134,6 +140,9 @@ async function checkAlarms(workspaceId, device, broadcastCallback = null) {
                     console.error(`[Notifikasi] Perangkat ${device.name} TERDETEKSI OFFLINE`);
                     const message = `❌ *PERANGKAT OFFLINE* ❌\n\nKoneksi ke perangkat *${device.name}* terputus. Mohon periksa jaringan Anda.`;
                     await sendWhatsAppMessage(whatsappTarget, message);
+                    pool.query('INSERT INTO app_notifications (workspace_id, type, title, message) VALUES (?, ?, ?, ?)', [
+                        workspaceId, 'device_offline', 'Router Offline', `Koneksi ke perangkat ${device.name} terputus.`
+                    ]).catch(() => {});
                     state.offlineCooldown = now + OFFLINE_COOLDOWN_MINUTES * 60 * 1000;
                 }
             }

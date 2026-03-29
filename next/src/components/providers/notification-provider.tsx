@@ -4,15 +4,15 @@ import React, { createContext, useContext, useState, useCallback, useRef, useEff
 import { Toast, ToastContainer } from '@/components/ui/toast';
 import { useMikrotik } from './mikrotik-provider';
 import { useAuth, publicPaths } from './auth-provider';
-import { apiFetch } from '@/utils/api';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 
-interface NotificationItem {
-  id: string;
-  type: 'disconnect' | 'reconnect';
-  userName: string;
-  timestamp: Date;
-  duration?: number; // Duration in seconds for reconnect
+export interface NotificationItem {
+  id: number | string;
+  type: 'disconnect' | 'reconnect' | 'device_offline' | 'device_online' | 'cpu_alarm' | string;
+  title: string;
+  message: string;
+  is_read: boolean;
+  created_at: string;
 }
 
 interface NotificationContextType {
@@ -20,7 +20,7 @@ interface NotificationContextType {
   disconnectCount: number;
   clearDisconnectCount: () => void;
   notifications: NotificationItem[];
-  clearNotifications: () => void;
+  fetchNotifications: () => void;
   markAsRead: () => void;
 }
 
@@ -39,20 +39,38 @@ export const NotificationProvider = ({ children }: { children: React.ReactNode }
   const [disconnectCount, setDisconnectCount] = useState(0);
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const { pppoeSecrets } = useMikrotik() || { pppoeSecrets: [] };
-  const { user } = useAuth();
+  const { user, token } = useAuth();
   const pathname = usePathname();
+  const router = useRouter();
+
   const previousActiveRef = useRef<Set<string>>(new Set());
   const lastNotificationTimeRef = useRef<Map<string, number>>(new Map());
-  const isInitializedRef = useRef<boolean>(false); // Flag untuk track apakah sudah initialized
-  const notificationCooldown = 60000; // 1 menit cooldown per user
+  const isInitializedRef = useRef<boolean>(false);
+  const notificationCooldown = 60000;
 
-  // Helper to check if we should show notifications
   const shouldShowNotification = !publicPaths.includes(pathname);
-  
-  // Filter hanya yang aktif dari pppoeSecrets
   const pppoeActive = pppoeSecrets.filter((secret: any) => secret.isActive === true);
 
-  // Reset initialization flag saat user logout atau pppoeActive menjadi kosong/null
+  const fetchNotifications = useCallback(async () => {
+    if (!token) return;
+    try {
+        const response = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/api/notifications`, {
+            headers: { Authorization: `Bearer ${token}` }
+        });
+        if (response.ok) {
+            const data = await response.json();
+            setNotifications(data);
+            setDisconnectCount(data.filter((n: any) => !n.is_read).length);
+        }
+    } catch (e) {
+        console.error('Failed to fetch notifications:', e);
+    }
+  }, [token]);
+
+  useEffect(() => {
+      fetchNotifications();
+  }, [fetchNotifications]);
+
   useEffect(() => {
     if (!user || !pppoeActive || pppoeActive.length === 0) {
       isInitializedRef.current = false;
@@ -60,99 +78,69 @@ export const NotificationProvider = ({ children }: { children: React.ReactNode }
     }
   }, [user, pppoeActive]);
 
-    // Listen untuk downtime notifications dari WebSocket
   useEffect(() => {
     const handleDowntimeNotification = (event: CustomEvent) => {
-      const { notifications } = event.detail;
-      
-      if (!notifications || !Array.isArray(notifications) || notifications.length === 0) {
-        return;
-      }
+      const { notifications: wsNotifs, deviceName } = event.detail;
+      if (!wsNotifs || !Array.isArray(wsNotifs) || wsNotifs.length === 0) return;
 
-      // Jangan tampilkan toast jika masih di halaman publik (login/register)
-      if (!shouldShowNotification) {
-        console.log('[Notification] Menerima downtime notification tapi skip toast karena di halaman publik');
-        return;
-      }
+      if (!shouldShowNotification) return;
 
-      console.log('[Notification] Menerima downtime notification dari backend:', notifications);
-
-      // Play sound alert
       playBeepSound();
 
-      // Process setiap notifikasi
       const newNotifications: NotificationItem[] = [];
       
-      notifications.forEach((notif: any) => {
-        const durationMinutes = Math.floor((notif.duration || 0) / 60);
-        const durationSeconds = (notif.duration || 0) % 60;
-        
-        // Add to notifications list
+      wsNotifs.forEach((notif: any) => {
         newNotifications.push({
-          id: `${notif.userName}-${Date.now()}-disconnect`,
+          id: `tmp-${Date.now()}-${Math.random()}`,
           type: 'disconnect',
-          userName: notif.userName,
-          timestamp: new Date(notif.startTime || new Date()),
-          duration: notif.duration,
+          title: 'PPPoE User Disconnected',
+          message: `${notif.userName} terputus dari jaringan pada perangkat ${deviceName}.`,
+          is_read: false,
+          created_at: new Date().toISOString()
         });
 
-        // Show toast notification
+        // Show toast
         showToast({
           type: 'warning',
           title: 'PPPoE User Disconnected',
-          message: `${notif.userName} disconnected (${durationMinutes}m ${durationSeconds}s)`,
+          message: `${notif.userName} disconnected`,
           duration: 5000,
+          onClick: () => router.push('/notifications')
         });
       });
 
-      // Update disconnect count
       setDisconnectCount((prev) => prev + newNotifications.length);
-
-      // Add to notifications list
       setNotifications((prev) => [...newNotifications, ...prev]);
     };
 
     const handleReconnectNotification = (event: CustomEvent) => {
-      const { notifications } = event.detail;
-      
-      if (!notifications || !Array.isArray(notifications) || notifications.length === 0) {
-        return;
-      }
+      const { notifications: wsNotifs, deviceName } = event.detail;
+      if (!wsNotifs || !Array.isArray(wsNotifs) || wsNotifs.length === 0) return;
+      if (!shouldShowNotification) return;
 
-      // Jangan tampilkan toast jika masih di halaman publik (login/register)
-      if (!shouldShowNotification) {
-        console.log('[Notification] Menerima reconnect notification tapi skip toast karena di halaman publik');
-        return;
-      }
-
-      console.log('[Notification] Menerima reconnect notification dari backend:', notifications);
-
-      // Process setiap notifikasi
       const newNotifications: NotificationItem[] = [];
       
-      notifications.forEach((notif: any) => {
-        const durationMinutes = Math.floor((notif.duration || 0) / 60);
-        const durationSeconds = (notif.duration || 0) % 60;
-        
-        // Add to notifications list
+      wsNotifs.forEach((notif: any) => {
         newNotifications.push({
-          id: `${notif.userName}-${Date.now()}-reconnect`,
+          id: `tmp-${Date.now()}-${Math.random()}`,
           type: 'reconnect',
-          userName: notif.userName,
-          timestamp: new Date(notif.reconnectTime || new Date()),
-          duration: notif.duration,
+          title: 'PPPoE User Reconnected',
+          message: `${notif.userName} kembali terhubung pada perangkat ${deviceName}.`,
+          is_read: false,
+          created_at: new Date().toISOString()
         });
 
-        // Show toast notification
+        // Show toast
         showToast({
           type: 'success',
           title: 'PPPoE User Reconnected',
-          message: `${notif.userName} is back online (downtime: ${durationMinutes}m ${durationSeconds}s)`,
+          message: `${notif.userName} is back online`,
           duration: 5000,
+          onClick: () => router.push('/notifications')
         });
       });
 
-      // Add to notifications list
+      setDisconnectCount((prev) => prev + newNotifications.length);
       setNotifications((prev) => [...newNotifications, ...prev]);
     };
 
@@ -163,10 +151,8 @@ export const NotificationProvider = ({ children }: { children: React.ReactNode }
       window.removeEventListener('downtime-notification', handleDowntimeNotification as EventListener);
       window.removeEventListener('reconnect-notification', handleReconnectNotification as EventListener);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // Empty deps karena showToast dan playBeepSound sudah stable
+  }, [shouldShowNotification, router]);
 
-  // Function to play beep sound using Web Audio API
   const playBeepSound = useCallback(() => {
     try {
       const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
@@ -191,12 +177,7 @@ export const NotificationProvider = ({ children }: { children: React.ReactNode }
 
   const showToast = useCallback((toast: Omit<Toast, 'id'>) => {
     const id = Math.random().toString(36).substring(7);
-    console.log('[Notification] Creating toast:', { ...toast, id });
-    setToasts((prev) => {
-      const newToasts = [...prev, { ...toast, id }];
-      console.log('[Notification] Total toasts:', newToasts.length);
-      return newToasts;
-    });
+    setToasts((prev) => [...prev, { ...toast, id }]);
     return id;
   }, []);
 
@@ -204,7 +185,6 @@ export const NotificationProvider = ({ children }: { children: React.ReactNode }
     setToasts((prev) => prev.filter((t) => t.id !== id));
   }, []);
 
-  // Detect PPPoE user disconnections and reconnections
   useEffect(() => {
     if (!pppoeActive || !Array.isArray(pppoeActive)) {
       return;
@@ -213,45 +193,18 @@ export const NotificationProvider = ({ children }: { children: React.ReactNode }
     const currentActive = new Set(pppoeActive.map((u: any) => u.name));
     const previousActive = previousActiveRef.current;
 
-    // Initialize previousActive on first load if empty
-    // JANGAN trigger notification saat initial load atau saat belum initialized
     if (!isInitializedRef.current || previousActive.size === 0) {
-      console.log('[Notification] Initial load, setting previousActive tanpa trigger notification', {
-        isInitialized: isInitializedRef.current,
-        previousSize: previousActive.size,
-        currentSize: currentActive.size
-      });
       previousActiveRef.current = currentActive;
       isInitializedRef.current = true;
       return;
     }
 
-    // Detect changes
-    const newlyDisconnected = Array.from(previousActive).filter(
-      (name) => !currentActive.has(name)
-    );
+    const newlyDisconnected = Array.from(previousActive).filter((name) => !currentActive.has(name));
     
-    const newlyReconnected = Array.from(currentActive).filter(
-      (name) => !previousActive.has(name)
-    );
-
-    // Debug logging
-    if (newlyDisconnected.length > 0 || newlyReconnected.length > 0) {
-      console.log('[Notification] Changes detected:', {
-        disconnected: newlyDisconnected,
-        reconnected: newlyReconnected,
-        previousCount: previousActive.size,
-        currentCount: currentActive.size
-      });
-    }
-
-    // Handle disconnections (only if we have previous data AND it's not initial load)
-    // Pastikan previousActive tidak kosong dan ada perubahan yang valid
     if (previousActive.size > 0 && newlyDisconnected.length > 0) {
         const now = Date.now();
         const validDisconnects: string[] = [];
 
-        // Filter berdasarkan cooldown
         newlyDisconnected.forEach((userName) => {
           const lastNotifTime = lastNotificationTimeRef.current.get(userName) || 0;
           if (now - lastNotifTime > notificationCooldown) {
@@ -259,20 +212,8 @@ export const NotificationProvider = ({ children }: { children: React.ReactNode }
             lastNotificationTimeRef.current.set(userName, now);
           }
         });
-
-        // Catatan: Toast notification untuk disconnect TIDAK langsung ditampilkan
-        // Notifikasi disconnect (toast + WhatsApp) akan dikirim oleh backend setelah downtime mencapai 2 menit
-        // Notifikasi akan diterima via WebSocket dengan type 'downtime-notification'
-        // Ini untuk menghindari spam notifikasi untuk disconnect yang cepat reconnect
     }
     
-    // Catatan: Toast notification untuk reconnect TIDAK langsung ditampilkan
-    // Notifikasi reconnect (toast + WhatsApp) akan dikirim oleh backend hanya jika downtime sebelumnya >= 2 menit
-    // Notifikasi akan diterima via WebSocket dengan type 'reconnect-notification'
-    // Ini konsisten dengan disconnect notification yang hanya dikirim setelah 2 menit
-
-    // Update previous active users hanya jika ada perubahan yang valid
-    // Jangan update jika ini adalah initial load (previousActive kosong)
     if (previousActive.size > 0 || currentActive.size > 0) {
       previousActiveRef.current = currentActive;
     }
@@ -282,14 +223,23 @@ export const NotificationProvider = ({ children }: { children: React.ReactNode }
     setDisconnectCount(0);
   }, []);
 
-  const clearNotifications = useCallback(() => {
-    setNotifications([]);
-    setDisconnectCount(0);
-  }, []);
-
-  const markAsRead = useCallback(() => {
-    setDisconnectCount(0);
-  }, []);
+  const markAsRead = useCallback(async () => {
+    if (!token) return;
+    try {
+        await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/api/notifications/mark-read`, {
+            method: 'POST',
+            headers: { 
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json'
+             },
+             body: JSON.stringify({}) // all read
+        });
+        setDisconnectCount(0);
+        setNotifications(prev => prev.map(n => ({ ...n, is_read: true })));
+    } catch (e) {
+        console.error('Failed to mark notifications as read', e);
+    }
+  }, [token]);
 
   return (
     <NotificationContext.Provider
@@ -298,8 +248,8 @@ export const NotificationProvider = ({ children }: { children: React.ReactNode }
         disconnectCount, 
         clearDisconnectCount, 
         notifications,
-        clearNotifications,
-        markAsRead
+        fetchNotifications,
+        markAsRead 
       }}
     >
       {children}
@@ -307,4 +257,3 @@ export const NotificationProvider = ({ children }: { children: React.ReactNode }
     </NotificationContext.Provider>
   );
 };
-

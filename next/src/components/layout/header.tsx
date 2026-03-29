@@ -13,7 +13,7 @@ import { motion, AnimatePresence } from '@/components/motion';
 const Header = () => {
   const { user, logout, token, checkLoggedIn } = useAuth();
   const isAdmin = user?.role === 'admin';
-  const { disconnectCount, notifications, clearNotifications, markAsRead } = useNotification();
+  const { disconnectCount, notifications, markAsRead } = useNotification();
   const router = useRouter();
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [isNotificationOpen, setIsNotificationOpen] = useState(false);
@@ -142,7 +142,7 @@ const Header = () => {
             <button
               onClick={() => {
                 setIsNotificationOpen(!isNotificationOpen);
-                if (!isNotificationOpen) {
+                if (!isNotificationOpen && disconnectCount > 0) {
                   markAsRead();
                 }
               }}
@@ -171,14 +171,6 @@ const Header = () => {
                       <Bell size={16} />
                       Notifikasi
                     </h3>
-                    {notifications.length > 0 && (
-                      <button
-                        onClick={clearNotifications}
-                        className="text-xs text-muted-foreground hover:text-foreground"
-                      >
-                        Hapus semua
-                      </button>
-                    )}
                   </div>
                   <div className="overflow-y-auto flex-1">
                     {notifications.length === 0 ? (
@@ -187,36 +179,47 @@ const Header = () => {
                       </div>
                     ) : (
                       <div className="divide-y">
-                        {notifications.map((notif) => (
+                        {notifications.slice(0, 5).map((notif: any) => (
                           <div
                             key={notif.id}
-                            className={`p-3 hover:bg-secondary/50 transition-colors ${notif.type === 'disconnect' ? 'border-l-4 border-l-red-500' : 'border-l-4 border-l-green-500'
-                              }`}
+                            onClick={() => {
+                              router.push('/notifications');
+                              setIsNotificationOpen(false);
+                            }}
+                            className={`p-3 cursor-pointer hover:bg-secondary/50 transition-colors ${
+                              notif.type.includes('disconnect') || notif.type.includes('offline') || notif.type.includes('alarm')
+                                ? 'border-l-4 border-l-red-500' 
+                                : 'border-l-4 border-l-green-500'
+                            }`}
                           >
                             <div className="flex items-start gap-3">
-                              <div className={`mt-0.5 ${notif.type === 'disconnect' ? 'text-red-500' : 'text-green-500'}`}>
-                                {notif.type === 'disconnect' ? (
+                              <div className={`mt-0.5 ${
+                                notif.type.includes('disconnect') || notif.type.includes('offline') || notif.type.includes('alarm')
+                                  ? 'text-red-500' 
+                                  : 'text-green-500'
+                              }`}>
+                                {notif.type.includes('disconnect') || notif.type.includes('offline') || notif.type.includes('alarm') ? (
                                   <AlertCircle size={18} />
                                 ) : (
                                   <CheckCircle2 size={18} />
                                 )}
                               </div>
                               <div className="flex-1 min-w-0">
-                                <p className="text-sm font-semibold">
-                                  {notif.type === 'disconnect' ? 'PPPoE User Disconnected' : 'PPPoE User Reconnected'}
+                                <p className="text-sm font-semibold flex items-center justify-between gap-1">
+                                  <span>{notif.title || (notif.type === 'disconnect' ? 'PPPoE User Disconnected' : 'Notification')}</span>
+                                  {notif.workspace_name && (
+                                    <span className="text-[10px] font-medium text-primary bg-primary/10 px-1.5 py-0.5 rounded-full whitespace-nowrap hidden sm:inline-flex">
+                                        {notif.workspace_name.length > 15 ? notif.workspace_name.substring(0, 15) + '...' : notif.workspace_name}
+                                    </span>
+                                  )}
                                 </p>
-                                <p className="text-sm text-muted-foreground truncate">
-                                  {notif.userName}
+                                <p className="text-sm text-muted-foreground truncate" title={notif.message}>
+                                  {notif.message}
                                 </p>
                                 <div className="flex items-center gap-2 mt-1">
                                   <span className="text-xs text-muted-foreground">
-                                    {formatTime(notif.timestamp)}
+                                    {formatTime(new Date(notif.created_at))}
                                   </span>
-                                  {notif.duration && (
-                                    <span className="text-xs text-muted-foreground">
-                                      • Downtime: {formatDuration(notif.duration)}
-                                    </span>
-                                  )}
                                 </div>
                               </div>
                             </div>
@@ -229,12 +232,12 @@ const Header = () => {
                     <div className="p-3 border-t">
                       <button
                         onClick={() => {
-                          router.push('/management');
+                          router.push('/notifications');
                           setIsNotificationOpen(false);
                         }}
-                        className="w-full text-sm text-primary hover:underline"
+                        className="w-full text-sm text-primary hover:underline font-medium"
                       >
-                        Lihat semua di Management →
+                        Lihat semua riwayat →
                       </button>
                     </div>
                   )}

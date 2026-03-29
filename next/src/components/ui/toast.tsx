@@ -11,6 +11,7 @@ export interface Toast {
   title: string;
   message?: string;
   duration?: number;
+  onClick?: () => void;
 }
 
 interface ToastProps {
@@ -48,22 +49,32 @@ const ToastItem = ({ toast, onClose }: ToastProps) => {
       animate={{ opacity: 1, y: 0, scale: 1 }}
       exit={{ opacity: 0, scale: 0.95, transition: { duration: 0.2 } }}
       className={cn(
-        'min-w-[320px] max-w-md p-4 rounded-lg border shadow-lg',
-        bgColors[toast.type]
+        'min-w-[320px] max-w-md p-4 rounded-lg border shadow-lg relative',
+        bgColors[toast.type],
+        toast.onClick && 'cursor-pointer hover:opacity-90 transition-opacity'
       )}
+      onClick={() => {
+        if (toast.onClick) {
+          toast.onClick();
+          onClose(toast.id);
+        }
+      }}
     >
       <div className="flex items-start gap-3">
         <div className="flex-shrink-0 mt-0.5">
           {icons[toast.type]}
         </div>
-        <div className="flex-1 min-w-0">
+        <div className="flex-1 min-w-0 pr-6">
           <p className="text-sm font-semibold text-foreground">{toast.title}</p>
           {toast.message && (
             <p className="text-xs text-muted-foreground mt-1">{toast.message}</p>
           )}
         </div>
         <button
-          onClick={() => onClose(toast.id)}
+          onClick={(e) => {
+            e.stopPropagation();
+            onClose(toast.id);
+          }}
           className="flex-shrink-0 text-muted-foreground hover:text-foreground transition-colors"
         >
           <X className="h-4 w-4" />

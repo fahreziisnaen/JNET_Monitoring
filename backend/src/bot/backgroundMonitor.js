@@ -282,6 +282,12 @@ async function startPhysicalMonitor(group, broadcastCallback) {
                             ).catch(e => console.error(`[Pruning] Gagal hapus odp_user_connections: ${e.message}`));
                         }
 
+                        // 4. Pruning Notifikasi Lama (lebih dari 7 Hari)
+                        await pool.query(
+                            'DELETE FROM app_notifications WHERE workspace_id = ? AND created_at < NOW() - INTERVAL 7 DAY',
+                            [inst.workspace_id]
+                        ).catch(e => console.error(`[Pruning] Gagal hapus notifikasi lama: ${e.message}`));
+
                         // --- SLA TRACKING ---
                         const isSuppressed = Date.now() - serverStartTime < SUPPRESSION_PERIOD_MS;
                         
@@ -319,12 +325,20 @@ async function startPhysicalMonitor(group, broadcastCallback) {
                                             type: 'downtime-notification',
                                             payload: { users: [secret.name], deviceName: inst.name }
                                         });
+                                        // Simpan riwayat secara permanen ke database
+                                        pool.query('INSERT INTO app_notifications (workspace_id, type, title, message) VALUES (?, ?, ?, ?)', [
+                                            inst.workspace_id, 'disconnect', 'PPPoE User Disconnected', `${secret.name} terputus dari jaringan pada perangkat ${inst.name}.`
+                                        ]).catch(() => {});
                                     } else if (!wasActive && secret.isActive) {
                                         // Transition: Offline -> Online
                                         state.broadcastCallback(inst.workspace_id, inst.id, {
                                             type: 'reconnect-notification',
                                             payload: { users: [secret.name], deviceName: inst.name }
                                         });
+                                        // Simpan riwayat secara permanen ke database
+                                        pool.query('INSERT INTO app_notifications (workspace_id, type, title, message) VALUES (?, ?, ?, ?)', [
+                                            inst.workspace_id, 'reconnect', 'PPPoE User Reconnected', `${secret.name} kembali terhubung pada perangkat ${inst.name}.`
+                                        ]).catch(() => {});
                                     }
                                 }
                             }

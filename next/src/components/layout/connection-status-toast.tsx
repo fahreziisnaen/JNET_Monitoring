@@ -3,6 +3,7 @@
 import { useEffect } from 'react';
 import { useAuth } from '@/components/providers/auth-provider';
 import { toast } from 'sonner';
+import { useRouter } from 'next/navigation';
 
 // Map disimpan di level modul agar kebal terhadap double-rendering dari React Strict Mode
 const globalToastIds = new Map<string, string | number>();
@@ -10,6 +11,7 @@ const globalWasConnected = new Map<string, boolean>();
 
 export default function ConnectionStatusToast() {
     const { token, user } = useAuth();
+    const router = useRouter();
 
     useEffect(() => {
         if (!token || !user) return;
@@ -32,7 +34,11 @@ export default function ConnectionStatusToast() {
                 if (!globalToastIds.has(idKey)) {
                     const toastId = toast.error(deviceName ? `Offline: ${deviceName}` : 'Koneksi Terputus', {
                         description: message || `Koneksi ke perangkat ${deviceName || 'Mikrotik'} terputus.`,
-                        duration: Infinity // Persistent until reconnected
+                        duration: Infinity, // Persistent until reconnected
+                        action: {
+                            label: 'Riwayat',
+                            onClick: () => router.push('/notifications')
+                        }
                     });
                     globalToastIds.set(idKey, toastId);
                 }
@@ -45,7 +51,11 @@ export default function ConnectionStatusToast() {
 
                     toast.success(deviceName ? `Online: ${deviceName}` : 'Terhubung Kembali', {
                         description: message || `Koneksi ke perangkat ${deviceName || 'Mikrotik'} berhasil dipulihkan.`,
-                        duration: 3000
+                        duration: 3000,
+                        action: {
+                            label: 'Riwayat',
+                            onClick: () => router.push('/notifications')
+                        }
                     });
                 }
                 // Mark as successfully connected
