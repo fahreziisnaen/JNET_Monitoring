@@ -119,26 +119,29 @@ const PppoeDetailModal: React.FC<PppoeDetailModalProps> = ({
         const date = new Date(d.time);
         return date.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
     });
-    const txData = trafficData.map(d => d.tx); // raw bps
-    const rxData = trafficData.map(d => d.rx); // raw bps
+    // Dari perspektif Router MikroTik:
+    // tx = data dikirim router → client = DOWNLOAD client
+    // rx = data diterima router ← client = UPLOAD client
+    const downloadData = trafficData.map(d => d.tx); // router TX = client Download
+    const uploadData = trafficData.map(d => d.rx);   // router RX = client Upload
 
     const chartData = {
         labels,
         datasets: [
             { 
-                label: 'Upload (TX)', 
-                data: txData, 
-                borderColor: '#ef4444', 
-                backgroundColor: '#ef444433', 
+                label: 'Download', 
+                data: downloadData, 
+                borderColor: '#10b981', 
+                backgroundColor: '#10b98133', 
                 tension: 0.2, 
                 pointRadius: 0,
                 borderWidth: 2
             },
             { 
-                label: 'Download (RX)', 
-                data: rxData, 
-                borderColor: '#10b981', 
-                backgroundColor: '#10b98133', 
+                label: 'Upload', 
+                data: uploadData, 
+                borderColor: '#ef4444', 
+                backgroundColor: '#ef444433', 
                 tension: 0.2, 
                 pointRadius: 0,
                 borderWidth: 2

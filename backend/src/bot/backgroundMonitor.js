@@ -249,8 +249,10 @@ async function startPhysicalMonitor(group, broadcastCallback) {
                     // Nama interface PPPoE-in biasanya "<pppoe-username>" — strip tag jika ada
                     const username = iface.name.replace(/^<(.+)>$/, '$1').replace(/^pppoe-/, '');
 
+                    // tx = router kirim ke client = Download client
+                    // rx = router terima dari client = Upload client
                     usageInserts.push([
-                        inst.workspace_id, inst.id, username, txDelta, rxDelta, txDelta + rxDelta
+                        inst.workspace_id, inst.id, username, rxDelta, txDelta, txDelta + rxDelta
                     ]);
                 });
 
