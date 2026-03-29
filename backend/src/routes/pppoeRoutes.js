@@ -17,6 +17,7 @@ router.post('/active/:id/kick', authorizeNoc, pppoeController.kickActiveUser);
 router.get('/secrets/:name/sla', pppoeController.getSlaDetails);
 router.get('/secrets/:name/usage', pppoeController.getUsageHistory);
 router.get('/:deviceId/traffic-history/:username', pppoeController.getTrafficHistory);
+router.get('/:deviceId/live-traffic/:username', pppoeController.getLiveTraffic);
 router.route('/secrets/:id')
     .put(authorizeNoc, pppoeController.updateSecret)
     .delete(authorizeNoc, pppoeController.deleteSecret);

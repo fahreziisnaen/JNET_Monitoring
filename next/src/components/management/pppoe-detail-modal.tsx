@@ -68,6 +68,7 @@ const PppoeDetailModal: React.FC<PppoeDetailModalProps> = ({
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
+    // Load riwayat awal, lalu polling live traffic tiap 3 detik
     useEffect(() => {
         if (!isOpen || !secret || !deviceId || !token) {
             setTrafficData([]);
@@ -75,30 +76,29 @@ const PppoeDetailModal: React.FC<PppoeDetailModalProps> = ({
         }
 
         let isMounted = true;
-        
-        const fetchTraffic = async () => {
+        let interval: NodeJS.Timeout;
+
+        const getQueryParams = () => {
+            const queryParams = new URLSearchParams();
+            if (secret?.workspaceId) {
+                queryParams.append('workspaceId', secret.workspaceId.toString());
+            } else if (secret?.workspace_id) {
+                queryParams.append('workspaceId', secret.workspace_id.toString());
+            }
+            return queryParams.toString() ? `?${queryParams.toString()}` : '';
+        };
+
+        const fetchInitialHistory = async () => {
             setIsLoading(true);
             setError(null);
             try {
-                const queryParams = new URLSearchParams();
-                if (secret?.workspaceId) {
-                    queryParams.append('workspaceId', secret.workspaceId.toString());
-                } else if (secret?.workspace_id) {
-                    // Fallback in case workspaceId is under snake_case key
-                    queryParams.append('workspaceId', secret.workspace_id.toString());
-                }
-                const queryString = queryParams.toString() ? `?${queryParams.toString()}` : '';
-                
+                const queryString = getQueryParams();
                 const res = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/api/pppoe/${deviceId}/traffic-history/${encodeURIComponent(secret.name)}${queryString}`, {
-                    headers: {
-                        'Authorization': `Bearer ${token}`
-                    }
+                    headers: { 'Authorization': `Bearer ${token}` }
                 });
-                
                 if (!res.ok) throw new Error('Gagal memuat histori traffic');
                 
                 const data = await res.json();
-                
                 if (isMounted) {
                     setTrafficData(data);
                 }
@@ -109,14 +109,51 @@ const PppoeDetailModal: React.FC<PppoeDetailModalProps> = ({
             }
         };
 
-        fetchTraffic();
+        const fetchLiveTraffic = async () => {
+            // Jangan fetch jika PPPoE secret sedang offline untuk menghemat koneksi
+            if (!secret.isActive) return;
 
-        // Polling tiap 60 detik jika modal terus terbuka (sesuai interval cron DB)
-        const interval = setInterval(fetchTraffic, 60000);
+            try {
+                const queryString = getQueryParams();
+                const res = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/api/pppoe/${deviceId}/live-traffic/${encodeURIComponent(secret.name)}${queryString}`, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                
+                if (res.ok) {
+                    const freshPoint = await res.json();
+                    
+                    if (isMounted) {
+                        setTrafficData(prev => {
+                            // Convert Date ke format yang konsisten (time mapping)
+                            const pointObj = {
+                                tx: freshPoint.tx,
+                                rx: freshPoint.rx,
+                                time: freshPoint.timestamp
+                            };
+                            
+                            // Pertahankan maksimal 2880 titik untuk menghindari memory leak (histori berhari-hari)
+                            const newArr = [...prev, pointObj];
+                            if (newArr.length > 2880) return newArr.slice(newArr.length - 2880);
+                            return newArr;
+                        });
+                    }
+                }
+            } catch (error) {
+                // Silent error untuk live polling agar tidak mengganggu UX
+                console.warn('Gagal ambil data live:', error);
+            }
+        };
+
+        fetchInitialHistory().then(() => {
+            if (isMounted) {
+                // Mulai interogasi 3 detik ke Router jika data riwayat berhasil/gagal ditarik
+                interval = setInterval(fetchLiveTraffic, 3000);
+            }
+        });
 
         return () => {
             isMounted = false;
-            clearInterval(interval);
+            if (interval) clearInterval(interval);
         };
     }, [isOpen, secret, deviceId, token]);
 

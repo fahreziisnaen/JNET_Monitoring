@@ -944,3 +944,39 @@ exports.getTrafficHistory = async (req, res) => {
         res.status(500).json({ message: 'Gagal mengambil riwayat traffic.' });
     }
 };
+
+exports.getLiveTraffic = async (req, res) => {
+    const { username, deviceId } = req.params;
+    let workspaceId = req.user.workspace_id;
+
+    // Support override for NOC / Superadmin
+    const isSuper = req.user.is_super_admin === 1 || req.user.is_super_admin === true;
+    if (req.query.workspaceId && (req.user.role === 'admin' || req.user.role === 'noc' || isSuper)) {
+        workspaceId = parseInt(req.query.workspaceId);
+    }
+
+    try {
+        const interfaceName = `<pppoe-${username}>`;
+        const trafficData = await runCommandForWorkspace(
+            workspaceId, 
+            '/interface/monitor-traffic', 
+            [`=interface=${interfaceName}`, '=once='], 
+            deviceId
+        );
+
+        if (trafficData && trafficData.length > 0) {
+            const data = trafficData[0];
+            const tx = parseInt(data['tx-bits-per-second'] || '0', 10);
+            const rx = parseInt(data['rx-bits-per-second'] || '0', 10);
+            return res.json({ tx, rx, timestamp: new Date() });
+        }
+
+        return res.json({ tx: 0, rx: 0, timestamp: new Date() });
+    } catch (error) {
+        // Abaikan error "does not match any value", itu wajar jika klien PPPoE sedang diskonek
+        if (error.message && !error.message.includes('match any value')) {
+            console.error(`[Live Traffic] Error fetching for ${username}:`, error.message);
+        }
+        res.status(500).json({ message: 'Gagal mengambil live traffic.', tx: 0, rx: 0, timestamp: new Date() });
+    }
+};
