@@ -667,6 +667,13 @@ const NocManagementTab: React.FC<NocManagementTabProps> = ({ workspaces }) => {
                     setIsAddModalOpen(true);
                 }}
             />
+
+            <PppoeDetailModal
+                isOpen={isDetailModalOpen}
+                onClose={() => setIsDetailModalOpen(false)}
+                secret={secretToDetail}
+                deviceId={secretToDetail?.deviceId ? Number(secretToDetail.deviceId) : 0}
+            />
         </div>
     );
 };

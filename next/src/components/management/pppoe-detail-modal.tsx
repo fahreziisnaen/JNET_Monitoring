@@ -78,7 +78,7 @@ const PppoeDetailModal: React.FC<PppoeDetailModalProps> = ({
             setIsLoading(true);
             setError(null);
             try {
-                const res = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/api/mikrotik/pppoe/${deviceId}/traffic-history/${encodeURIComponent(secret.name)}`, {
+                const res = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/api/pppoe/${deviceId}/traffic-history/${encodeURIComponent(secret.name)}`, {
                     headers: {
                         'Authorization': `Bearer ${token}`
                     }
