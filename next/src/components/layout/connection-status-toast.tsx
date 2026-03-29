@@ -19,8 +19,8 @@ export default function ConnectionStatusToast() {
 
             const { status, message, deviceName } = data;
 
-            // Ignore 'Device changed' disconnections (1000 closure with this reason)
-            if (status === 'disconnected' && message === 'Device changed') {
+            // Ignore intentional disconnections ('Device changed' or 'Unselected')
+            if (status === 'disconnected' && (message === 'Device changed' || message === 'Unselected')) {
                 return;
             }
 

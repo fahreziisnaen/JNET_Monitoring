@@ -1,8 +1,13 @@
 const pool = require('../config/database');
 const { runCommandForWorkspace } = require('../utils/apiConnection');
+const { isSuperAdmin } = require('../utils/authUtils');
 
 exports.getPools = async (req, res) => {
-    const workspaceId = req.user.workspace_id;
+    let workspaceId = req.user.workspace_id;
+    const isSuper = isSuperAdmin(req.user.id);
+    if (req.query.workspaceId && (req.user.role === 'admin' || req.user.role === 'noc' || isSuper)) {
+        workspaceId = parseInt(req.query.workspaceId);
+    }
     const deviceId = req.query.deviceId ? parseInt(req.query.deviceId) : null;
     
     if (!deviceId) {
@@ -26,7 +31,11 @@ exports.getPools = async (req, res) => {
 
 // Sync IP pools dari Mikrotik ke database
 exports.syncPoolsFromMikrotik = async (req, res) => {
-    const workspaceId = req.user.workspace_id;
+    let workspaceId = req.user.workspace_id;
+    const isSuper = isSuperAdmin(req.user.id);
+    if (req.query.workspaceId && (req.user.role === 'admin' || req.user.role === 'noc' || isSuper)) {
+        workspaceId = parseInt(req.query.workspaceId);
+    }
     const deviceId = req.query.deviceId ? parseInt(req.query.deviceId) : null;
     try {
         console.log(`[Sync IP Pools] Memulai sync untuk workspace ${workspaceId}, deviceId ${deviceId}`);
@@ -124,7 +133,12 @@ exports.syncPoolsFromMikrotik = async (req, res) => {
 };
 
 exports.addPool = async (req, res) => {
-    const workspaceId = req.user.workspace_id;
+    let workspaceId = req.user.workspace_id;
+    const isSuper = isSuperAdmin(req.user.id);
+    const targetWorkspaceId = req.query.workspaceId ? parseInt(req.query.workspaceId) : (req.body.workspaceId ? parseInt(req.body.workspaceId) : null);
+    if (targetWorkspaceId && (req.user.role === 'admin' || req.user.role === 'noc' || isSuper)) {
+        workspaceId = targetWorkspaceId;
+    }
     const deviceId = req.query.deviceId ? parseInt(req.query.deviceId) : (req.body.deviceId ? parseInt(req.body.deviceId) : null);
     const { profile_name, ip_start, ip_end, gateway } = req.body;
     
@@ -148,7 +162,11 @@ exports.addPool = async (req, res) => {
 };
 
 exports.deletePool = async (req, res) => {
-    const workspaceId = req.user.workspace_id;
+    let workspaceId = req.user.workspace_id;
+    const isSuper = isSuperAdmin(req.user.id);
+    if (req.query.workspaceId && (req.user.role === 'admin' || req.user.role === 'noc' || isSuper)) {
+        workspaceId = parseInt(req.query.workspaceId);
+    }
     const { id } = req.params;
     try {
         const [result] = await pool.query(

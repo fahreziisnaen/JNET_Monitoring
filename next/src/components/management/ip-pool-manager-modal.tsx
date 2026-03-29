@@ -23,7 +23,7 @@ interface IpPoolManagerModalProps {
 }
 
 const IpPoolManagerModal = ({ isOpen, onClose }: IpPoolManagerModalProps) => {
-  const { selectedDeviceId } = useMikrotik() || { selectedDeviceId: null };
+  const { selectedDeviceId, getDeviceWorkspaceId } = useMikrotik() || { selectedDeviceId: null, getDeviceWorkspaceId: () => null };
   const [pools, setPools] = useState<IpPool[]>([]);
   const [profiles, setProfiles] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
@@ -35,10 +35,15 @@ const IpPoolManagerModal = ({ isOpen, onClose }: IpPoolManagerModalProps) => {
     setLoading(true);
     setError('');
     try {
-      const deviceQuery = selectedDeviceId ? `?deviceId=${selectedDeviceId}` : '';
+      const targetWorkspaceId = selectedDeviceId ? getDeviceWorkspaceId(selectedDeviceId) : null;
+      const queryParams = new URLSearchParams();
+      if (selectedDeviceId) queryParams.append('deviceId', selectedDeviceId.toString());
+      if (targetWorkspaceId) queryParams.append('workspaceId', targetWorkspaceId.toString());
+      const queryStr = queryParams.toString() ? `?${queryParams.toString()}` : '';
+
       const [poolsRes, profilesRes] = await Promise.all([
-        apiFetch(`${apiUrl}/api/ip-pools${deviceQuery}`),
-        apiFetch(`${apiUrl}/api/pppoe/profiles${deviceQuery}`)
+        apiFetch(`${apiUrl}/api/ip-pools${queryStr}`),
+        apiFetch(`${apiUrl}/api/pppoe/profiles${queryStr}`)
       ]);
       if (!poolsRes.ok || !profilesRes.ok) throw new Error("Gagal memuat data.");
       const poolsResponse = await poolsRes.json();
@@ -75,9 +80,13 @@ const IpPoolManagerModal = ({ isOpen, onClose }: IpPoolManagerModalProps) => {
       if (poolsData.length === 0 && !skipAutoSync) {
         console.log('[IP Pool] Database kosong, melakukan sync otomatis...');
         try {
-          const syncUrl = selectedDeviceId
-            ? `${apiUrl}/api/ip-pools/sync?deviceId=${selectedDeviceId}`
-            : `${apiUrl}/api/ip-pools/sync`;
+          const targetWorkspaceId = selectedDeviceId ? getDeviceWorkspaceId(selectedDeviceId) : null;
+          const queryParams = new URLSearchParams();
+          if (selectedDeviceId) queryParams.append('deviceId', selectedDeviceId.toString());
+          if (targetWorkspaceId) queryParams.append('workspaceId', targetWorkspaceId.toString());
+          const queryStr = queryParams.toString() ? `?${queryParams.toString()}` : '';
+          
+          const syncUrl = `${apiUrl}/api/ip-pools/sync${queryStr}`;
 
           const syncRes = await apiFetch(syncUrl, {
             method: 'POST'
@@ -85,9 +94,8 @@ const IpPoolManagerModal = ({ isOpen, onClose }: IpPoolManagerModalProps) => {
 
           if (syncRes.ok) {
             // Setelah sync berhasil, fetch ulang data
-            const deviceQuery = selectedDeviceId ? `?deviceId=${selectedDeviceId}` : '';
             const [newPoolsRes] = await Promise.all([
-              apiFetch(`${apiUrl}/api/ip-pools${deviceQuery}`)
+              apiFetch(`${apiUrl}/api/ip-pools${queryStr}`)
             ]);
             if (newPoolsRes.ok) {
               const newPoolsResponse = await newPoolsRes.json();
@@ -220,8 +228,13 @@ const IpPoolManagerModal = ({ isOpen, onClose }: IpPoolManagerModalProps) => {
     setLoading(true);
     setError('');
     try {
-      const saveDeviceQuery = selectedDeviceId ? `?deviceId=${selectedDeviceId}` : '';
-      const res = await apiFetch(`${apiUrl}/api/ip-pools${saveDeviceQuery}`, {
+      const targetWorkspaceId = selectedDeviceId ? getDeviceWorkspaceId(selectedDeviceId) : null;
+      const queryParams = new URLSearchParams();
+      if (selectedDeviceId) queryParams.append('deviceId', selectedDeviceId.toString());
+      if (targetWorkspaceId) queryParams.append('workspaceId', targetWorkspaceId.toString());
+      const queryStr = queryParams.toString() ? `?${queryParams.toString()}` : '';
+
+      const res = await apiFetch(`${apiUrl}/api/ip-pools${queryStr}`, {
         method: 'POST',
         body: JSON.stringify(formData)
       });
@@ -229,9 +242,8 @@ const IpPoolManagerModal = ({ isOpen, onClose }: IpPoolManagerModalProps) => {
       if (!res.ok) throw new Error(data.message);
 
       // Setelah submit berhasil, refresh data dan update form dengan data yang baru disimpan
-      const refreshDeviceQuery = selectedDeviceId ? `?deviceId=${selectedDeviceId}` : '';
       const [poolsRes] = await Promise.all([
-        apiFetch(`${apiUrl}/api/ip-pools${refreshDeviceQuery}`)
+        apiFetch(`${apiUrl}/api/ip-pools${queryStr}`)
       ]);
       if (poolsRes.ok) {
         const poolsResponse = await poolsRes.json();
@@ -300,7 +312,12 @@ const IpPoolManagerModal = ({ isOpen, onClose }: IpPoolManagerModalProps) => {
 
   const handleDelete = async (poolId: number) => {
     try {
-      await apiFetch(`${apiUrl}/api/ip-pools/${poolId}`, { method: 'DELETE' });
+      const targetWorkspaceId = selectedDeviceId ? getDeviceWorkspaceId(selectedDeviceId) : null;
+      const queryParams = new URLSearchParams();
+      if (targetWorkspaceId) queryParams.append('workspaceId', targetWorkspaceId.toString());
+      const queryStr = queryParams.toString() ? `?${queryParams.toString()}` : '';
+      
+      await apiFetch(`${apiUrl}/api/ip-pools/${poolId}${queryStr}`, { method: 'DELETE' });
       toast.success("Aturan Dihapus", { description: "Aturan IP Pool berhasil dihapus." });
       fetchData();
     } catch (err) {
@@ -320,10 +337,14 @@ const IpPoolManagerModal = ({ isOpen, onClose }: IpPoolManagerModalProps) => {
   const handleSyncFromMikrotik = async () => {
     setError('');
     try {
-      // Kirim deviceId jika ada untuk optimasi
-      const syncUrl = selectedDeviceId
-        ? `${apiUrl}/api/ip-pools/sync?deviceId=${selectedDeviceId}`
-        : `${apiUrl}/api/ip-pools/sync`;
+      // Kirim deviceId dan workspaceId jika ada untuk optimasi
+      const targetWorkspaceId = selectedDeviceId ? getDeviceWorkspaceId(selectedDeviceId) : null;
+      const queryParams = new URLSearchParams();
+      if (selectedDeviceId) queryParams.append('deviceId', selectedDeviceId.toString());
+      if (targetWorkspaceId) queryParams.append('workspaceId', targetWorkspaceId.toString());
+      const queryStr = queryParams.toString() ? `?${queryParams.toString()}` : '';
+      
+      const syncUrl = `${apiUrl}/api/ip-pools/sync${queryStr}`;
 
       const res = await apiFetch(syncUrl, {
         method: 'POST'
