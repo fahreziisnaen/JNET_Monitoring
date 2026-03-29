@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
-import { Power, PowerOff, Loader2, Search, Users, UserCheck, UserX, MoreHorizontal, Edit, ZapOff, Trash2, X, ShieldAlert, WifiOff } from 'lucide-react';
+import { Power, PowerOff, Loader2, Search, Users, UserCheck, UserX, MoreHorizontal, Edit, ZapOff, Trash2, X, ShieldAlert, WifiOff, ArrowUpDown, ChevronUp, ChevronDown } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { useMikrotik } from '../providers/mikrotik-provider';
 import { formatUptime, formatCompactUptime } from '@/utils/format';
@@ -242,10 +242,36 @@ const NocManagementTab: React.FC<NocManagementTabProps> = ({ workspaces }) => {
                         aVal = a.profile.toLowerCase();
                         bVal = b.profile.toLowerCase();
                         break;
-                    case 'remote-address':
-                        aVal = (a['remote-address'] || '').toLowerCase();
-                        bVal = (b['remote-address'] || '').toLowerCase();
+                    case 'remote-address': {
+                        const aAddr = (a['remote-address'] || '');
+                        const bAddr = (b['remote-address'] || '');
+                        if (!aAddr && !bAddr) { aVal = 0; bVal = 0; }
+                        else if (!aAddr) { aVal = Infinity; bVal = 0; }
+                        else if (!bAddr) { aVal = 0; bVal = Infinity; }
+                        else {
+                            const parseIP = (ip: string): number => {
+                                const parts = ip.split('.').map(p => parseInt(p, 10) || 0);
+                                while (parts.length < 4) parts.push(0);
+                                return parts[0] * 16777216 + parts[1] * 65536 + parts[2] * 256 + parts[3];
+                            };
+                            const isIP = (s: string) => /^\d+\.\d+\.\d+\.\d+$/.test(s);
+                            if (isIP(aAddr) && isIP(bAddr)) { aVal = parseIP(aAddr); bVal = parseIP(bAddr); }
+                            else { aVal = aAddr.toLowerCase(); bVal = bAddr.toLowerCase(); }
+                        }
                         break;
+                    }
+                    case 'uptime': {
+                        const parseUptime = (u: string | undefined): number => {
+                            if (!u || u === 'N/A' || u === '-') return 0;
+                            const wk = u.match(/(\d+)w/); const dy = u.match(/(\d+)d/);
+                            const hr = u.match(/(\d+)h/); const mn = u.match(/(\d+)m/); const sc = u.match(/(\d+)s/);
+                            return (wk ? parseInt(wk[1]) * 604800 : 0) + (dy ? parseInt(dy[1]) * 86400 : 0) +
+                                   (hr ? parseInt(hr[1]) * 3600 : 0) + (mn ? parseInt(mn[1]) * 60 : 0) + (sc ? parseInt(sc[1]) : 0);
+                        };
+                        aVal = parseUptime(a.uptime);
+                        bVal = parseUptime(b.uptime);
+                        break;
+                    }
                     default: return 0;
                 }
                 if (aVal < bVal) return sortDirection === 'asc' ? -1 : 1;
@@ -406,12 +432,66 @@ const NocManagementTab: React.FC<NocManagementTabProps> = ({ workspaces }) => {
                         <table className="w-full text-xs sm:text-sm">
                             <thead className="text-left bg-secondary sticky top-0 z-10">
                                 <tr>
-                                    <th className="p-2 sm:p-4 font-semibold cursor-pointer select-none w-[80px] sm:w-[100px]" onClick={() => handleSort('status')}>Status</th>
-                                    <th className="p-2 sm:p-4 font-semibold cursor-pointer select-none" onClick={() => handleSort('name')}>User / Identitas</th>
-                                    <th className="p-2 sm:p-4 font-semibold cursor-pointer select-none hidden md:table-cell" onClick={() => handleSort('workspace')}>Router</th>
-                                    <th className="p-2 sm:p-4 font-semibold cursor-pointer select-none hidden sm:table-cell" onClick={() => handleSort('profile')}>Profil</th>
-                                    <th className="p-2 sm:p-4 font-semibold cursor-pointer select-none hidden lg:table-cell" onClick={() => handleSort('remote-address')}>Remote IP</th>
-                                    <th className="p-2 sm:p-4 font-semibold cursor-pointer select-none w-[80px] sm:w-[120px]">Uptime</th>
+                                    <th className="p-2 sm:p-4 font-semibold cursor-pointer hover:bg-secondary/80 transition-colors select-none w-[80px] sm:w-[100px]" onClick={() => handleSort('status')}>
+                                        <div className="flex items-center gap-1 sm:gap-2">
+                                            <span>Status</span>
+                                            {sortColumn === 'status' ? (
+                                                sortDirection === 'asc' ? <ChevronUp size={14} className="sm:w-4 sm:h-4" /> : <ChevronDown size={14} className="sm:w-4 sm:h-4" />
+                                            ) : (
+                                                <ArrowUpDown size={14} className="text-muted-foreground opacity-50 sm:w-4 sm:h-4" />
+                                            )}
+                                        </div>
+                                    </th>
+                                    <th className="p-2 sm:p-4 font-semibold cursor-pointer hover:bg-secondary/80 transition-colors select-none" onClick={() => handleSort('name')}>
+                                        <div className="flex items-center gap-1 sm:gap-2">
+                                            <span>User / Identitas</span>
+                                            {sortColumn === 'name' ? (
+                                                sortDirection === 'asc' ? <ChevronUp size={14} className="sm:w-4 sm:h-4" /> : <ChevronDown size={14} className="sm:w-4 sm:h-4" />
+                                            ) : (
+                                                <ArrowUpDown size={14} className="text-muted-foreground opacity-50 sm:w-4 sm:h-4" />
+                                            )}
+                                        </div>
+                                    </th>
+                                    <th className="p-2 sm:p-4 font-semibold cursor-pointer hover:bg-secondary/80 transition-colors select-none hidden md:table-cell" onClick={() => handleSort('workspace')}>
+                                        <div className="flex items-center gap-1 sm:gap-2">
+                                            <span>Router</span>
+                                            {sortColumn === 'workspace' ? (
+                                                sortDirection === 'asc' ? <ChevronUp size={14} className="sm:w-4 sm:h-4" /> : <ChevronDown size={14} className="sm:w-4 sm:h-4" />
+                                            ) : (
+                                                <ArrowUpDown size={14} className="text-muted-foreground opacity-50 sm:w-4 sm:h-4" />
+                                            )}
+                                        </div>
+                                    </th>
+                                    <th className="p-2 sm:p-4 font-semibold cursor-pointer hover:bg-secondary/80 transition-colors select-none hidden sm:table-cell" onClick={() => handleSort('profile')}>
+                                        <div className="flex items-center gap-1 sm:gap-2">
+                                            <span>Profil</span>
+                                            {sortColumn === 'profile' ? (
+                                                sortDirection === 'asc' ? <ChevronUp size={14} className="sm:w-4 sm:h-4" /> : <ChevronDown size={14} className="sm:w-4 sm:h-4" />
+                                            ) : (
+                                                <ArrowUpDown size={14} className="text-muted-foreground opacity-50 sm:w-4 sm:h-4" />
+                                            )}
+                                        </div>
+                                    </th>
+                                    <th className="p-2 sm:p-4 font-semibold cursor-pointer hover:bg-secondary/80 transition-colors select-none hidden lg:table-cell" onClick={() => handleSort('remote-address')}>
+                                        <div className="flex items-center gap-1 sm:gap-2">
+                                            <span>Remote IP</span>
+                                            {sortColumn === 'remote-address' ? (
+                                                sortDirection === 'asc' ? <ChevronUp size={14} className="sm:w-4 sm:h-4" /> : <ChevronDown size={14} className="sm:w-4 sm:h-4" />
+                                            ) : (
+                                                <ArrowUpDown size={14} className="text-muted-foreground opacity-50 sm:w-4 sm:h-4" />
+                                            )}
+                                        </div>
+                                    </th>
+                                    <th className="p-2 sm:p-4 font-semibold cursor-pointer hover:bg-secondary/80 transition-colors select-none w-[80px] sm:w-[120px]" onClick={() => handleSort('uptime')}>
+                                        <div className="flex items-center gap-1 sm:gap-2">
+                                            <span>Uptime</span>
+                                            {sortColumn === 'uptime' ? (
+                                                sortDirection === 'asc' ? <ChevronUp size={14} className="sm:w-4 sm:h-4" /> : <ChevronDown size={14} className="sm:w-4 sm:h-4" />
+                                            ) : (
+                                                <ArrowUpDown size={14} className="text-muted-foreground opacity-50 sm:w-4 sm:h-4" />
+                                            )}
+                                        </div>
+                                    </th>
                                     <th className="p-2 sm:p-4 font-semibold text-center w-[50px] sm:w-[80px]">Aksi</th>
                                 </tr>
                             </thead>
