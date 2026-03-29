@@ -9,12 +9,13 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import ConfirmModal from '@/components/ui/confirm-modal';
+import ConfirmModal from '../ui/confirm-modal';
 import EditPppoeSecretModal from './edit-pppoe-secret-modal';
+import PppoeDetailModal from './pppoe-detail-modal';
 import { apiFetch } from '@/utils/api';
 import { formatUptime, formatCompactUptime } from '@/utils/format';
 
-interface PppoeSecret {
+export interface PppoeSecret {
   '.id': string;
   name: string;
   profile: string;
@@ -46,6 +47,11 @@ const PppoeSecretsTable = ({ refreshTrigger, onActionComplete, initialFilter = '
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [secretToEdit, setSecretToEdit] = useState<PppoeSecret | null>(null);
   const [recentlyDeleted, setRecentlyDeleted] = useState<Set<string>>(new Set());
+  
+  // Pppoe Detail Modal state
+  const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
+  const [secretToDetail, setSecretToDetail] = useState<PppoeSecret | null>(null);
+  
   const apiUrl = process.env.NEXT_PUBLIC_API_BASE_URL;
 
   // Update secrets dari WebSocket data (sama seperti summary aktif)
@@ -534,7 +540,15 @@ const PppoeSecretsTable = ({ refreshTrigger, onActionComplete, initialFilter = '
                         </td>
                         <td className="p-2 sm:p-4">
                           <div className="flex flex-col gap-0.5">
-                            <span className="font-bold sm:font-medium truncate max-w-[100px] sm:max-w-none">{user.name}</span>
+                            <span 
+                                className="font-bold sm:font-medium truncate max-w-[100px] sm:max-w-none text-primary hover:text-primary/80 hover:underline cursor-pointer"
+                                onClick={() => {
+                                    setSecretToDetail(user);
+                                    setIsDetailModalOpen(true);
+                                }}
+                            >
+                                {user.name}
+                            </span>
                             <div className="flex flex-col sm:hidden">
                               <span className="text-[10px] text-muted-foreground truncate max-w-[100px]">{user.profile}</span>
                               {user['remote-address'] ? (
@@ -632,6 +646,13 @@ const PppoeSecretsTable = ({ refreshTrigger, onActionComplete, initialFilter = '
           onActionComplete();
         }}
         secretToEdit={secretToEdit}
+      />
+
+      <PppoeDetailModal 
+          isOpen={isDetailModalOpen}
+          onClose={() => setIsDetailModalOpen(false)}
+          secret={secretToDetail}
+          deviceId={secretToDetail?.deviceId ? Number(secretToDetail.deviceId) : (selectedDeviceId || 0)}
       />
     </>
   );

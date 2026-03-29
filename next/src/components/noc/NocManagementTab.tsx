@@ -15,6 +15,7 @@ import ConfirmModal from '@/components/ui/confirm-modal';
 import EditPppoeSecretModal from '../management/edit-pppoe-secret-modal';
 import AddPppoeSecretModal from '../management/add-pppoe-secret-modal';
 import { Plus, ChevronLeft, ChevronRight } from 'lucide-react';
+import PppoeDetailModal from '../management/pppoe-detail-modal';
 
 const ITEMS_PER_PAGE = 100;
 import NocWorkspaceSelectorModal from './NocWorkspaceSelectorModal';
@@ -124,6 +125,10 @@ const NocManagementTab: React.FC<NocManagementTabProps> = ({ workspaces }) => {
     const [isNocWorkspaceSelectorOpen, setIsNocWorkspaceSelectorOpen] = useState(false);
     const [recentlyDeleted, setRecentlyDeleted] = useState<Set<string>>(new Set());
     const [currentPage, setCurrentPage] = useState(1);
+    
+    // Modal Detail PPPoE
+    const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
+    const [secretToDetail, setSecretToDetail] = useState<PppoeSecret | null>(null);
 
     const memoizedSecretToEdit = useMemo(() => {
         if (!secretToEdit) return null;
@@ -516,7 +521,16 @@ const NocManagementTab: React.FC<NocManagementTabProps> = ({ workspaces }) => {
                                                 </td>
                                                 <td className="p-2 sm:p-4">
                                                     <div className="flex flex-col gap-0.5">
-                                                        <span className="font-bold sm:font-medium truncate max-w-[120px] sm:max-w-[200px]" title={user.name}>{user.name}</span>
+                                                        <span 
+                                                            className="font-bold sm:font-medium truncate max-w-[120px] sm:max-w-[200px] text-primary hover:text-primary/80 hover:underline cursor-pointer" 
+                                                            title={user.name}
+                                                            onClick={() => {
+                                                                setSecretToDetail(user);
+                                                                setIsDetailModalOpen(true);
+                                                            }}
+                                                        >
+                                                            {user.name}
+                                                        </span>
                                                         <div className="flex flex-col sm:hidden gap-0.5">
                                                             <span className="text-[10px] text-muted-foreground truncate max-w-[120px]">{user.profile}</span>
                                                             {user['remote-address'] ? (

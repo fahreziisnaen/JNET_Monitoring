@@ -906,3 +906,41 @@ exports.unisolateSecret = async (req, res) => {
         res.status(500).json({ message: error.message });
     }
 };
+
+exports.getTrafficHistory = async (req, res) => {
+    const { username, deviceId } = req.params;
+    let workspaceId = req.user.workspace_id;
+
+    // Support override for NOC / Superadmin
+    const isSuper = req.user.is_super_admin === 1 || req.user.is_super_admin === true;
+    if (req.query.workspaceId && (req.user.role === 'admin' || req.user.role === 'noc' || isSuper)) {
+        workspaceId = parseInt(req.query.workspaceId);
+    }
+
+    try {
+        // Nama interface PPPoE default mikroTik adalah <pppoe-{username}>
+        const interfaceName = `<pppoe-${username}>`;
+
+        // Ambil data maksimal 24 jam terakhir untuk keperluan charting (limit to sensible amount of points)
+        // Jika data setiap 1 menit, 24 jam = 1440 points. Cukup untuk line chart interaktif.
+        const query = `
+            SELECT 
+                tx_bps as tx, 
+                rx_bps as rx, 
+                timestamp as time
+            FROM interface_traffic_logs
+            WHERE workspace_id = ? 
+              AND device_id = ? 
+              AND interface_name = ?
+              AND timestamp >= NOW() - INTERVAL 24 HOUR
+            ORDER BY timestamp ASC
+        `;
+
+        const [rows] = await pool.query(query, [workspaceId, parseInt(deviceId), interfaceName]);
+
+        res.json(rows);
+    } catch (error) {
+        console.error(`[Traffic History] Error fetching for ${username}:`, error.message);
+        res.status(500).json({ message: 'Gagal mengambil riwayat traffic.' });
+    }
+};

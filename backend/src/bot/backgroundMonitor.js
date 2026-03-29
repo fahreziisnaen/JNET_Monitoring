@@ -51,6 +51,7 @@ async function startPhysicalMonitor(group, broadcastCallback) {
         cachedSecrets: [],
         lastCycleTime: 0,
         lastTrafficLog: 0,
+        previousPppoeBytes: {}, // Cache tx/rx bytes dari cycle sebelumnya
         failCount: 0,
         group: group, // Menyimpan list {workspace_id, id}
         broadcastCallback: broadcastCallback,
@@ -137,6 +138,45 @@ async function startPhysicalMonitor(group, broadcastCallback) {
                 })
                 .map(iface => iface.name);
 
+            // TAMPUNG Traffic PPPoE Interfaces (Hitung BPS dari Byte Delta jika waktunya simpan DB)
+            const pppoeBpsResults = {};
+            const timeDeltaSec = (now - state.lastTrafficLog) / 1000;
+            const SHIFT_TRAFFIC_LOG = now - state.lastTrafficLog >= 60000;
+
+            if (SHIFT_TRAFFIC_LOG && timeDeltaSec > 0) {
+                const currentPppoeBytes = {};
+                
+                allInterfaces.forEach(iface => {
+                    const type = (iface.type || '').toLowerCase();
+                    if (type.includes('pppoe-in') && iface.name) {
+                        const txBytes = parseInt(iface['tx-byte'] || '0', 10);
+                        const rxBytes = parseInt(iface['rx-byte'] || '0', 10);
+                        
+                        currentPppoeBytes[iface.name] = { tx: txBytes, rx: rxBytes };
+
+                        // Kalkulasi BPS (Bits Per Second) jika ada data prev
+                        if (state.previousPppoeBytes[iface.name]) {
+                            const prev = state.previousPppoeBytes[iface.name];
+                            
+                            let txDelta = txBytes - prev.tx;
+                            let rxDelta = rxBytes - prev.rx;
+                            
+                            // Handling counter reset (reboot/reconnect)
+                            if (txDelta < 0) txDelta = txBytes;
+                            if (rxDelta < 0) rxDelta = rxBytes;
+                            
+                            pppoeBpsResults[iface.name] = {
+                                'tx-bits-per-second': Math.round((txDelta * 8) / timeDeltaSec),
+                                'rx-bits-per-second': Math.round((rxDelta * 8) / timeDeltaSec)
+                            };
+                        }
+                    }
+                });
+                
+                // Simpan cache bytes untuk siklus selanjutnya
+                state.previousPppoeBytes = currentPppoeBytes;
+            }
+
             const trafficResults = await Promise.all(
                 interfacesToMonitor.map(name => {
                     // Gunakan tanda kutip jika nama mengandung spasi atau karakter khusus
@@ -160,8 +200,13 @@ async function startPhysicalMonitor(group, broadcastCallback) {
                 if (result && result.name) traffic[result.name] = result;
             });
 
+            // Gabungkan traffic fisik dan PPPoE
+            if (SHIFT_TRAFFIC_LOG && Object.keys(pppoeBpsResults).length > 0) {
+                Object.assign(traffic, pppoeBpsResults);
+            }
+
             // Simpan Traffic History ke DB per Workspace/Device
-            if (now - state.lastTrafficLog >= 60000 && Object.keys(traffic).length > 0) {
+            if (SHIFT_TRAFFIC_LOG && Object.keys(traffic).length > 0) {
                 state.lastTrafficLog = now;
                 for (const inst of group.devices) {
                     const trafficValues = Object.entries(traffic).map(([ifaceName, tf]) => [
@@ -287,6 +332,12 @@ async function startPhysicalMonitor(group, broadcastCallback) {
                             'DELETE FROM app_notifications WHERE workspace_id = ? AND created_at < NOW() - INTERVAL 7 DAY',
                             [inst.workspace_id]
                         ).catch(e => console.error(`[Pruning] Gagal hapus notifikasi lama: ${e.message}`));
+
+                        // 5. Pruning Log Trafik Lama (maksimal 1 Bulan = ~30 Hari)
+                        await pool.query(
+                            'DELETE FROM interface_traffic_logs WHERE workspace_id = ? AND timestamp < NOW() - INTERVAL 1 MONTH',
+                            [inst.workspace_id]
+                        ).catch(e => console.error(`[Pruning] Gagal hapus log trafik 1-bulan: ${e.message}`));
 
                         // --- SLA TRACKING ---
                         const isSuppressed = Date.now() - serverStartTime < SUPPRESSION_PERIOD_MS;
