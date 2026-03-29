@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/input';
 import { apiFetch } from '@/utils/api';
 import { Client } from './client-list';
 import { Asset } from './asset-list';
+import { useEscKey } from '@/hooks/useEscKey';
 
 interface EditClientModalProps {
   isOpen: boolean;
@@ -19,6 +20,8 @@ interface EditClientModalProps {
 }
 
 const EditClientModal = ({ isOpen, onClose, onSuccess, client, assets = [], nocWorkspaceId }: EditClientModalProps) => {
+  useEscKey(isOpen, onClose);
+
   const [clientName, setClientName] = useState('');
   const [whatsappNumber, setWhatsappNumber] = useState('');
   const [coords, setCoords] = useState('');

@@ -8,6 +8,7 @@ import { useMikrotik } from '@/components/providers/mikrotik-provider';
 import { useAuth } from '@/components/providers/auth-provider';
 import { apiFetch } from '@/utils/api';
 import { toast } from 'sonner';
+import { useEscKey } from '@/hooks/useEscKey';
 
 interface EditPppoeSecretModalProps {
   isOpen: boolean;
@@ -19,6 +20,8 @@ interface EditPppoeSecretModalProps {
 
 const EditPppoeSecretModal = ({ isOpen, onClose, onSuccess, secretToEdit, nocWorkspaceId }: EditPppoeSecretModalProps) => {
   const { pppoeSecrets, getDeviceWorkspaceId } = useMikrotik();
+  useEscKey(isOpen, onClose);
+
   const [formData, setFormData] = useState({ name: '', password: '', profile: '' });
   const [profiles, setProfiles] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);

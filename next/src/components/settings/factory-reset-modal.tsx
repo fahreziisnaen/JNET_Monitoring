@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from '@/components/motion';
 import { AlertTriangle, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { useEscKey } from '@/hooks/useEscKey';
 
 interface FactoryResetModalProps {
     isOpen: boolean;
@@ -14,6 +15,9 @@ interface FactoryResetModalProps {
 }
 
 const FactoryResetModal = ({ isOpen, onClose, onConfirm, isLoading }: FactoryResetModalProps) => {
+    useEscKey(isOpen, onClose);
+
+
     const [confirmText, setConfirmText] = useState('');
     const isConfirmEnabled = confirmText === 'RESET';
 

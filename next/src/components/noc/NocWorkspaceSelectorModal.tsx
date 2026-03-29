@@ -14,6 +14,8 @@ interface NocWorkspaceSelectorModalProps {
   description?: string;
 }
 
+import { useEscKey } from '@/hooks/useEscKey';
+
 const NocWorkspaceSelectorModal = ({
   isOpen,
   onClose,
@@ -22,6 +24,8 @@ const NocWorkspaceSelectorModal = ({
   title = "Pilih Workspace",
   description = "Tentukan workspace target untuk aksi ini."
 }: NocWorkspaceSelectorModalProps) => {
+  useEscKey(isOpen, onClose);
+
   return (
     <AnimatePresence>
       {isOpen && (

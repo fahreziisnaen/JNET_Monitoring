@@ -110,6 +110,16 @@ const PppoeDetailModal: React.FC<PppoeDetailModalProps> = ({
         };
     }, [isOpen, secret, deviceId, token]);
 
+    // Tutup modal dengan tombol Escape
+    useEffect(() => {
+        if (!isOpen) return;
+        const handleEsc = (e: KeyboardEvent) => {
+            if (e.key === 'Escape') onClose();
+        };
+        window.addEventListener('keydown', handleEsc);
+        return () => window.removeEventListener('keydown', handleEsc);
+    }, [isOpen, onClose]);
+
     if (!secret) return null;
 
     const isDisabled = secret.disabled === 'true' || secret.disabled === true;

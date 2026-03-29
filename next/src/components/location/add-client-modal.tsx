@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/input';
 import { apiFetch } from '@/utils/api';
 import { useAuth } from '@/components/providers/auth-provider';
 import { Asset } from './asset-list';
+import { useEscKey } from '@/hooks/useEscKey';
 
 interface PppoeSecret {
   name: string;
@@ -33,6 +34,8 @@ const AddClientModal = ({ isOpen, onClose, onSuccess, assets = [], nocWorkspaceI
   const { user } = useAuth();
 
   // Device selection
+  useEscKey(isOpen, onClose);
+
   const [devices, setDevices] = useState<Device[]>([]);
   const [selectedDeviceId, setSelectedDeviceId] = useState<number | null>(null);
   const [devicesLoading, setDevicesLoading] = useState(false);

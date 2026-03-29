@@ -32,6 +32,7 @@ import { Client } from './client-list';
 import { apiFetch } from '@/utils/api';
 import { useMikrotik } from '@/components/providers/mikrotik-provider';
 import { formatUptime } from '@/utils/format';
+import { useEscKey } from '@/hooks/useEscKey';
 
 interface PppoeDetails {
   name: string;
@@ -111,6 +112,9 @@ const ClientDetailModal = ({
 }: ClientDetailModalProps) => {
   const { pppoeSecrets: mikrotikSecrets } = useMikrotik() || {};
   const pppoeSecrets = overrideSecrets || mikrotikSecrets;
+
+  useEscKey(isOpen, onClose);
+
 
   const [slaData, setSlaData] = useState<SlaData | null>(null);
   const [usageData, setUsageData] = useState<UsageData | null>(null);

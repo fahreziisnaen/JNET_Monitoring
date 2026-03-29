@@ -6,6 +6,7 @@ import { X, Server, Loader2, Plug, CheckCircle2, AlertCircle } from 'lucide-reac
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/components/providers/auth-provider';
 import { apiFetch } from '@/utils/api';
+import { useEscKey } from '@/hooks/useEscKey';
 
 export interface Device {
   id?: number;
@@ -26,6 +27,8 @@ interface DeviceModalProps {
 const DeviceModal = ({ isOpen, onClose, onSuccess, deviceToEdit }: DeviceModalProps) => {
   const { user: authUser } = useAuth();
   const isEditMode = !!deviceToEdit;
+  useEscKey(isOpen, onClose);
+
   const [formData, setFormData] = useState({
     name: '', host: '', user: '', password: '', port: 8728
   });

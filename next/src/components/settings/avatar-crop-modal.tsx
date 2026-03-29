@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { X, RotateCw, UploadCloud, Loader2 } from 'lucide-react';
 import ReactCrop, { type Crop, centerCrop, makeAspectCrop } from 'react-image-crop';
 import 'react-image-crop/dist/ReactCrop.css';
+import { useEscKey } from '@/hooks/useEscKey';
 
 interface AvatarCropModalProps {
   isOpen: boolean;
@@ -16,6 +17,9 @@ interface AvatarCropModalProps {
 }
 
 const AvatarCropModal = ({ isOpen, onClose, onSave, imageSrc, isSaving }: AvatarCropModalProps) => {
+  useEscKey(isOpen, onClose);
+
+
   const [crop, setCrop] = useState<Crop>();
   const [completedCrop, setCompletedCrop] = useState<Crop>();
   const [rotation, setRotation] = useState(0);

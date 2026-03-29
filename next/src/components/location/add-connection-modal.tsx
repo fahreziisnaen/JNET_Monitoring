@@ -6,6 +6,7 @@ import { X, PlusCircle, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Asset } from './asset-list';
 import { apiFetch } from '@/utils/api';
+import { useEscKey } from '@/hooks/useEscKey';
 
 interface AddConnectionModalProps {
   isOpen: boolean;
@@ -20,6 +21,9 @@ interface PppoeSecret {
 }
 
 const AddConnectionModal = ({ isOpen, onClose, onSuccess, asset }: AddConnectionModalProps) => {
+  useEscKey(isOpen, onClose);
+
+
   const [secrets, setSecrets] = useState<PppoeSecret[]>([]);
   const [selectedSecret, setSelectedSecret] = useState('');
   const [loading, setLoading] = useState(false);

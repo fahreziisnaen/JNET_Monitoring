@@ -11,8 +11,11 @@ interface DeleteAccountModalProps {
   onConfirm: () => void;
 }
 
+import { useEscKey } from '@/hooks/useEscKey';
+
 const DeleteAccountModal = ({ isOpen, onClose, onConfirm }: DeleteAccountModalProps) => {
-  
+  useEscKey(isOpen, onClose);
+
   const handleConfirm = () => {
     onConfirm();
     onClose();

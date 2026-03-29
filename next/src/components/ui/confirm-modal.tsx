@@ -15,7 +15,11 @@ interface ConfirmModalProps {
   isLoading?: boolean;
 }
 
+import { useEscKey } from '@/hooks/useEscKey';
+
 const ConfirmModal = ({ isOpen, onClose, onConfirm, title, description, confirmText = "Konfirmasi", isLoading = false }: ConfirmModalProps) => {
+  useEscKey(isOpen, onClose);
+
   return (
     <AnimatePresence>
       {isOpen && (

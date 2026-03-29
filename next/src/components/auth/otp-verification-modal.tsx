@@ -18,6 +18,7 @@ const OtpVerificationModal: React.FC<OtpVerificationModalProps> = ({
   onClose,
   whatsappNumber,
 }) => {
+
   const [otp, setOtp] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');

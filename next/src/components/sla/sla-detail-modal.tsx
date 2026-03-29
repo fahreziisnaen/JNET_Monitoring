@@ -6,6 +6,7 @@ import { Chart as ChartJS, ArcElement, Tooltip } from 'chart.js';
 import { motion, AnimatePresence } from '@/components/motion';
 import { X, User, History, ArrowDown, Server, Calendar, Loader2 } from 'lucide-react';
 import { apiFetch } from '@/utils/api';
+import { useEscKey } from '@/hooks/useEscKey';
 
 ChartJS.register(ArcElement, Tooltip);
 
@@ -39,6 +40,9 @@ const formatDataSize = (bytes: number | string) => {
 };
 
 const SlaDetailModal = ({ isOpen, onClose, userName }: SlaDetailModalProps) => {
+  useEscKey(isOpen, onClose);
+
+
   const [slaDetails, setSlaDetails] = useState<any>(null);
   const [usage, setUsage] = useState({ daily: 0, weekly: 0, monthly: 0 });
   const [loading, setLoading] = useState(true);

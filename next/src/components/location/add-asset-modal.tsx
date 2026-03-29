@@ -6,6 +6,7 @@ import { X, Loader2, ChevronDown, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Asset } from "./asset-list";
 import { apiFetch } from '@/utils/api';
+import { useEscKey } from '@/hooks/useEscKey';
 
 interface AddAssetModalProps {
   isOpen: boolean;
@@ -15,6 +16,8 @@ interface AddAssetModalProps {
 }
 
 const AddAssetModal = ({ isOpen, onClose, onSuccess, nocWorkspaceId }: AddAssetModalProps) => {
+  useEscKey(isOpen, onClose);
+
   const [formData, setFormData] = useState({
     name: "",
     type: "ODP",

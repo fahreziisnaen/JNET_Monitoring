@@ -8,6 +8,7 @@ import ConfirmModal from '@/components/ui/confirm-modal';
 import { toast } from 'sonner';
 import { useMikrotik } from '@/components/providers/mikrotik-provider';
 import { apiFetch } from '@/utils/api';
+import { useEscKey } from '@/hooks/useEscKey';
 
 interface IpPool {
   id: number;
@@ -24,6 +25,9 @@ interface IpPoolManagerModalProps {
 
 const IpPoolManagerModal = ({ isOpen, onClose }: IpPoolManagerModalProps) => {
   const { selectedDeviceId, getDeviceWorkspaceId } = useMikrotik() || { selectedDeviceId: null, getDeviceWorkspaceId: () => null };
+  useEscKey(isOpen, onClose);
+
+
   const [pools, setPools] = useState<IpPool[]>([]);
   const [profiles, setProfiles] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);

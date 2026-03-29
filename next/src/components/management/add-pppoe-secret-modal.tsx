@@ -8,6 +8,7 @@ import { apiFetch } from "@/utils/api";
 import { useMikrotik } from "@/components/providers/mikrotik-provider";
 import { useAuth } from "@/components/providers/auth-provider";
 import { toast } from "sonner";
+import { useEscKey } from '@/hooks/useEscKey';
 
 interface AddPppoeSecretModalProps {
   isOpen: boolean;
@@ -24,6 +25,9 @@ const AddPppoeSecretModal = ({
 }: AddPppoeSecretModalProps) => {
   const { getDeviceWorkspaceId } = useMikrotik();
   const { user } = useAuth();
+  useEscKey(isOpen, onClose);
+
+
   const [formData, setFormData] = useState({
     name: "",
     password: "",

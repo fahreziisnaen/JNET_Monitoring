@@ -6,6 +6,7 @@ import { X, Share2, Copy, Check, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { apiFetch } from '@/utils/api';
 import { useAuth } from '../providers/auth-provider';
+import { useEscKey } from '@/hooks/useEscKey';
 
 interface GenerateCloneCodeModalProps {
     isOpen: boolean;
@@ -15,6 +16,9 @@ interface GenerateCloneCodeModalProps {
 const GenerateCloneCodeModal = ({ isOpen, onClose }: GenerateCloneCodeModalProps) => {
     const { user } = useAuth();
     const isAdmin = user?.role === 'admin';
+    useEscKey(isOpen, onClose);
+
+
     const [code, setCode] = useState<string | null>(null);
     const [error, setError] = useState('');
     const [loading, setLoading] = useState(false);

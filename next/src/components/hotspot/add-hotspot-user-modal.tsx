@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from '@/components/motion';
 import { X, UserPlus, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { apiFetch } from '@/utils/api';
+import { useEscKey } from '@/hooks/useEscKey';
 
 interface AddHotspotUserModalProps {
   isOpen: boolean;
@@ -13,6 +14,9 @@ interface AddHotspotUserModalProps {
 }
 
 const AddHotspotUserModal = ({ isOpen, onClose, onSuccess }: AddHotspotUserModalProps) => {
+  useEscKey(isOpen, onClose);
+
+
   const [formData, setFormData] = useState({ name: '', password: '', profile: '', timeLimit: '' });
   const [profiles, setProfiles] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);

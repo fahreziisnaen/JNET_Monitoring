@@ -18,6 +18,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Asset } from "./asset-list";
 import { apiFetch } from '@/utils/api';
+import { useEscKey } from '@/hooks/useEscKey';
 
 interface Connection {
   name: string;
@@ -46,6 +47,8 @@ const AssetDetailModal = ({
   onAddConnection,
   onEditPath,
 }: AssetDetailModalProps) => {
+  useEscKey(isOpen, onClose);
+
   const [connections, setConnections] = useState<Connection[]>([]);
   const [loadingConnections, setLoadingConnections] = useState(true);
   const [showFullImage, setShowFullImage] = useState(false);
