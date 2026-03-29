@@ -4,7 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from '@/components/motion';
 import { Activity, Clock, Database, Globe, Hash, Info, MapPin, Network, Server, ShieldAlert, Monitor, WifiOff, X } from 'lucide-react';
 import { useAuth } from '@/components/providers/auth-provider';
-import { formatUptime } from '@/utils/format';
+import { formatUptime, parseUptimeToSeconds, formatSecondsToUptime } from '@/utils/format';
 import { Line } from 'react-chartjs-2';
 import { 
     Chart as ChartJS, 
@@ -67,6 +67,25 @@ const PppoeDetailModal: React.FC<PppoeDetailModalProps> = ({
     const [trafficData, setTrafficData] = useState<TrafficPoint[]>([]);
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const [currentUptime, setCurrentUptime] = useState(0);
+
+    // Effect untuk timer Lama Aktif (bertambah setiap detik secara lokal)
+    useEffect(() => {
+        if (!isOpen || !secret) {
+            setCurrentUptime(0);
+            return;
+        }
+
+        const initialSeconds = parseUptimeToSeconds(secret.uptime);
+        setCurrentUptime(initialSeconds);
+
+        if (secret.isActive && initialSeconds > 0) {
+            const timer = setInterval(() => {
+                setCurrentUptime(prev => prev + 1);
+            }, 1000);
+            return () => clearInterval(timer);
+        }
+    }, [isOpen, secret]);
 
     // Load riwayat awal, lalu polling live traffic tiap 3 detik
     useEffect(() => {
@@ -319,7 +338,7 @@ const PppoeDetailModal: React.FC<PppoeDetailModalProps> = ({
                                         <Clock className="w-3 h-3"/> Lama Aktif
                                     </span>
                                     <span className="text-sm font-semibold truncate">
-                                        {secret.isActive ? (secret.uptime ? formatUptime(secret.uptime) : 'N/A') : 'Terputus'}
+                                        {secret.isActive ? (currentUptime > 0 ? formatSecondsToUptime(currentUptime) : 'N/A') : 'Terputus'}
                                     </span>
                                 </div>
                                 <div className="bg-background/50 border rounded-lg p-3 flex flex-col gap-1">
