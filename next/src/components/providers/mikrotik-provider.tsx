@@ -165,6 +165,18 @@ export const MikrotikProvider = ({ children }: { children: React.ReactNode }) =>
                         traffic: hasTraffic ? payload.traffic : prev.traffic,
                         isConnected: true, // Pastikan connected jika ada data batch
                     });
+
+                    // Auto-dismiss Offline toast if data is finally arriving
+                    if (!prev.isConnected && selectedDeviceIdsRef.current.includes(deviceId)) {
+                        window.dispatchEvent(new CustomEvent('mikrotik-connection-status', {
+                            detail: {
+                                status: 'connected',
+                                deviceId: deviceId,
+                                deviceName: prev.name || `Perangkat ${deviceId}`,
+                                message: 'Koneksi MikroTik Berhasil Sinkronisasi.'
+                            }
+                        }));
+                    }
                 } else if (message.type === 'pppoe-update' && message.payload) {
                     const newSecrets = message.payload.pppoeSecrets || [];
                     // Only update pppoeSecrets — pppoe-update never carries a status field,
