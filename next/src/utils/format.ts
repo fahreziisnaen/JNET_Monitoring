@@ -33,10 +33,10 @@ export function formatSecondsToUptime(totalSeconds: number): string {
 
   const partsArray: string[] = [];
 
-  if (months > 0) partsArray.push(`${months}B`);
-  if (days > 0) partsArray.push(`${days}H`);
-  if (hours > 0) partsArray.push(`${hours}J`);
-  if (minutes > 0) partsArray.push(`${minutes}M`);
+  if (months > 0) partsArray.push(`${months}b`);
+  if (days > 0) partsArray.push(`${days}h`);
+  if (hours > 0) partsArray.push(`${hours}j`);
+  if (minutes > 0) partsArray.push(`${minutes}m`);
   if (seconds > 0 || partsArray.length === 0) partsArray.push(`${seconds}d`);
 
   return partsArray.join(':');
@@ -44,7 +44,7 @@ export function formatSecondsToUptime(totalSeconds: number): string {
 
 /**
  * Format uptime dari format MikroTik (contoh: "1w2d3h4m5s") 
- * menjadi format "x bulan x hari - x jam : x menit : x detik"
+ * menjadi format "xb:xh:xj:xm:xd" (bulan, hari, jam, menit, detik)
  */
 export function formatUptime(uptimeStr: string | null | undefined): string {
   if (!uptimeStr || uptimeStr === 'N/A' || uptimeStr === '...') {
