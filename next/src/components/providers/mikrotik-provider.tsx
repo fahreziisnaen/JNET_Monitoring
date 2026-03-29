@@ -12,6 +12,7 @@ interface DeviceData {
     traffic: any;
     isConnected: boolean;
     workspaceId?: number;
+    name?: string;
 }
 
 interface MikrotikContextType {
@@ -227,8 +228,10 @@ export const MikrotikProvider = ({ children }: { children: React.ReactNode }) =>
             const isStillSelected = selectedDeviceIdsRef.current.includes(deviceId);
             if (isStillSelected) {
                 updateDeviceData(deviceId, { isConnected: false });
+                const currentData = deviceDataRef.current.get(deviceId);
+                const deviceName = currentData?.name || `Perangkat ${deviceId}`;
                 window.dispatchEvent(new CustomEvent('mikrotik-connection-status', {
-                    detail: { status: 'disconnected', message: event.reason || 'Koneksi terputus', code: event.code }
+                    detail: { status: 'disconnected', message: event.reason || 'Koneksi terputus', code: event.code, deviceId, deviceName }
                 }));
             }
 

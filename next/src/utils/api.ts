@@ -72,6 +72,14 @@ export async function apiFetch(
       console.warn(`[API Fetch] Response tidak OK: ${response.status} ${response.statusText} untuk ${url}`);
     }
 
+    // Jika proxy Nginx membalas 502/503/504, berarti Node.js backend offline
+    if (response.status === 502 || response.status === 503 || response.status === 504) {
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('backend-connection-error'));
+      }
+      throw new Error('Server Backend Sedang Offline atau Restarting.');
+    }
+
     return response;
   } catch (error: any) {
     // Handle network errors dan abort errors dengan lebih baik

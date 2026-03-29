@@ -6,9 +6,8 @@ import { toast } from 'sonner';
 
 export default function ConnectionStatusToast() {
     const { token, user } = useAuth();
-    const wsRef = useRef<WebSocket | null>(null);
-    const toastIdRef = useRef<string | number | null>(null);
-    const wasConnectedRef = useRef<boolean>(false);
+    const toastIdsRef = useRef<Map<string, string | number>>(new Map());
+    const wasConnectedRef = useRef<Map<string, boolean>>(new Map());
 
     useEffect(() => {
         if (!token || !user) return;
@@ -17,7 +16,8 @@ export default function ConnectionStatusToast() {
             const data = event.detail;
             if (!data) return;
 
-            const { status, message, deviceName } = data;
+            const { status, message, deviceName, deviceId } = data;
+            const idKey = deviceId ? String(deviceId) : 'default';
 
             // Ignore intentional disconnections ('Device changed' or 'Unselected')
             if (status === 'disconnected' && (message === 'Device changed' || message === 'Unselected')) {
@@ -25,19 +25,21 @@ export default function ConnectionStatusToast() {
             }
 
             if (status === 'disconnected') {
-                wasConnectedRef.current = false;
+                wasConnectedRef.current.set(idKey, false);
                 // Show persistent destructive toast
-                if (!toastIdRef.current) {
-                    toastIdRef.current = toast.error(deviceName ? `Offline: ${deviceName}` : 'Koneksi Terputus', {
+                if (!toastIdsRef.current.has(idKey)) {
+                    const toastId = toast.error(deviceName ? `Offline: ${deviceName}` : 'Koneksi Terputus', {
                         description: message || `Koneksi ke perangkat ${deviceName || 'Mikrotik'} terputus.`,
                         duration: Infinity // Persistent until reconnected
                     });
+                    toastIdsRef.current.set(idKey, toastId);
                 }
             } else if (status === 'connected') {
                 // If it was previously disconnected and we had a toast, dismiss it and show Reconnected
-                if (toastIdRef.current) {
-                    toast.dismiss(toastIdRef.current);
-                    toastIdRef.current = null;
+                const currentToastId = toastIdsRef.current.get(idKey);
+                if (currentToastId) {
+                    toast.dismiss(currentToastId);
+                    toastIdsRef.current.delete(idKey);
 
                     toast.success(deviceName ? `Online: ${deviceName}` : 'Terhubung Kembali', {
                         description: message || `Koneksi ke perangkat ${deviceName || 'Mikrotik'} berhasil dipulihkan.`,
@@ -45,7 +47,7 @@ export default function ConnectionStatusToast() {
                     });
                 }
                 // Mark as successfully connected
-                wasConnectedRef.current = true;
+                wasConnectedRef.current.set(idKey, true);
             }
         };
 

@@ -24,9 +24,13 @@ export function BackendOfflineOverlay() {
             heartbeatInterval = setInterval(async () => {
                 try {
                     const apiUrl = process.env.NEXT_PUBLIC_API_BASE_URL || '';
-                    await fetch(`${apiUrl}/api/health`, { method: 'HEAD', cache: 'no-store' });
+                    const response = await fetch(`${apiUrl}/api/health`, { method: 'HEAD', cache: 'no-store' });
+                    // Nginx returns 502/503/504 when backend Node is dead
+                    if (response.status === 502 || response.status === 503 || response.status === 504) {
+                        throw new Error('Backend Bad Gateway');
+                    }
                 } catch (error) {
-                    // Jika ping mandiri gagal (NetworkError), langsung picu overlay!
+                    // Jika ping mandiri gagal (NetworkError atau 502 dari proxy), picu overlay!
                     handleOfflineEvent();
                 }
             }, 5000);
@@ -50,7 +54,12 @@ export function BackendOfflineOverlay() {
                     // Coba ping ringan ke server. Jika statusnya berhasil merespon tanpa throw error network, tutup overlay.
                     // Kita pakai endpoint ringan (workspaces/me), asalkan server merespon (bahkan 401 Unauthorized), 
                     // berarti server Node.js sudah bangun dan bisa meroute request lagi.
-                    await fetch(`${apiUrl}/api/health`, { method: 'HEAD', cache: 'no-store' });
+                    const response = await fetch(`${apiUrl}/api/health`, { method: 'HEAD', cache: 'no-store' });
+                    
+                    if (response.status === 502 || response.status === 503 || response.status === 504) {
+                        throw new Error('Masih Bad Gateway');
+                    }
+                    
                     // Backend is back! Force a full page reload so all data fetches seamlessly without user intervention.
                     window.location.reload();
                 } catch (error) {
