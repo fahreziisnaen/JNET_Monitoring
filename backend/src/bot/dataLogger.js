@@ -35,7 +35,7 @@ function formatDateTime(date = new Date()) {
     const h = String(date.getHours()).padStart(2, '0');
     const min = String(date.getMinutes()).padStart(2, '0');
     const s = String(date.getSeconds()).padStart(2, '0');
-    return `${d}/${m}/${y}, ${h}.${min}.${s}`;
+    return `${d}/${m}/${y}, ${h}:${min}:${s}`;
 }
 
 function formatDuration(totalSeconds) {

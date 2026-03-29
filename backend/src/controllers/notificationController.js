@@ -30,7 +30,9 @@ exports.sendPppoeDisconnectNotification = async (req, res) => {
             return res.status(404).json({ message: 'No WhatsApp group or owner number configured for this workspace' });
         }
 
-        const disconnectTime = timestamp ? new Date(timestamp).toLocaleString('id-ID') : new Date().toLocaleString('id-ID');
+        const disconnectTime = timestamp 
+            ? new Date(timestamp).toLocaleString('id-ID').replace(/\./g, ':') 
+            : new Date().toLocaleString('id-ID').replace(/\./g, ':');
         
         // Format message
         let message = `🚨 *PPPoE User Disconnected* 🚨\n\n`;
@@ -93,7 +95,9 @@ exports.sendPppoeReconnectNotification = async (req, res) => {
             return res.status(404).json({ message: 'No WhatsApp group or owner number configured for this workspace' });
         }
 
-        const reconnectTime = timestamp ? new Date(timestamp).toLocaleString('id-ID') : new Date().toLocaleString('id-ID');
+        const reconnectTime = timestamp 
+            ? new Date(timestamp).toLocaleString('id-ID').replace(/\./g, ':') 
+            : new Date().toLocaleString('id-ID').replace(/\./g, ':');
         
         // Format message
         let message = `✅ *PPPoE User Reconnected* ✅\n\n`;

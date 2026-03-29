@@ -39,7 +39,7 @@ export function formatSecondsToUptime(totalSeconds: number): string {
   if (minutes > 0) partsArray.push(`${minutes}m`);
   if (seconds > 0 || partsArray.length === 0) partsArray.push(`${seconds}d`);
 
-  return partsArray.join('-');
+  return partsArray.join(':');
 }
 
 /**
