@@ -224,50 +224,51 @@ async function startPhysicalMonitor(group, broadcastCallback) {
             // Interface PPPoE-in bernama sama dengan username PPPoE (cth: "<pppoe-jnet123>")
             // pppoe_usage_logs HANYA diisi dari delta bytes, bukan dari BPS, agar akurat.
             if (SHIFT_TRAFFIC_LOG && Object.keys(state.previousPppoeBytes).length > 0) {
-                const usageInserts = [];
+                for (const inst of group.devices) {
+                    const usageInserts = [];
+                    allInterfaces.forEach(iface => {
+                        const type = (iface.type || '').toLowerCase();
+                        if (!type.includes('pppoe-in') || !iface.name) return;
 
-                allInterfaces.forEach(iface => {
-                    const type = (iface.type || '').toLowerCase();
-                    if (!type.includes('pppoe-in') || !iface.name) return;
+                        const prevBytes = state.previousPppoeBytes[iface.name];
+                        if (!prevBytes) return; // Belum ada data sebelumnya, skip
 
-                    const prevBytes = state.previousPppoeBytes[iface.name];
-                    if (!prevBytes) return; // Belum ada data sebelumnya, skip
+                        const txBytes = parseInt(iface['tx-byte'] || '0', 10);
+                        const rxBytes = parseInt(iface['rx-byte'] || '0', 10);
 
-                    const txBytes = parseInt(iface['tx-byte'] || '0', 10);
-                    const rxBytes = parseInt(iface['rx-byte'] || '0', 10);
+                        let txDelta = txBytes - prevBytes.tx;
+                        let rxDelta = rxBytes - prevBytes.rx;
 
-                    let txDelta = txBytes - prevBytes.tx;
-                    let rxDelta = rxBytes - prevBytes.rx;
+                        // Handling counter reset (reboot / reconnect)
+                        if (txDelta < 0) txDelta = txBytes;
+                        if (rxDelta < 0) rxDelta = rxBytes;
 
-                    // Handling counter reset (reboot / reconnect)
-                    if (txDelta < 0) txDelta = txBytes;
-                    if (rxDelta < 0) rxDelta = rxBytes;
+                        // Skip jika tidak ada pergerakan data sama sekali
+                        if (txDelta === 0 && rxDelta === 0) return;
 
-                    // Skip jika tidak ada pergerakan data sama sekali
-                    if (txDelta === 0 && rxDelta === 0) return;
+                        // Nama interface PPPoE-in biasanya "<pppoe-username>" — strip tag jika ada
+                        const username = iface.name.replace(/^<(.+)>$/, '$1').replace(/^pppoe-/, '');
 
-                    // Nama interface PPPoE-in biasanya "<pppoe-username>" — strip tag jika ada
-                    const username = iface.name.replace(/^<(.+)>$/, '$1').replace(/^pppoe-/, '');
+                        // tx = router kirim ke client = Download client
+                        // rx = router terima dari client = Upload client
+                        // Array untuk dimasukkan: [workspace_id, device_id, username, upload_bytes, download_bytes, total_bytes]
+                        usageInserts.push([
+                            inst.workspace_id, inst.id, username, rxDelta, txDelta, txDelta + rxDelta
+                        ]);
+                    });
 
-                    // tx = router kirim ke client = Download client
-                    // rx = router terima dari client = Upload client
-                    usageInserts.push([
-                        inst.workspace_id, inst.id, username, rxDelta, txDelta, txDelta + rxDelta
-                    ]);
-                });
-
-                if (usageInserts.length > 0) {
-                    // Gunakan ON DUPLICATE KEY UPDATE untuk akumulasi harian
-                    // Unique key harus ada di: (workspace_id, device_id, pppoe_user, usage_date)
-                    pool.query(`
-                        INSERT INTO pppoe_usage_logs (workspace_id, device_id, pppoe_user, usage_date, upload_bytes, download_bytes, total_bytes)
-                        VALUES ${usageInserts.map(() => '(?, ?, ?, CURDATE(), ?, ?, ?)').join(',')}
-                        ON DUPLICATE KEY UPDATE
-                            upload_bytes   = upload_bytes   + VALUES(upload_bytes),
-                            download_bytes = download_bytes + VALUES(download_bytes),
-                            total_bytes    = total_bytes    + VALUES(total_bytes)
-                    `, usageInserts.flatMap(r => r))
-                    .catch(err => console.error(`[Pencatatan] Gagal akumulasi pppoe_usage_logs: ${err.message}`));
+                    if (usageInserts.length > 0) {
+                        // Gunakan ON DUPLICATE KEY UPDATE untuk akumulasi harian
+                        pool.query(`
+                            INSERT INTO pppoe_usage_logs (workspace_id, device_id, pppoe_user, usage_date, upload_bytes, download_bytes, total_bytes)
+                            VALUES ${usageInserts.map(() => '(?, ?, ?, CURDATE(), ?, ?, ?)').join(',')}
+                            ON DUPLICATE KEY UPDATE
+                                upload_bytes   = upload_bytes   + VALUES(upload_bytes),
+                                download_bytes = download_bytes + VALUES(download_bytes),
+                                total_bytes    = total_bytes    + VALUES(total_bytes)
+                        `, usageInserts.flatMap(r => r))
+                        .catch(err => console.error(`[Pencatatan] Gagal akumulasi pppoe_usage_logs untuk workspace ${inst.workspace_id}: ${err.message}`));
+                    }
                 }
             }
             // ────────────────────────────────────────────────────────────────────────
