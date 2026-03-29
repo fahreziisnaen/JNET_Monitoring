@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { Users, UserCheck, UserX, Plus, Settings, Loader2, ShieldAlert } from 'lucide-react';
 import { useAuth } from '@/components/providers/auth-provider';
 import { useMikrotik } from '@/components/providers/mikrotik-provider';
@@ -31,6 +32,20 @@ const ManagementPage = () => {
   const [hasDevices, setHasDevices] = useState<boolean | null>(null);
   // Track previous device so we can detect an actual change
   const prevDeviceIdRef = React.useRef<number | null>(null);
+  const searchParams = useSearchParams();
+
+  // Baca query params saat pertama kali mount: ?device=<id>&filter=<filter>
+  useEffect(() => {
+    const deviceParam = searchParams.get('device');
+    const filterParam = searchParams.get('filter') as 'all' | 'active' | 'inactive' | 'isolate' | null;
+    if (deviceParam && setSelectedDeviceId) {
+      setSelectedDeviceId(Number(deviceParam));
+    }
+    if (filterParam && ['all', 'active', 'inactive', 'isolate'].includes(filterParam)) {
+      setActiveFilter(filterParam);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     if (!user?.workspace_id) return;

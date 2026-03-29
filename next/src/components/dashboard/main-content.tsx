@@ -340,7 +340,7 @@ const SortableInterfaceCard = ({ id, etherId, currentTraffic, index, itemCount, 
                                 : "text-muted-foreground hover:text-foreground"
                         )}
                     >
-                        {h}H
+                        {h}Jam
                     </button>
                 ))}
             </div>

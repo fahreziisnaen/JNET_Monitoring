@@ -1,6 +1,7 @@
 'use client';
 
 import React from 'react';
+import Link from 'next/link';
 import { useMikrotik } from '@/components/providers/mikrotik-provider';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Loader2, ChevronDown, ChevronUp, Activity } from 'lucide-react';
@@ -8,6 +9,7 @@ import { Doughnut } from 'react-chartjs-2';
 import { Chart as ChartJS, ArcElement, Tooltip } from 'chart.js';
 import { cn } from '@/lib/utils';
 import { apiFetch } from '@/utils/api';
+import { formatUptime } from '@/utils/format';
 
 ChartJS.register(ArcElement, Tooltip);
 
@@ -20,21 +22,6 @@ const formatBytes = (bytes: number, decimals = 2) => {
   return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
 }
 
-const formatUptime = (uptimeStr: string) => {
-  if (!uptimeStr) return '...';
-  const parts = [];
-  const weekMatch = uptimeStr.match(/(\d+)w/);
-  const dayMatch = uptimeStr.match(/(\d+)d/);
-  const hourMatch = uptimeStr.match(/(\d+)h/);
-  const minuteMatch = uptimeStr.match(/(\d+)m/);
-
-  if (weekMatch) parts.push(`${weekMatch[1]} week`);
-  if (dayMatch) parts.push(`${dayMatch[1]} day`);
-  if (hourMatch) parts.push(`${hourMatch[1]} hours`);
-  if (minuteMatch) parts.push(`${minuteMatch[1]} minute`);
-  
-  return parts.join(' ') || 'Baru saja aktif';
-};
 
 const DeviceInfoCard = ({ deviceId, data, connected, name }: { deviceId: number, data: any, connected: boolean, name: string }) => {
   const [minimized, setMinimized] = React.useState(false);
@@ -101,28 +88,40 @@ const DeviceInfoCard = ({ deviceId, data, connected, name }: { deviceId: number,
                     <p className="truncate font-bold text-foreground">{resource['board-name'] || '...'}</p>
                 </div>
                 <div className="bg-secondary/50 p-2.5 rounded-lg border border-primary/5">
-                    <p className="text-muted-foreground uppercase font-bold text-[9px]">Uptime</p>
-                    <p className="truncate font-bold text-foreground">{formatUptime(resource.uptime)}</p>
+                    <p className="text-muted-foreground uppercase font-bold text-[9px]">Lama Aktif</p>
+                    <p className="truncate font-bold text-foreground">{formatUptime(resource.uptime) || '...'}</p>
                 </div>
             </div>
 
             <div className="grid grid-cols-2 gap-2 py-1 text-[10px] font-bold uppercase tracking-tight">
-                <div className="bg-blue-500/10 border border-blue-500/20 p-2 rounded-lg text-center">
+                <Link
+                    href={`/management?device=${deviceId}&filter=all`}
+                    className="bg-blue-500/10 border border-blue-500/20 p-2 rounded-lg text-center hover:bg-blue-500/20 transition-colors cursor-pointer"
+                >
                     <p className="text-blue-500/70 mb-0.5">Total Secret</p>
                     <p className="text-blue-500 text-sm">{totalSecrets}</p>
-                </div>
-                <div className="bg-green-500/10 border border-green-500/20 p-2 rounded-lg text-center">
+                </Link>
+                <Link
+                    href={`/management?device=${deviceId}&filter=active`}
+                    className="bg-green-500/10 border border-green-500/20 p-2 rounded-lg text-center hover:bg-green-500/20 transition-colors cursor-pointer"
+                >
                     <p className="text-green-500/70 mb-0.5">Aktif</p>
                     <p className="text-green-500 text-sm">{activeSecrets}</p>
-                </div>
-                <div className="bg-red-500/10 border border-red-500/20 p-2 rounded-lg text-center">
+                </Link>
+                <Link
+                    href={`/management?device=${deviceId}&filter=inactive`}
+                    className="bg-red-500/10 border border-red-500/20 p-2 rounded-lg text-center hover:bg-red-500/20 transition-colors cursor-pointer"
+                >
                     <p className="text-red-500/70 mb-0.5">Tidak Aktif</p>
                     <p className="text-red-500 text-sm">{inactiveSecrets}</p>
-                </div>
-                <div className="bg-orange-500/10 border border-orange-500/20 p-2 rounded-lg text-center">
+                </Link>
+                <Link
+                    href={`/management?device=${deviceId}&filter=isolate`}
+                    className="bg-orange-500/10 border border-orange-500/20 p-2 rounded-lg text-center hover:bg-orange-500/20 transition-colors cursor-pointer"
+                >
                     <p className="text-orange-500/70 mb-0.5">Isolir</p>
                     <p className="text-orange-500 text-sm">{isolateSecrets}</p>
-                </div>
+                </Link>
             </div>
 
             <div className="grid grid-cols-3 gap-3">

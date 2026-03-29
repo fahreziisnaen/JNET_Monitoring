@@ -4,6 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from '@/components/motion';
 import { Activity, Clock, Database, Globe, Hash, Info, MapPin, Network, Server, ShieldAlert, Monitor, WifiOff, X } from 'lucide-react';
 import { useAuth } from '@/components/providers/auth-provider';
+import { formatUptime } from '@/utils/format';
 import { Line } from 'react-chartjs-2';
 import { 
     Chart as ChartJS, 
@@ -112,7 +113,7 @@ const PppoeDetailModal: React.FC<PppoeDetailModalProps> = ({
     if (!secret) return null;
 
     const isDisabled = secret.disabled === 'true' || secret.disabled === true;
-    const remoteIp = secret['remote-address'] || secret.remoteAddress || secret.currentAddress || 'Dinamic IP';
+    const remoteIp = secret['remote-address'] || secret.remoteAddress || secret.currentAddress || 'IP Dinamis';
 
     // Chart Data Preparation
     const labels = trafficData.map(d => {
@@ -246,25 +247,27 @@ const PppoeDetailModal: React.FC<PppoeDetailModalProps> = ({
                             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                                 <div className="bg-background/50 border rounded-lg p-3 flex flex-col gap-1">
                                     <span className="text-xs text-muted-foreground flex items-center gap-1 border-b pb-1 border-border/50">
-                                        <Monitor className="w-3 h-3"/> Profile
+                                        <Monitor className="w-3 h-3"/> Profil
                                     </span>
                                     <span className="text-sm font-semibold truncate">{secret.profile}</span>
                                 </div>
                                 <div className="bg-background/50 border rounded-lg p-3 flex flex-col gap-1">
                                     <span className="text-xs text-muted-foreground flex items-center gap-1 border-b pb-1 border-border/50">
-                                        <Globe className="w-3 h-3"/> IP Remote
+                                        <Globe className="w-3 h-3"/> IP Klien
                                     </span>
-                                    <span className="text-sm font-semibold truncate">{remoteIp}</span>
+                                    <span className="text-sm font-mono truncate">{remoteIp}</span>
                                 </div>
                                 <div className="bg-background/50 border rounded-lg p-3 flex flex-col gap-1">
                                     <span className="text-xs text-muted-foreground flex items-center gap-1 border-b pb-1 border-border/50">
-                                        <Clock className="w-3 h-3"/> Uptime
+                                        <Clock className="w-3 h-3"/> Lama Aktif
                                     </span>
-                                    <span className="text-sm font-semibold truncate">{secret.isActive ? (secret.uptime || 'N/A') : 'Terputus'}</span>
+                                    <span className="text-sm font-semibold truncate">
+                                        {secret.isActive ? (secret.uptime ? formatUptime(secret.uptime) : 'N/A') : 'Terputus'}
+                                    </span>
                                 </div>
                                 <div className="bg-background/50 border rounded-lg p-3 flex flex-col gap-1">
                                     <span className="text-xs text-muted-foreground flex items-center gap-1 border-b pb-1 border-border/50">
-                                        <Hash className="w-3 h-3"/> Service
+                                        <Hash className="w-3 h-3"/> Layanan
                                     </span>
                                     <span className="text-sm font-semibold truncate uppercase">{secret.service || 'PPPoE'}</span>
                                 </div>
@@ -275,10 +278,10 @@ const PppoeDetailModal: React.FC<PppoeDetailModalProps> = ({
                                 <div className="border-b bg-secondary/30 p-3 flex justify-between items-center">
                                     <h3 className="text-sm font-semibold flex items-center gap-2">
                                         <Network className="w-4 h-4 text-primary" />
-                                        Riwayat Lalu Lintas Data (DB)
+                                        Riwayat Trafik Kecepatan
                                     </h3>
                                     {isLoading && (
-                                        <span className="text-xs font-medium text-muted-foreground animate-pulse">Memuat histori...</span>
+                                        <span className="text-xs font-medium text-muted-foreground animate-pulse">Memuat data...</span>
                                     )}
                                 </div>
 
@@ -290,7 +293,7 @@ const PppoeDetailModal: React.FC<PppoeDetailModalProps> = ({
                                     ) : trafficData.length === 0 && !isLoading ? (
                                         <div className="absolute inset-0 flex items-center justify-center text-muted-foreground text-sm flex-col gap-2">
                                             <Info className="w-6 h-6 opacity-50"/>
-                                            Belum ada rekam jejak trafik dalam 24 jam terakhir.
+                                            Belum ada data trafik dalam 24 jam terakhir.
                                         </div>
                                     ) : (
                                         <Line data={chartData} options={chartOptions} />
