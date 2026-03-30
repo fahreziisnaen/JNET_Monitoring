@@ -177,7 +177,10 @@ export const NotificationProvider = ({ children }: { children: React.ReactNode }
 
   const showToast = useCallback((toast: Omit<Toast, 'id'>) => {
     const id = Math.random().toString(36).substring(7);
-    setToasts((prev) => [...prev, { ...toast, id }]);
+    setToasts((prev) => {
+      const newToasts = [...prev, { ...toast, id }];
+      return newToasts.slice(-3);
+    });
     return id;
   }, []);
 

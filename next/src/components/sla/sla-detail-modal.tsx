@@ -118,7 +118,7 @@ const SlaDetailModal = ({ isOpen, onClose, userName }: SlaDetailModalProps) => {
                         <div key={i} className={`text-sm p-2 bg-background rounded-md flex justify-between items-center ${event.is_ongoing ? 'border-l-4 border-l-red-500' : ''}`}>
                             <div>
                                 <p className="font-semibold text-xs text-muted-foreground">{formatDate(event.start_time)}</p>
-                                {event.is_ongoing && <p className="text-xs text-red-500 font-semibold mt-1">Sedang berlangsung...</p>}
+                                {!!event.is_ongoing && <p className="text-xs text-red-500 font-semibold mt-1">Sedang berlangsung...</p>}
                             </div>
                             <div className="text-right">
                                 <p className={`font-semibold text-sm ${event.is_ongoing ? 'text-red-500' : ''}`}>

@@ -602,7 +602,7 @@ const ClientDetailModal = ({
                                     <p className="font-semibold text-xs text-muted-foreground">
                                       {formatDate(event.start_time)}
                                     </p>
-                                    {event.is_ongoing && (
+                                    {!!event.is_ongoing && (
                                       <p className="text-xs text-red-500 font-semibold mt-1">
                                         Sedang berlangsung...
                                       </p>
