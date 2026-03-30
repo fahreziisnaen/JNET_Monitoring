@@ -391,6 +391,30 @@ const MapDisplay = ({
     return map;
   }, [validAssets]);
 
+  // Optimize O(N^2) loops: Pre-calculate child assets grouped by parent
+  const childAssetsByParent = useMemo(() => {
+    const map = new Map<number, Asset[]>();
+    validAssets.forEach(asset => {
+      if (asset && asset.parent_asset_id) {
+        if (!map.has(asset.parent_asset_id)) map.set(asset.parent_asset_id, []);
+        map.get(asset.parent_asset_id)!.push(asset);
+      }
+    });
+    return map;
+  }, [validAssets]);
+
+  // Optimize O(N^2) loops: Pre-calculate clients grouped by ODP id
+  const clientsByOdp = useMemo(() => {
+    const map = new Map<number, Client[]>();
+    validClients.forEach(client => {
+      if (client && client.odp_asset_id) {
+        if (!map.has(client.odp_asset_id)) map.set(client.odp_asset_id, []);
+        map.get(client.odp_asset_id)!.push(client);
+      }
+    });
+    return map;
+  }, [validClients]);
+
   // Generate connection lines berdasarkan parent_asset_id dan client-to-ODP
   const connectionLines = useMemo(() => {
     if (!showLines) return [];
@@ -721,8 +745,9 @@ const MapDisplay = ({
                         {asset.type === 'ODC' ? (
                           <>
                             {(() => {
-                              const childODPs = validAssets.filter(a => a.parent_asset_id === asset.id && a.type === 'ODP');
-                              const childOLTs = validAssets.filter(a => a.parent_asset_id === asset.id && a.type === 'OLT');
+                              const children = childAssetsByParent.get(asset.id) || [];
+                              const childODPs = children.filter(a => a.type === 'ODP');
+                              const childOLTs = children.filter(a => a.type === 'OLT');
 
                               const activeODPs = childODPs.filter(a => a.connection_status === 'terpasang').length;
                               const totalODPs = childODPs.length;
@@ -760,7 +785,8 @@ const MapDisplay = ({
                         {asset.type === 'ODC' && (
                           <div className="mt-2 pt-1.5 border-t border-gray-400/30">
                             {(() => {
-                              const childODPs = validAssets.filter(a => a.parent_asset_id === asset.id && a.type === 'ODP');
+                              const children = childAssetsByParent.get(asset.id) || [];
+                              const childODPs = children.filter(a => a.type === 'ODP');
                               if (childODPs.length === 0) return null;
 
                               let totalODPClients = 0;
@@ -797,7 +823,7 @@ const MapDisplay = ({
                         {asset.type === 'ODP' && (
                           <div className="mt-2 pt-1.5 border-t border-gray-400/30">
                             {(() => {
-                              const odpClients = validClients.filter(c => c.odp_asset_id === asset.id);
+                              const odpClients = clientsByOdp.get(asset.id) || [];
                               if (odpClients.length === 0) return null;
 
                               const clientList = odpClients.map(client => {
