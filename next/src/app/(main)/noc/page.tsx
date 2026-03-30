@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useAuth } from '@/components/providers/auth-provider';
 import { useRouter } from 'next/navigation';
 import { Activity, Map } from 'lucide-react';
@@ -47,7 +47,7 @@ const NocPage = () => {
         }
     }, [selectedWorkspaceIds, setNocWorkspaceIds, isInitialized]);
 
-    const handleWorkspacesFetched = (workspaces: Workspace[]) => {
+    const handleWorkspacesFetched = useCallback((workspaces: Workspace[]) => {
         setAllWorkspaces(workspaces);
         
         // Auto-select ONLY if it's the first time ever loading NOC dashboard (no saved config)
@@ -59,7 +59,7 @@ const NocPage = () => {
                 localStorage.setItem('noc_selected_workspaces', JSON.stringify(allIds));
             }
         }
-    };
+    }, []);
 
     const activeWorkspaces = useMemo(
         () => allWorkspaces.filter(ws => selectedWorkspaceIds.includes(ws.id)),

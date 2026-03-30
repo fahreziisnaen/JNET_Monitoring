@@ -62,7 +62,9 @@ const LocationManager: React.FC<LocationManagerProps> = ({ isNocMode = false, no
   const { user } = useAuth();
   const isNocRole = user?.role === 'noc';
   
-  const nocWorkspaceIds = nocWorkspaces.map(w => w.id);
+  // Stabilize array reference — without useMemo this creates a new array on every parent render
+  // which cascades through nocWorkspaceIdsKey → activeSecrets → realTimeClientsBySecrets → map re-render
+  const nocWorkspaceIds = useMemo(() => nocWorkspaces.map(w => w.id), [nocWorkspaces]);
   usePageTitle(isNocMode ? '' : 'Peta Lokasi');
   const [activeFilter, setActiveFilter] = useState('all');
   const [selectedWorkspaceForNocAdd, setSelectedWorkspaceForNocAdd] = useState<number | null>(null);
