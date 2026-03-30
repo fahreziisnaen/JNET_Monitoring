@@ -394,11 +394,17 @@ async function startPhysicalMonitor(group, broadcastCallback) {
                             [inst.workspace_id]
                         ).catch(e => console.error(`[Pruning] Gagal hapus notifikasi lama: ${e.message}`));
 
-                        // 5. Pruning Log Trafik Lama (maksimal 1 Bulan = ~30 Hari)
+                        // 5. Pruning Log Trafik Lama (maksimal 3 Bulan = ~90 Hari)
                         await pool.query(
-                            'DELETE FROM interface_traffic_logs WHERE workspace_id = ? AND timestamp < NOW() - INTERVAL 1 MONTH',
+                            'DELETE FROM interface_traffic_logs WHERE workspace_id = ? AND timestamp < NOW() - INTERVAL 3 MONTH',
                             [inst.workspace_id]
-                        ).catch(e => console.error(`[Pruning] Gagal hapus log trafik 1-bulan: ${e.message}`));
+                        ).catch(e => console.error(`[Pruning] Gagal hapus log trafik 3-bulan: ${e.message}`));
+
+                        // 6. Pruning Log Penggunaan Kuota PPPoE (maksimal 3 Bulan = ~90 Hari)
+                        await pool.query(
+                            'DELETE FROM pppoe_usage_logs WHERE workspace_id = ? AND usage_date < NOW() - INTERVAL 3 MONTH',
+                            [inst.workspace_id]
+                        ).catch(e => console.error(`[Pruning] Gagal hapus log pppoe usage 3-bulan: ${e.message}`));
 
                         // --- SLA TRACKING ---
                         const isSuppressed = Date.now() - serverStartTime < SUPPRESSION_PERIOD_MS;
