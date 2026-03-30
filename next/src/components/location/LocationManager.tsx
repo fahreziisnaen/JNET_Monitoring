@@ -116,11 +116,11 @@ const LocationManager: React.FC<LocationManagerProps> = ({ isNocMode = false, no
 
   useEffect(() => {
     fetchNocSecrets();
-    // Use a longer interval as WebSocket provides real-time updates
-    const intervalTime = isNocMode ? 30000 : 5000;
-    const interval = setInterval(fetchNocSecrets, intervalTime);
+    // WebSocket already provides real-time status. Poll only for reconciliation/reconnects.
+    // Both modes use 30s — frequent polling causes whole-map re-renders every 5s.
+    const interval = setInterval(fetchNocSecrets, 30000);
     return () => clearInterval(interval);
-  }, [fetchNocSecrets, isNocMode]);
+  }, [fetchNocSecrets]);
 
   const activeSecrets = useMemo(() => {
     // Merge: live WS data takes precedence over API cache (nocSecrets)
@@ -304,18 +304,24 @@ const LocationManager: React.FC<LocationManagerProps> = ({ isNocMode = false, no
   }, [clients, activeSecrets, isConnected, isNocMode, currentDeviceId]);
 
   // Derive real-time asset status (specifically for ODPs based on their connected clients)
+  // Pre-build a Map to avoid O(N*M) nested filter inside map
   const realTimeAssetsBySecrets = useMemo(() => {
+    // Group clients by ODP id once — O(N) — instead of filtering inside map — O(N*M)
+    const clientCountByOdp = new Map<number, { total: number; active: number }>();
+    realTimeClientsBySecrets.forEach(c => {
+      if (!c.odp_asset_id) return;
+      const existing = clientCountByOdp.get(c.odp_asset_id) ?? { total: 0, active: 0 };
+      clientCountByOdp.set(c.odp_asset_id, {
+        total: existing.total + 1,
+        active: existing.active + (c.isActive ? 1 : 0)
+      });
+    });
+
     return assets.map(asset => {
       if (asset.type !== 'ODP') return asset;
-
-      // Look up clients connected to this ODP from our real-time client list
-      const connectedClients = realTimeClientsBySecrets.filter(c => c.odp_asset_id === asset.id);
-
-      return {
-        ...asset,
-        totalUsers: connectedClients.length,
-        activeUsers: connectedClients.filter(c => c.isActive).length
-      };
+      const counts = clientCountByOdp.get(asset.id);
+      if (!counts) return asset;
+      return { ...asset, totalUsers: counts.total, activeUsers: counts.active };
     });
   }, [assets, realTimeClientsBySecrets]);
 
