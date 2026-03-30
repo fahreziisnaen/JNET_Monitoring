@@ -303,6 +303,227 @@ const getAssetIcon = (asset: Asset, isSelected: boolean = false) => {
   }
 };
 
+const MemoizedAssetMarker = React.memo(({
+  asset,
+  isSelected,
+  isEditingPath,
+  onMarkerClick,
+  onMarkerDragEnd,
+  childAssetsByParent,
+  clientsByOdp,
+}: any) => {
+  const icon = useMemo(() => getAssetIcon(asset, isSelected), [
+    asset.id, asset.type, asset.activeUsers, asset.totalUsers, asset.connection_status, isSelected
+  ]);
+
+  const eventHandlers = useMemo(() => ({
+    click: (e: any) => {
+      if (isEditingPath) L.DomEvent.stopPropagation(e.originalEvent || e);
+      onMarkerClick(asset);
+    },
+    dragend: (e: any) => {
+      const position = e.target.getLatLng();
+      if (onMarkerDragEnd) onMarkerDragEnd('asset', asset.id, position.lat, position.lng);
+    },
+    dragstart: (e: any) => {
+      const map = e.target._map;
+      if (map) map.dragging.disable();
+    }
+  }), [isEditingPath, onMarkerClick, onMarkerDragEnd, asset.id, asset]);
+
+  const lat = parseFloat(asset.latitude);
+  const lon = parseFloat(asset.longitude);
+  if (isNaN(lat) || isNaN(lon)) return null;
+
+  return (
+    <Marker
+      position={[lat, lon]}
+      draggable={isEditingPath}
+      eventHandlers={eventHandlers}
+      icon={icon}
+      zIndexOffset={isSelected ? 1000 : 0}
+    >
+      <Tooltip permanent={false} direction="top" offset={[0, -10]} opacity={0.95}>
+        <div className="font-sans">
+          <p className="font-bold">{asset.name}</p>
+          <p>{asset.type}</p>
+          {(asset.type === 'ODP' || asset.type === 'ODC') && asset.totalUsers !== undefined && asset.totalUsers > 0 && (
+            <div className="mt-1 flex flex-col">
+              {asset.type === 'ODC' ? (
+                <>
+                  {(() => {
+                    const children = childAssetsByParent.get(asset.id) || [];
+                    const childODPs = children.filter((a: any) => a.type === 'ODP');
+                    const childOLTs = children.filter((a: any) => a.type === 'OLT');
+
+                    const activeODPs = childODPs.filter((a: any) => a.connection_status === 'terpasang').length;
+                    const totalODPs = childODPs.length;
+                    const activeOLTs = childOLTs.filter((a: any) => a.connection_status === 'terpasang').length;
+                    const totalOLTs = childOLTs.length;
+
+                    return (
+                      <>
+                        {totalODPs > 0 && (
+                          <p className="text-xs">
+                            ODP Terpasang: <span className={activeODPs === 0 ? 'text-red-500 font-semibold' : activeODPs === totalODPs ? 'text-green-500' : 'text-amber-500'}>
+                              {activeODPs}/{totalODPs}
+                            </span>
+                          </p>
+                        )}
+                        {totalOLTs > 0 && (
+                          <p className="text-xs">
+                            OLT Terpasang: <span className={activeOLTs === 0 ? 'text-red-500 font-semibold' : activeOLTs === totalOLTs ? 'text-green-500' : 'text-amber-500'}>
+                              {activeOLTs}/{totalOLTs}
+                            </span>
+                          </p>
+                        )}
+                      </>
+                    );
+                  })()}
+                </>
+              ) : (
+                <p className="text-xs">
+                  User: <span className={asset.activeUsers === 0 ? 'text-red-500 font-semibold' : asset.activeUsers === asset.totalUsers ? 'text-green-500' : 'text-amber-500'}>
+                    {asset.activeUsers || 0}/{asset.totalUsers}
+                  </span>
+                </p>
+              )}
+              {asset.type === 'ODC' && (
+                <div className="mt-2 pt-1.5 border-t border-gray-400/30">
+                  {(() => {
+                    const children = childAssetsByParent.get(asset.id) || [];
+                    const childODPs = children.filter((a: any) => a.type === 'ODP');
+                    if (childODPs.length === 0) return null;
+
+                    let totalODPClients = 0;
+                    let activeODPClients = 0;
+
+                    const odpList = childODPs.map((odp: any) => {
+                      const t = odp.totalUsers || 0;
+                      const a = odp.activeUsers || 0;
+                      totalODPClients += t;
+                      activeODPClients += a;
+                      return (
+                        <div key={odp.id} className="text-[10px] text-muted-foreground flex justify-between gap-4">
+                          <span className="truncate max-w-[120px]">{odp.name}</span>
+                          <span className={a === 0 && t > 0 ? "text-red-500 font-medium" : a === t && t > 0 ? "text-green-500 font-medium" : a > 0 ? "text-amber-500 font-medium" : "font-medium"}>
+                            ({a}/{t} clients)
+                          </span>
+                        </div>
+                      );
+                    });
+
+                    return (
+                      <>
+                        <p className="text-[11px] font-semibold mb-1 text-primary">
+                          Total Client: {activeODPClients}/{totalODPClients}
+                        </p>
+                        <div className="max-h-24 overflow-y-auto pr-1 flex flex-col gap-0.5 scrollbar-thin scrollbar-thumb-gray-300 dark:scrollbar-thumb-gray-600">
+                          {odpList}
+                        </div>
+                      </>
+                    );
+                  })()}
+                </div>
+              )}
+              {asset.type === 'ODP' && (
+                <div className="mt-2 pt-1.5 border-t border-gray-400/30">
+                  {(() => {
+                    const odpClients = clientsByOdp.get(asset.id) || [];
+                    if (odpClients.length === 0) return null;
+
+                    const clientList = odpClients.map((client: any) => {
+                      const isActive = client.isActive === true;
+                      return (
+                        <div key={`odp-client-${client.id}`} className="text-[10px] text-muted-foreground flex justify-between gap-4">
+                          <span className="truncate max-w-[120px]">{client.pppoe_secret_name}</span>
+                          <span className={isActive ? "text-green-500 font-medium" : "text-red-500 font-medium"}>
+                            {isActive ? 'Aktif' : 'Offline'}
+                          </span>
+                        </div>
+                      );
+                    });
+
+                    return (
+                      <>
+                        <p className="text-[11px] font-semibold mb-1 text-primary">Daftar Client:</p>
+                        <div className="max-h-24 overflow-y-auto pr-1 flex flex-col gap-0.5 scrollbar-thin scrollbar-thumb-gray-300 dark:scrollbar-thumb-gray-600">
+                          {clientList}
+                        </div>
+                      </>
+                    );
+                  })()}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      </Tooltip>
+    </Marker>
+  );
+}, (prevProps, nextProps) => {
+  return prevProps.asset === nextProps.asset && 
+         prevProps.isSelected === nextProps.isSelected && 
+         prevProps.isEditingPath === nextProps.isEditingPath &&
+         prevProps.childAssetsByParent === nextProps.childAssetsByParent &&
+         prevProps.clientsByOdp === nextProps.clientsByOdp;
+});
+
+const MemoizedClientMarker = React.memo(({
+  client,
+  isSelected,
+  isEditingPath,
+  onClientClick,
+  onMarkerDragEnd
+}: any) => {
+  const isActive = client.isActive === true;
+  const icon = useMemo(() => getClientIcon(isSelected, isActive), [isSelected, isActive]);
+
+  const eventHandlers = useMemo(() => ({
+    click: (e: any) => {
+      if (isEditingPath) L.DomEvent.stopPropagation(e.originalEvent || e);
+      if (onClientClick) onClientClick(client);
+    },
+    dragend: (e: any) => {
+      const position = e.target.getLatLng();
+      if (onMarkerDragEnd) onMarkerDragEnd('client', client.id, position.lat, position.lng);
+    },
+    dragstart: (e: any) => {
+      const map = e.target._map;
+      if (map) map.dragging.disable();
+    }
+  }), [isEditingPath, onClientClick, onMarkerDragEnd, client.id, client]);
+
+  const lat = parseFloat(client.latitude);
+  const lon = parseFloat(client.longitude);
+  if (isNaN(lat) || isNaN(lon)) return null;
+
+  return (
+    <Marker
+      position={[lat, lon]}
+      draggable={isEditingPath}
+      eventHandlers={eventHandlers}
+      icon={icon}
+      zIndexOffset={isSelected ? 1000 : 100}
+    >
+      <Tooltip permanent={false} direction="top" offset={[0, -10]} opacity={0.95}>
+        <div className="font-sans">
+          <p className="font-bold">{client.pppoe_secret_name}</p>
+          <p className="text-xs text-muted-foreground">Client</p>
+          {client.odp_name && (
+            <p className="text-xs mt-1">
+              ODP: <span className="text-primary">{client.odp_name}</span>
+            </p>
+          )}
+        </div>
+      </Tooltip>
+    </Marker>
+  );
+}, (prevProps, nextProps) => {
+  return prevProps.client === nextProps.client && 
+         prevProps.isSelected === nextProps.isSelected && 
+         prevProps.isEditingPath === nextProps.isEditingPath;
+});
 
 interface MapDisplayProps {
   assets: Asset[];
@@ -695,164 +916,18 @@ const MapDisplay = ({
             return null;
           }
 
-          const isSelected = selectedAssetId === asset.id;
-
-          try {
-            const icon = getAssetIcon(asset, isSelected);
-
-            return (
-              <Marker
-                key={asset.id}
-                position={[lat, lon]}
-                draggable={isEditingPath}
-                eventHandlers={{
-                  click: (e) => {
-                    if (isEditingPath) {
-                      L.DomEvent.stopPropagation(e.originalEvent || e);
-                    }
-                    onMarkerClick(asset);
-                  },
-                  dragend: (e) => {
-                    const marker = e.target;
-                    const position = marker.getLatLng();
-                    onMarkerDragEnd?.('asset', asset.id, position.lat, position.lng);
-                  },
-                  dragstart: (e) => {
-                    // Disable map drag during marker drag
-                    const map = (e.target as any)._map;
-                    if (map) {
-                      map.dragging.disable();
-                    }
-                  }
-                }}
-                icon={icon}
-                zIndexOffset={isSelected ? 1000 : 0}
-              >
-                <Tooltip permanent={false} direction="top" offset={[0, -10]} opacity={0.95}>
-                  <div className="font-sans">
-                    <p className="font-bold">{asset.name}</p>
-                    <p>{asset.type}</p>
-                    {(asset.type === 'ODP' || asset.type === 'ODC') && asset.totalUsers !== undefined && asset.totalUsers > 0 && (
-                      <div className="mt-1 flex flex-col">
-                        {asset.type === 'ODC' ? (
-                          <>
-                            {(() => {
-                              const children = childAssetsByParent.get(asset.id) || [];
-                              const childODPs = children.filter(a => a.type === 'ODP');
-                              const childOLTs = children.filter(a => a.type === 'OLT');
-
-                              const activeODPs = childODPs.filter(a => a.connection_status === 'terpasang').length;
-                              const totalODPs = childODPs.length;
-
-                              const activeOLTs = childOLTs.filter(a => a.connection_status === 'terpasang').length;
-                              const totalOLTs = childOLTs.length;
-
-                              return (
-                                <>
-                                  {totalODPs > 0 && (
-                                    <p className="text-xs">
-                                      ODP Terpasang: <span className={activeODPs === 0 ? 'text-red-500 font-semibold' : activeODPs === totalODPs ? 'text-green-500' : 'text-amber-500'}>
-                                        {activeODPs}/{totalODPs}
-                                      </span>
-                                    </p>
-                                  )}
-                                  {totalOLTs > 0 && (
-                                    <p className="text-xs">
-                                      OLT Terpasang: <span className={activeOLTs === 0 ? 'text-red-500 font-semibold' : activeOLTs === totalOLTs ? 'text-green-500' : 'text-amber-500'}>
-                                        {activeOLTs}/{totalOLTs}
-                                      </span>
-                                    </p>
-                                  )}
-                                </>
-                              );
-                            })()}
-                          </>
-                        ) : (
-                          <p className="text-xs">
-                            User: <span className={asset.activeUsers === 0 ? 'text-red-500 font-semibold' : asset.activeUsers === asset.totalUsers ? 'text-green-500' : 'text-amber-500'}>
-                              {asset.activeUsers || 0}/{asset.totalUsers}
-                            </span>
-                          </p>
-                        )}
-                        {asset.type === 'ODC' && (
-                          <div className="mt-2 pt-1.5 border-t border-gray-400/30">
-                            {(() => {
-                              const children = childAssetsByParent.get(asset.id) || [];
-                              const childODPs = children.filter(a => a.type === 'ODP');
-                              if (childODPs.length === 0) return null;
-
-                              let totalODPClients = 0;
-                              let activeODPClients = 0;
-
-                              const odpList = childODPs.map(odp => {
-                                const t = odp.totalUsers || 0;
-                                const a = odp.activeUsers || 0;
-                                totalODPClients += t;
-                                activeODPClients += a;
-                                return (
-                                  <div key={odp.id} className="text-[10px] text-muted-foreground flex justify-between gap-4">
-                                    <span className="truncate max-w-[120px]">{odp.name}</span>
-                                    <span className={a === 0 && t > 0 ? "text-red-500 font-medium" : a === t && t > 0 ? "text-green-500 font-medium" : a > 0 ? "text-amber-500 font-medium" : "font-medium"}>
-                                      ({a}/{t} clients)
-                                    </span>
-                                  </div>
-                                );
-                              });
-
-                              return (
-                                <>
-                                  <p className="text-[11px] font-semibold mb-1 text-primary">
-                                    Total Client: {activeODPClients}/{totalODPClients}
-                                  </p>
-                                  <div className="max-h-24 overflow-y-auto pr-1 flex flex-col gap-0.5 scrollbar-thin scrollbar-thumb-gray-300 dark:scrollbar-thumb-gray-600">
-                                    {odpList}
-                                  </div>
-                                </>
-                              );
-                            })()}
-                          </div>
-                        )}
-                        {asset.type === 'ODP' && (
-                          <div className="mt-2 pt-1.5 border-t border-gray-400/30">
-                            {(() => {
-                              const odpClients = clientsByOdp.get(asset.id) || [];
-                              if (odpClients.length === 0) return null;
-
-                              const clientList = odpClients.map(client => {
-                                const isActive = client.isActive === true;
-                                return (
-                                  <div key={`odp-client-${client.id}`} className="text-[10px] text-muted-foreground flex justify-between gap-4">
-                                    <span className="truncate max-w-[120px]">{client.pppoe_secret_name}</span>
-                                    <span className={isActive ? "text-green-500 font-medium" : "text-red-500 font-medium"}>
-                                      {isActive ? 'Aktif' : 'Offline'}
-                                    </span>
-                                  </div>
-                                );
-                              });
-
-                              return (
-                                <>
-                                  <p className="text-[11px] font-semibold mb-1 text-primary">
-                                    Daftar Client:
-                                  </p>
-                                  <div className="max-h-24 overflow-y-auto pr-1 flex flex-col gap-0.5 scrollbar-thin scrollbar-thumb-gray-300 dark:scrollbar-thumb-gray-600">
-                                    {clientList}
-                                  </div>
-                                </>
-                              );
-                            })()}
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                </Tooltip>
-              </Marker>
-            );
-          } catch (error) {
-            console.error('[MapDisplay] Error rendering marker for asset:', asset.id, asset.name, error);
-            return null;
-          }
+          return (
+            <MemoizedAssetMarker
+              key={asset.id}
+              asset={asset}
+              isSelected={selectedAssetId === asset.id}
+              isEditingPath={isEditingPath}
+              onMarkerClick={onMarkerClick}
+              onMarkerDragEnd={onMarkerDragEnd}
+              childAssetsByParent={childAssetsByParent}
+              clientsByOdp={clientsByOdp}
+            />
+          );
         })}
 
         {/* Render client markers */}
@@ -867,57 +942,16 @@ const MapDisplay = ({
             return null;
           }
 
-          const isSelected = selectedClientId === client.id;
-          const isActive = client.isActive === true;
-
-          try {
-            const icon = getClientIcon(isSelected, isActive);
-
-            return (
-              <Marker
-                key={`client-${client.id}`}
-                position={[lat, lon]}
-                draggable={isEditingPath}
-                eventHandlers={{
-                  click: (e) => {
-                    if (isEditingPath) {
-                      L.DomEvent.stopPropagation(e.originalEvent || e);
-                    }
-                    onClientClick?.(client);
-                  },
-                  dragend: (e) => {
-                    const marker = e.target;
-                    const position = marker.getLatLng();
-                    onMarkerDragEnd?.('client', client.id, position.lat, position.lng);
-                  },
-                  dragstart: (e) => {
-                    // Disable map drag during marker drag
-                    const map = (e.target as any)._map;
-                    if (map) {
-                      map.dragging.disable();
-                    }
-                  }
-                }}
-                icon={icon}
-                zIndexOffset={isSelected ? 1000 : 100}
-              >
-                <Tooltip permanent={false} direction="top" offset={[0, -10]} opacity={0.95}>
-                  <div className="font-sans">
-                    <p className="font-bold">{client.pppoe_secret_name}</p>
-                    <p className="text-xs text-muted-foreground">Client</p>
-                    {client.odp_name && (
-                      <p className="text-xs mt-1">
-                        ODP: <span className="text-primary">{client.odp_name}</span>
-                      </p>
-                    )}
-                  </div>
-                </Tooltip>
-              </Marker>
-            );
-          } catch (error) {
-            console.error('[MapDisplay] Error rendering marker for client:', client.id, client.pppoe_secret_name, error);
-            return null;
-          }
+          return (
+            <MemoizedClientMarker
+              key={`client-${client.id}`}
+              client={client}
+              isSelected={selectedClientId === client.id}
+              isEditingPath={isEditingPath}
+              onClientClick={onClientClick}
+              onMarkerDragEnd={onMarkerDragEnd}
+            />
+          );
         })}
       </MapContainer>
     </div>
