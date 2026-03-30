@@ -572,14 +572,7 @@ const MapDisplay = ({
   onMarkerDragEnd,
   onDeleteWaypoint
 }: MapDisplayProps) => {
-  // Debug: log assets untuk troubleshooting
-  React.useEffect(() => {
-    if (assets && assets.length > 0) {
-      console.log('[MapDisplay] Assets received:', assets.length, assets.slice(0, 2));
-    } else {
-      console.warn('[MapDisplay] No assets received or empty array');
-    }
-  }, [assets]);
+
 
   // Pastikan assets adalah array valid
   const validAssets = Array.isArray(assets) ? assets : [];
@@ -587,12 +580,13 @@ const MapDisplay = ({
   // Valid clients
   const validClients = Array.isArray(clients) ? clients : [];
 
-  // Hitung center dari valid assets atau clients
-  const mapCenter: [number, number] = validAssets.length > 0
-    ? [validAssets[0].latitude, validAssets[0].longitude]
-    : validClients.length > 0
-      ? [validClients[0].latitude, validClients[0].longitude]
-      : [-7.821, 112.016];
+  // Stable map center - only recalculate when asset/client IDs change
+  const mapCenter = useMemo((): [number, number] => {
+    if (validAssets.length > 0) return [validAssets[0].latitude, validAssets[0].longitude];
+    if (validClients.length > 0) return [validClients[0].latitude, validClients[0].longitude];
+    return [-7.821, 112.016];
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [validAssets.length > 0, validClients.length > 0]);
 
   // Filter assets berdasarkan visibleTypes
   const filteredAssets = useMemo(() => {
