@@ -457,16 +457,9 @@ const MapDisplay = ({
     return lines;
   }, [filteredAssets, assetMap, showLines, visibleTypes, showClients, validClients]);
 
-  const mapKey = useMemo(() => {
-    const assetIds = validAssets.map(a => a.id).sort((a, b) => a - b).join('-');
-    const clientIds = validClients.map(c => c.id).sort((a, b) => a - b).join('-');
-    return `map-v2-${assetIds}-${clientIds}`;
-  }, [validAssets, validClients]);
-
   return (
     <div id="map" style={{ height: '100%', width: '100%' }}>
       <MapContainer
-        key={mapKey}
         center={mapCenter}
         zoom={19}
         minZoom={3}
@@ -706,7 +699,6 @@ const MapDisplay = ({
 
           try {
             const icon = getAssetIcon(asset, isSelected);
-            console.log('[MapDisplay] Rendering marker for:', asset.name, asset.type, 'at', lat, lon, 'selected:', isSelected);
 
             return (
               <Marker
