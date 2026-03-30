@@ -456,7 +456,13 @@ exports.kickActiveUser = async (req, res) => {
 
 exports.getSlaDetails = async (req, res) => {
     const { name } = req.params;
-    const workspaceId = req.user.workspace_id;
+    let workspaceId = req.user.workspace_id;
+
+    // Support override for NOC / Superadmin
+    const isSuper = req.user.is_super_admin === 1 || req.user.is_super_admin === true;
+    if (req.query.workspaceId && (req.user.role === 'admin' || req.user.role === 'noc' || isSuper)) {
+        workspaceId = parseInt(req.query.workspaceId);
+    }
 
     try {
         const thirtyDaysAgo = new Date();
@@ -716,7 +722,13 @@ exports.deleteSecret = async (req, res) => {
 
 exports.getUsageHistory = async (req, res) => {
     const { name } = req.params;
-    const workspaceId = req.user.workspace_id;
+    let workspaceId = req.user.workspace_id;
+
+    // Support override for NOC / Superadmin
+    const isSuper = req.user.is_super_admin === 1 || req.user.is_super_admin === true;
+    if (req.query.workspaceId && (req.user.role === 'admin' || req.user.role === 'noc' || isSuper)) {
+        workspaceId = parseInt(req.query.workspaceId);
+    }
 
     // Perbaiki logika perhitungan:
     // - daily: hanya data hari ini (usage_date = CURDATE())

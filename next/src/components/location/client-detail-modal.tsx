@@ -108,6 +108,7 @@ const ClientDetailModal = ({
   onEdit,
   onDelete,
   onEditPath,
+  nocWorkspaceId,
   overrideSecrets,
 }: ClientDetailModalProps) => {
   const { pppoeSecrets: mikrotikSecrets } = useMikrotik() || {};
@@ -157,10 +158,12 @@ const ClientDetailModal = ({
     }
 
     try {
+      const wsQuery = nocWorkspaceId ? `?workspaceId=${nocWorkspaceId}` : '';
       const [slaRes, usageRes] = await Promise.all([
-        apiFetch(`${apiUrl}/api/pppoe/secrets/${client.pppoe_secret_name}/sla`).catch(() => null),
-        apiFetch(`${apiUrl}/api/pppoe/secrets/${client.pppoe_secret_name}/usage`).catch(() => null)
+        apiFetch(`${apiUrl}/api/pppoe/secrets/${client.pppoe_secret_name}/sla${wsQuery}`).catch(() => null),
+        apiFetch(`${apiUrl}/api/pppoe/secrets/${client.pppoe_secret_name}/usage${wsQuery}`).catch(() => null)
       ]);
+
 
       if (slaRes && slaRes.ok) {
         const sla = await slaRes.json();
@@ -186,7 +189,7 @@ const ClientDetailModal = ({
         setIsRefreshing(false);
       }
     }
-  }, [client, apiUrl]);
+  }, [client, apiUrl, nocWorkspaceId]);
 
   useEffect(() => {
     if (client && isOpen) {
