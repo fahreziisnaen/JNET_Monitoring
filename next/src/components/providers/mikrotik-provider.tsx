@@ -76,6 +76,10 @@ export const MikrotikProvider = ({ children }: { children: React.ReactNode }) =>
     const [tick, setTick] = useState(0);
     const triggerRender = useCallback(() => setTick(t => t + 1), []);
 
+    // Separate tick for PPPoE secret changes only — prevents map re-render on every traffic update
+    const [secretTick, setSecretTick] = useState(0);
+    const triggerSecretRender = useCallback(() => setSecretTick(t => t + 1), []);
+
     // Union of both selections + devices in NOC workspaces for WebSocket management
     const effectiveSelectedIds = useMemo(() => {
         const ids = new Set(dashboardDeviceIds);
@@ -183,7 +187,8 @@ export const MikrotikProvider = ({ children }: { children: React.ReactNode }) =>
                     // so do NOT read message.payload.status here (it would always be falsy → isConnected: false).
                     // isConnected is managed exclusively by connection-status messages.
                     if (JSON.stringify(newSecrets) !== JSON.stringify(prev.pppoeSecrets)) {
-                        updateDeviceData(deviceId, { pppoeSecrets: newSecrets });
+                        deviceDataRef.current.set(deviceId, { ...prev, pppoeSecrets: newSecrets });
+                        triggerSecretRender();
                     }
                 } else if (message.type === 'pppoe-single-update' && message.payload) {
                     const updatedSecret = message.payload.secret;
@@ -202,7 +207,8 @@ export const MikrotikProvider = ({ children }: { children: React.ReactNode }) =>
                         newSecrets = [...oldSecrets, updatedSecret];
                     }
                     
-                    updateDeviceData(deviceId, { pppoeSecrets: newSecrets });
+                    deviceDataRef.current.set(deviceId, { ...prev, pppoeSecrets: newSecrets });
+                    triggerSecretRender();
                 } else if (message.type === 'pppoe-single-remove' && message.payload) {
                     const nameToRemove = message.payload.name;
                     if (!nameToRemove) return;
@@ -210,7 +216,8 @@ export const MikrotikProvider = ({ children }: { children: React.ReactNode }) =>
                     const oldSecrets = prev.pppoeSecrets || [];
                     const newSecrets = oldSecrets.filter(s => s.name !== nameToRemove);
                     if (newSecrets.length !== oldSecrets.length) {
-                        updateDeviceData(deviceId, { pppoeSecrets: newSecrets });
+                        deviceDataRef.current.set(deviceId, { ...prev, pppoeSecrets: newSecrets });
+                        triggerSecretRender();
                     }
                 } else if (message.type === 'connection-status' && message.payload) {
                     const connected = message.payload.status === 'connected';
@@ -456,6 +463,26 @@ export const MikrotikProvider = ({ children }: { children: React.ReactNode }) =>
         return { dataMap, allDevicesStatus, allSecrets };
     }, [tick, effectiveSelectedIds]);
 
+    // Stable aggregated PPPoE secrets — only recomputes when secrets actually change (secretTick)
+    // This prevents the map from re-rendering on every traffic/resource batch-update
+    const allPppoeSecretsStable = useMemo(() => {
+        // eslint-disable-next-line @typescript-eslint/no-unused-expressions
+        secretTick;
+        const allSecrets: any[] = [];
+        const currentSelected = new Set(effectiveSelectedIds);
+        deviceDataRef.current.forEach((data, id) => {
+            if (data.pppoeSecrets && currentSelected.has(id)) {
+                allSecrets.push(...data.pppoeSecrets.map(s => ({
+                    ...s,
+                    deviceId: id,
+                    workspace_id: data.workspaceId
+                })));
+            }
+        });
+        return allSecrets;
+    }, [secretTick, effectiveSelectedIds]);
+
+
     const forceRefresh = useCallback((deviceId?: number) => {
         const targetIds = deviceId ? [deviceId] : effectiveSelectedIds;
         targetIds.forEach(id => {
@@ -488,7 +515,7 @@ export const MikrotikProvider = ({ children }: { children: React.ReactNode }) =>
         forceRefresh,
         getDeviceWorkspaceId,
         setNocWorkspaceIds,
-        allPppoeSecrets: allDevicesData.allSecrets,
+        allPppoeSecrets: allPppoeSecretsStable,
     };
 
     return <MikrotikContext.Provider value={value}>{children}</MikrotikContext.Provider>;
