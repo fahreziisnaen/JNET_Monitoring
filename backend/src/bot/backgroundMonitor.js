@@ -177,24 +177,24 @@ async function startPhysicalMonitor(group, broadcastCallback) {
                 state.nextPppoeBytesTemp = currentPppoeBytes;
             }
 
-            const trafficResults = await Promise.all(
-                interfacesToMonitor.map(name => {
-                    // Gunakan tanda kutip jika nama mengandung spasi atau karakter khusus
-                    const paramName = (name.includes(' ') || name.includes('(') || name.includes(')') || name.includes('/') || name.includes('\\')) 
+            // Gunakan satu perintah untuk semua interface sekaligus agar jauh lebih cepat (menghindari queue bottleneck)
+            let trafficResults = [];
+            if (interfacesToMonitor.length > 0) {
+                const paramInterface = interfacesToMonitor.map(name => {
+                    return (name.includes(' ') || name.includes('(') || name.includes(')') || name.includes('/') || name.includes('\\')) 
                         ? `"${name}"` 
                         : name;
-                    
-                    return runCommandForWorkspace(workspaceId, '/interface/monitor-traffic', [`=interface=${paramName}`, '=once='], deviceId)
-                        .then(r => r[0])
-                        .catch(err => {
-                            // Diamkan log jika error "input does not match" agar tidak memenuhi log
-                            if (!err.message.includes('match any value')) {
-                                console.error(`[Pemantauan] Gagal monitor traffic di ${name}: ${err.message}`);
-                            }
-                            return null;
-                        });
-                })
-            );
+                }).join(',');
+
+                try {
+                    const results = await runCommandForWorkspace(workspaceId, '/interface/monitor-traffic', [`=interface=${paramInterface}`, '=once='], deviceId);
+                    trafficResults = Array.isArray(results) ? results : [results];
+                } catch (err) {
+                    if (!err.message?.includes('match any value')) {
+                        console.error(`[Pemantauan] Gagal monitor traffic massal: ${err.message}`);
+                    }
+                }
+            }
             const traffic = {};
             trafficResults.forEach(result => {
                 if (result && result.name) traffic[result.name] = result;
