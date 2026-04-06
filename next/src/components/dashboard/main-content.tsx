@@ -182,42 +182,42 @@ const EtherChart = ({ trafficData, interfaceName, deviceId, workspaceId, history
   }, [deviceId, interfaceName, storageKey, historyHours]);
 
   useEffect(() => {
-    if (trafficData && isInitializedRef.current) {
-      const txBps = parseFloat(trafficData['tx-bits-per-second'] || '0');
-      const rxBps = parseFloat(trafficData['rx-bits-per-second'] || '0');
-      const txMbps = parseFloat((txBps / 1000000).toFixed(2));
-      const rxMbps = parseFloat((rxBps / 1000000).toFixed(2));
-      const now = Date.now();
+    if (!trafficData || !isInitializedRef.current) return;
 
-      setChartData((prevData: typeof initialData) => {
-        // Skip jika update terlalu cepat (< 2 detik) untuk menghindari duplicate saat load
-        if (lastUpdateRef.current && now - lastUpdateRef.current < 2000) {
-          return prevData;
-        }
+    const now = Date.now();
 
-        lastUpdateRef.current = now;
+    // Throttle check di LUAR setChartData — mencegah race condition async
+    // Throttle 1.5 detik: polling backend 3 detik, jadi setiap update PASTI lolos
+    if (lastUpdateRef.current && now - lastUpdateRef.current < 1500) return;
 
-        const newData = {
-          labels: [...prevData.labels.slice(1), new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' })],
-          datasets: [
-            { ...prevData.datasets[0], data: [...(prevData.datasets[0].data as number[]).slice(1), txMbps] },
-            { ...prevData.datasets[1], data: [...(prevData.datasets[1].data as number[]).slice(1), rxMbps] },
-          ]
-        };
+    const txBps = parseFloat(trafficData['tx-bits-per-second'] || '0');
+    const rxBps = parseFloat(trafficData['rx-bits-per-second'] || '0');
+    const txMbps = parseFloat((txBps / 1000000).toFixed(2));
+    const rxMbps = parseFloat((rxBps / 1000000).toFixed(2));
 
-        // Save to localStorage setiap update
-        try {
-          localStorage.setItem(storageKey, JSON.stringify({
-            data: newData,
-            lastUpdate: now
-          }));
-        } catch (e) {
-          console.warn('Failed to save chart data:', e);
-        }
+    lastUpdateRef.current = now;
 
-        return newData;
-      });
-    }
+    setChartData((prevData: typeof initialData) => {
+      const newData = {
+        labels: [...prevData.labels.slice(1), new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' })],
+        datasets: [
+          { ...prevData.datasets[0], data: [...(prevData.datasets[0].data as number[]).slice(1), txMbps] },
+          { ...prevData.datasets[1], data: [...(prevData.datasets[1].data as number[]).slice(1), rxMbps] },
+        ]
+      };
+
+      // Save to localStorage setiap update
+      try {
+        localStorage.setItem(storageKey, JSON.stringify({
+          data: newData,
+          lastUpdate: now
+        }));
+      } catch (e) {
+        console.warn('Failed to save chart data:', e);
+      }
+
+      return newData;
+    });
   }, [trafficData, storageKey]);
 
   const chartOptions: any = { 
