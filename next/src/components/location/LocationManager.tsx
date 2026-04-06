@@ -1159,11 +1159,11 @@ const LocationManager: React.FC<LocationManagerProps> = ({ isNocMode = false, no
         accept=".kml"
       />
 
-      <div className="h-full flex flex-col p-4 md:p-6 lg:p-8">
-        <div className="flex-shrink-0 mb-6">
-          <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4">
-            <h1 className="text-2xl sm:text-3xl font-bold text-foreground">
-              {isNocMode ? `Peta NOC (${nocWorkspaceIds.length} Workspace)` : 'Peta Lokasi Aset'}
+      <div className={`h-full flex flex-col ${isNocMode ? 'p-2 sm:p-4 md:p-6 lg:p-8' : 'p-4 md:p-6 lg:p-8'}`}>
+        <div className={`flex-shrink-0 ${isNocMode ? 'mb-2 sm:mb-4' : 'mb-6'}`}>
+          <div className={`flex ${isNocMode ? 'flex-row justify-between items-center gap-2' : 'flex-col sm:flex-row sm:justify-between sm:items-center gap-4'}`}>
+            <h1 className={`font-bold text-foreground ${isNocMode ? 'text-base sm:text-xl lg:text-2xl' : 'text-2xl sm:text-3xl'}`}>
+              {isNocMode ? `Peta NOC (${nocWorkspaceIds.length} WS)` : 'Peta Lokasi Aset'}
             </h1>
             <div className="flex gap-2 flex-wrap items-center">
               {isNocMode ? (
@@ -1272,8 +1272,8 @@ const LocationManager: React.FC<LocationManagerProps> = ({ isNocMode = false, no
           )}
         </div>
 
-        <div className="flex-grow grid grid-cols-1 lg:grid-cols-5 gap-4 lg:gap-6 min-h-0">
-          <div className="lg:col-span-1 lg:h-[calc(100vh-200px)] flex flex-col gap-2 lg:gap-4 lg:min-h-0">
+        <div className="flex-grow grid grid-cols-1 lg:grid-cols-5 gap-2 sm:gap-4 lg:gap-6 min-h-0">
+          <div className="lg:col-span-1 lg:h-[calc(100vh-200px)] flex flex-col gap-2 lg:gap-4 lg:min-h-0 order-2 lg:order-1">
             <AssetList
               assets={filteredAssets}
               loading={loading}
@@ -1298,7 +1298,7 @@ const LocationManager: React.FC<LocationManagerProps> = ({ isNocMode = false, no
               onBulkDelete={!isNocMode ? handleBulkDeleteClients : undefined}
             />
           </div>
-          <div className="lg:col-span-4 min-h-[400px] lg:min-h-[calc(100vh-200px)] relative z-10">
+          <div className={`lg:col-span-4 relative z-10 order-1 lg:order-2 ${isNocMode ? 'flex-grow min-h-[300px] h-[50vh] lg:h-auto lg:min-h-[calc(100vh-200px)]' : 'min-h-[400px] lg:min-h-[calc(100vh-200px)]'}`}>
             <MapDisplay
               assets={displayAssets}
               clients={showClients ? displayClients : []}

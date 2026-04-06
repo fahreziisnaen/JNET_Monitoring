@@ -84,17 +84,17 @@ const NocPage = () => {
     }
 
     return (
-        <div className="p-4 md:p-8 max-w-[1600px] mx-auto">
-            <div className="flex flex-col mb-8">
-                <h1 className="text-3xl font-bold bg-gradient-to-r from-primary to-primary/60 bg-clip-text text-transparent">
+        <div className="p-3 sm:p-4 md:p-8 max-w-[1600px] mx-auto">
+            <div className="flex flex-col mb-3 sm:mb-6 md:mb-8">
+                <h1 className="text-xl sm:text-2xl md:text-3xl font-bold bg-gradient-to-r from-primary to-primary/60 bg-clip-text text-transparent">
                     Network Operations Center (NOC)
                 </h1>
-                <p className="text-muted-foreground mt-2">
+                <p className="text-muted-foreground mt-1 sm:mt-2 text-sm hidden sm:block">
                     Pusat pemantauan terpadu untuk semua workspace yang Anda kelola.
                 </p>
             </div>
 
-            <div className="flex flex-row items-end justify-between gap-3 sm:gap-4 mb-6">
+            <div className="flex flex-row items-end justify-between gap-3 sm:gap-4 mb-3 sm:mb-6">
                 <div className="flex-1 min-w-0 max-w-[400px]">
                     <NocWorkspaceSelector
                         selectedWorkspaceIds={selectedWorkspaceIds}
