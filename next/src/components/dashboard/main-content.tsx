@@ -28,6 +28,27 @@ import {
 import { CSS } from '@dnd-kit/utilities';
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend);
+
+const formatTimeLabel = (date: Date) =>
+  date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
+
+const formatDateLabel = (date: Date) =>
+  date.toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' });
+
+const ChartDateRange = ({ historyHours }: { historyHours: number }) => {
+  const now = new Date();
+  const start = new Date(Date.now() - historyHours * 3600000);
+  const sameDay = formatDateLabel(start) === formatDateLabel(now);
+  return (
+    <span className="text-[10px] text-muted-foreground tabular-nums">
+      {sameDay
+        ? `${formatDateLabel(now)}, ${formatTimeLabel(start)} – ${formatTimeLabel(now)}`
+        : `${formatDateLabel(start)}, ${formatTimeLabel(start)} – ${formatDateLabel(now)}, ${formatTimeLabel(now)}`
+      }
+    </span>
+  );
+};
+
 const EtherChart = ({ trafficData, interfaceName, deviceId, workspaceId, historyHours = 3 }: { trafficData: any; interfaceName: string; deviceId: number | null; workspaceId?: number; historyHours?: number }) => {
   const { user } = useAuth();
   const userWorkspaceId = user?.workspace_id || 'default';
@@ -78,7 +99,7 @@ const EtherChart = ({ trafficData, interfaceName, deviceId, workspaceId, history
       if (res.ok) {
         const data = await res.json();
         if (data && data.length > 0) {
-          const historyLabels = data.map((r: any) => new Date(r.timestamp).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
+          const historyLabels = data.map((r: any) => formatTimeLabel(new Date(r.timestamp)));
           const historyTx = data.map((r: any) => parseFloat((r.tx_bps / 1000000).toFixed(2)));
           const historyRx = data.map((r: any) => parseFloat((r.rx_bps / 1000000).toFixed(2)));
           const maxLength = hours * 60;
@@ -153,7 +174,7 @@ const EtherChart = ({ trafficData, interfaceName, deviceId, workspaceId, history
 
     setChartData((prevData: typeof initialData) => {
       const newData = {
-        labels: [...prevData.labels.slice(1), new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' })],
+        labels: [...prevData.labels.slice(1), formatTimeLabel(new Date())],
         datasets: [
           { ...prevData.datasets[0], data: [...(prevData.datasets[0].data as number[]).slice(1), txMbps] },
           { ...prevData.datasets[1], data: [...(prevData.datasets[1].data as number[]).slice(1), rxMbps] },
@@ -193,9 +214,13 @@ const EtherChart = ({ trafficData, interfaceName, deviceId, workspaceId, history
         tooltip: {
             backgroundColor: 'rgba(0, 0, 0, 0.8)',
             padding: 12,
-            titleFont: { size: 14, weight: 'bold' },
+            titleFont: { size: 13, weight: 'bold' },
             bodyFont: { size: 13 },
             callbacks: {
+                title: (items: any[]) => {
+                    // Label sudah dalam format HH:MM AM/PM, tampilkan apa adanya
+                    return items[0]?.label || '';
+                },
                 label: (context: any) => {
                     let label = context.dataset.label || '';
                     if (label) label = label.split(' (')[0] + ': ';
@@ -282,14 +307,15 @@ const SortableInterfaceCard = ({ id, etherId, currentTraffic, index, itemCount, 
         <CardHeader>
           <div className="flex justify-between items-start mb-2 pr-8">
             <CardTitle>{etherId.toUpperCase()}</CardTitle>
-            <div className="flex bg-secondary/50 p-0.5 rounded-lg border border-border">
+            <div className="flex flex-col items-end gap-1">
+              <div className="flex bg-secondary/50 p-0.5 rounded-lg border border-border">
                 {[1, 3, 6, 24].map((h) => (
                     <button
                         key={h}
                         onClick={() => setHistoryHours(h)}
                         className={cn(
                             "px-2 py-0.5 text-[10px] uppercase font-bold rounded transition-all",
-                            historyHours === h 
+                            historyHours === h
                                 ? "bg-primary text-primary-foreground shadow-sm"
                                 : "text-muted-foreground hover:text-foreground"
                         )}
@@ -297,6 +323,8 @@ const SortableInterfaceCard = ({ id, etherId, currentTraffic, index, itemCount, 
                         {h}Jam
                     </button>
                 ))}
+              </div>
+              <ChartDateRange historyHours={historyHours} />
             </div>
           </div>
           <div className="flex items-center gap-4 text-sm">

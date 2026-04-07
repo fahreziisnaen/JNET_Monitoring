@@ -53,6 +53,8 @@ async function startPhysicalMonitor(group, broadcastCallback) {
         lastTrafficLog: 0,
         lastPruning: 0,          // Pruning hanya sekali per jam, bukan tiap siklus
         previousPppoeBytes: {}, // Cache tx/rx bytes dari cycle sebelumnya
+        badInterfaces: new Set(), // Interface yang tidak support monitor-traffic, skip selanjutnya
+        lastBadInterfaceReset: 0, // Reset bad list tiap 1 jam (jika interface kembali valid)
         failCount: 0,
         group: group, // Menyimpan list {workspace_id, id}
         broadcastCallback: broadcastCallback,
@@ -155,24 +157,37 @@ async function startPhysicalMonitor(group, broadcastCallback) {
                 state.nextPppoeBytesTemp = currentPppoeBytes;
             }
 
-            // Gunakan satu perintah untuk semua interface sekaligus agar jauh lebih cepat
+            // Reset daftar bad interfaces setiap 1 jam agar interface baru bisa dicoba lagi
+            if (now - state.lastBadInterfaceReset > 3600000) {
+                state.badInterfaces.clear();
+                state.lastBadInterfaceReset = now;
+            }
+
+            // Filter interface yang sudah diketahui tidak support monitor-traffic
+            const monitorCandidates = interfacesToMonitor.filter(n => !state.badInterfaces.has(n));
+
             let trafficResults = [];
-            if (interfacesToMonitor.length > 0) {
-                const paramInterface = interfacesToMonitor.join(',');
+            if (monitorCandidates.length > 0) {
+                const paramInterface = monitorCandidates.join(',');
                 try {
                     const results = await runCommandForWorkspace(workspaceId, '/interface/monitor-traffic', [`=interface=${paramInterface}`, '=once='], deviceId);
                     trafficResults = Array.isArray(results) ? results : [results];
                 } catch (err) {
                     if (err.message?.includes('match any value')) {
-                        // Batch gagal karena ada interface yang tidak valid — coba satu per satu
-                        for (const ifaceName of interfacesToMonitor) {
+                        // Batch gagal — identifikasi interface bermasalah satu per satu
+                        // Lakukan SEKALI ini saja untuk temukan yang bermasalah, lalu cache
+                        for (const ifaceName of monitorCandidates) {
                             try {
                                 const r = await runCommandForWorkspace(workspaceId, '/interface/monitor-traffic', [`=interface=${ifaceName}`, '=once='], deviceId);
                                 const results = Array.isArray(r) ? r : [r];
                                 trafficResults.push(...results.filter(Boolean));
                             } catch (_) {
-                                // Interface ini tidak support monitor-traffic, skip
+                                // Interface ini tidak support monitor-traffic, masukkan ke blacklist
+                                state.badInterfaces.add(ifaceName);
                             }
+                        }
+                        if (state.badInterfaces.size > 0) {
+                            console.log(`[Pemantauan] ${label}: ${state.badInterfaces.size} interface tidak support monitor-traffic, akan dilewati: ${[...state.badInterfaces].join(', ')}`);
                         }
                     } else {
                         console.error(`[Pemantauan] Gagal monitor traffic massal: ${err.message}`);
