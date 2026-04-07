@@ -51,6 +51,7 @@ async function startPhysicalMonitor(group, broadcastCallback) {
         cachedSecrets: [],
         lastCycleTime: 0,
         lastTrafficLog: 0,
+        lastPruning: 0,          // Pruning hanya sekali per jam, bukan tiap siklus
         previousPppoeBytes: {}, // Cache tx/rx bytes dari cycle sebelumnya
         failCount: 0,
         group: group, // Menyimpan list {workspace_id, id}
@@ -154,17 +155,26 @@ async function startPhysicalMonitor(group, broadcastCallback) {
                 state.nextPppoeBytesTemp = currentPppoeBytes;
             }
 
-            // Gunakan satu perintah untuk semua interface sekaligus agar jauh lebih cepat (menghindari queue bottleneck)
+            // Gunakan satu perintah untuk semua interface sekaligus agar jauh lebih cepat
             let trafficResults = [];
             if (interfacesToMonitor.length > 0) {
-                // Di API MikroTik, string value tidak perlu diberi tanda kutip meskipun ada spasinya
                 const paramInterface = interfacesToMonitor.join(',');
-
                 try {
                     const results = await runCommandForWorkspace(workspaceId, '/interface/monitor-traffic', [`=interface=${paramInterface}`, '=once='], deviceId);
                     trafficResults = Array.isArray(results) ? results : [results];
                 } catch (err) {
-                    if (!err.message?.includes('match any value')) {
+                    if (err.message?.includes('match any value')) {
+                        // Batch gagal karena ada interface yang tidak valid — coba satu per satu
+                        for (const ifaceName of interfacesToMonitor) {
+                            try {
+                                const r = await runCommandForWorkspace(workspaceId, '/interface/monitor-traffic', [`=interface=${ifaceName}`, '=once='], deviceId);
+                                const results = Array.isArray(r) ? r : [r];
+                                trafficResults.push(...results.filter(Boolean));
+                            } catch (_) {
+                                // Interface ini tidak support monitor-traffic, skip
+                            }
+                        }
+                    } else {
                         console.error(`[Pemantauan] Gagal monitor traffic massal: ${err.message}`);
                     }
                 }
@@ -368,17 +378,21 @@ async function startPhysicalMonitor(group, broadcastCallback) {
                             [inst.workspace_id]
                         ).catch(e => console.error(`[Pruning] Gagal hapus notifikasi lama: ${e.message}`));
 
-                        // 5. Pruning Log Trafik Lama (maksimal 3 Bulan = ~90 Hari)
-                        await pool.query(
-                            'DELETE FROM interface_traffic_logs WHERE workspace_id = ? AND timestamp < NOW() - INTERVAL 3 MONTH',
-                            [inst.workspace_id]
-                        ).catch(e => console.error(`[Pruning] Gagal hapus log trafik 3-bulan: ${e.message}`));
+                        // 5. Pruning Log Trafik Lama — hanya sekali per jam untuk hindari deadlock
+                        const PRUNING_INTERVAL_MS = 60 * 60 * 1000; // 1 jam
+                        if (now - state.lastPruning >= PRUNING_INTERVAL_MS) {
+                            state.lastPruning = now;
+                            pool.query(
+                                'DELETE FROM interface_traffic_logs WHERE workspace_id = ? AND timestamp < NOW() - INTERVAL 3 MONTH',
+                                [inst.workspace_id]
+                            ).catch(e => console.error(`[Pruning] Gagal hapus log trafik 3-bulan: ${e.message}`));
 
-                        // 6. Pruning Log Penggunaan Kuota PPPoE (maksimal 3 Bulan = ~90 Hari)
-                        await pool.query(
-                            'DELETE FROM pppoe_usage_logs WHERE workspace_id = ? AND usage_date < NOW() - INTERVAL 3 MONTH',
-                            [inst.workspace_id]
-                        ).catch(e => console.error(`[Pruning] Gagal hapus log pppoe usage 3-bulan: ${e.message}`));
+                            // 6. Pruning Log Penggunaan Kuota PPPoE (maksimal 3 Bulan = ~90 Hari)
+                            pool.query(
+                                'DELETE FROM pppoe_usage_logs WHERE workspace_id = ? AND usage_date < NOW() - INTERVAL 3 MONTH',
+                                [inst.workspace_id]
+                            ).catch(e => console.error(`[Pruning] Gagal hapus log pppoe usage 3-bulan: ${e.message}`));
+                        }
 
                         // --- SLA TRACKING ---
                         const isSuppressed = Date.now() - serverStartTime < SUPPRESSION_PERIOD_MS;
