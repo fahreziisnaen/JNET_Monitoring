@@ -213,12 +213,28 @@ const EtherChart = ({ trafficData, interfaceName, deviceId, workspaceId, history
         },
         x: {
             ticks: {
-                maxTicksLimit: 6,
+                autoSkip: false,
                 maxRotation: 0,
-                callback: function(val: any) {
-                    const label = (this as any).getLabelForValue(val) || '';
-                    // Strip detik: "02:30:45 PM" → "02:30 PM"
-                    return label.replace(/:\d{2}(\s*(AM|PM))$/i, '$1');
+                callback: function(val: any, index: number, ticks: any[]) {
+                    const total = ticks.length;
+                    const stripSec = (s: string) => s.replace(/:\d{2}(\s*(AM|PM))$/i, '$1');
+
+                    // Selalu tampilkan label pertama (kiri) = waktu awal filter
+                    if (index === 0) {
+                        return stripSec(formatTimeLabel(new Date(Date.now() - historyHours * 3600000)));
+                    }
+                    // Selalu tampilkan label terakhir (kanan) = waktu sekarang
+                    if (index === total - 1) {
+                        return stripSec(formatTimeLabel(new Date()));
+                    }
+                    // Tampilkan ~3 label di tengah secara merata
+                    const step = Math.floor(total / 4);
+                    if (step > 0 && index % step === 0) {
+                        const label = (this as any).getLabelForValue(val) || '';
+                        if (!label) return null;
+                        return stripSec(label);
+                    }
+                    return null;
                 }
             }
         }
