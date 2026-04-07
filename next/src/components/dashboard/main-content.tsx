@@ -586,12 +586,10 @@ const MainContent = () => {
 
   const selectAll = () => {
     setSelectedInterfaces(new Set(allAvailableInterfacesList));
-    setHasUserSelection(true);
   };
 
   const deselectAll = () => {
     setSelectedInterfaces(new Set());
-    setHasUserSelection(true);
   };
 
   const toggleMinimize = (deviceId: number) => {
