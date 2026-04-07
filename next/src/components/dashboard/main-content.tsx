@@ -70,116 +70,67 @@ const EtherChart = ({ trafficData, interfaceName, deviceId, workspaceId, history
   const isInitializedRef = useRef(false);
 
   // Initialize chart data from API or localStorage on mount
+  const fetchAndSetHistory = async (hours: number) => {
+    try {
+      const apiUrl = process.env.NEXT_PUBLIC_API_BASE_URL;
+      const res = await apiFetch(`${apiUrl}/api/devices/${deviceId}/traffic-history?interface=${interfaceName}&hours=${hours}${workspaceId ? `&workspaceId=${workspaceId}` : ''}`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data && data.length > 0) {
+          const historyLabels = data.map((r: any) => new Date(r.timestamp).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
+          const historyTx = data.map((r: any) => parseFloat((r.tx_bps / 1000000).toFixed(2)));
+          const historyRx = data.map((r: any) => parseFloat((r.rx_bps / 1000000).toFixed(2)));
+          const maxLength = hours * 60;
+          const sliceLabels = historyLabels.slice(-maxLength);
+          const sliceTx = historyTx.slice(-maxLength);
+          const sliceRx = historyRx.slice(-maxLength);
+          while (sliceLabels.length < 30) {
+            sliceLabels.unshift('');
+            sliceTx.unshift(0);
+            sliceRx.unshift(0);
+          }
+          setChartData({
+            labels: sliceLabels,
+            datasets: [
+              { label: 'Upload (Mbps)', data: sliceTx, borderColor: '#ef4444', backgroundColor: '#ef444433', tension: 0.4, pointRadius: 0 },
+              { label: 'Download (Mbps)', data: sliceRx, borderColor: '#3b82f6', backgroundColor: '#3b82f633', tension: 0.4, pointRadius: 0 },
+            ]
+          });
+          lastUpdateRef.current = Date.now();
+          return;
+        }
+      }
+    } catch (error) {
+      console.warn('Gagal memuat history traffic:', error);
+    }
+    // Fallback to localStorage
+    const saved = loadSavedData();
+    if (saved) {
+      setChartData(saved);
+      try {
+        const savedItem = localStorage.getItem(storageKey);
+        if (savedItem) {
+          const parsed = JSON.parse(savedItem);
+          lastUpdateRef.current = parsed.lastUpdate || Date.now();
+        }
+      } catch (e) { /* ignore */ }
+    }
+  };
+
+  // On mount: fetch history
   useEffect(() => {
-    if (!isInitializedRef.current && deviceId) {
-      isInitializedRef.current = true; // Langsung set true agar tidak fetch dobel
-      
-      const fetchHistory = async () => {
-        try {
-          // Fetch dari database menggunakan apiFetch (otomatis handle auth_token)
-          const apiUrl = process.env.NEXT_PUBLIC_API_BASE_URL;
-          const res = await apiFetch(`${apiUrl}/api/devices/${deviceId}/traffic-history?interface=${interfaceName}&hours=${historyHours}${workspaceId ? `&workspaceId=${workspaceId}` : ''}`);
-          
-          if (res.ok) {
-            const data = await res.json();
-            if (data && data.length > 0) {
-              // Reconstruct data from API (up to 24h history)
-            // Limit to last 30 points to not overcrowd the labels, or show all if it's fine.
-            // But if we have 1440 points, showing all is good for history but hard to read.
-            // Let's just keep max 60 data points (1 hour history if graphed per minute, or skip every n to fit in 60 points) 
-            // Untuk kesederhanaan, kita muat semua ke Chart.js, Chart.js cukup pintar menanganinya
-            
-            // Format labels dan datasets
-            const historyLabels = data.map((r: any) => new Date(r.timestamp).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
-            const historyTx = data.map((r: any) => parseFloat((r.tx_bps / 1000000).toFixed(2)));
-            const historyRx = data.map((r: any) => parseFloat((r.rx_bps / 1000000).toFixed(2)));
-            
-            // Limit to appropriate number of data points
-            const maxLength = historyHours * 60; // 1 data point per minute
-            const sliceLabels = historyLabels.slice(-maxLength);
-            const sliceTx = historyTx.slice(-maxLength);
-            const sliceRx = historyRx.slice(-maxLength);
+    if (!deviceId) return;
+    isInitializedRef.current = true;
+    fetchAndSetHistory(historyHours);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [deviceId, interfaceName, storageKey]);
 
-            // Jika hasil < 30 (minimum length awal), pad dengan empty & 0 di depan
-            while (sliceLabels.length < 30) {
-              sliceLabels.unshift('');
-              sliceTx.unshift(0);
-              sliceRx.unshift(0);
-            }
-
-            const mergedData = {
-              labels: sliceLabels,
-              datasets: [
-                { label: 'Upload (Mbps)', data: sliceTx, borderColor: '#ef4444', backgroundColor: '#ef444433', tension: 0.4, pointRadius: 0 },
-                { label: 'Download (Mbps)', data: sliceRx, borderColor: '#3b82f6', backgroundColor: '#3b82f633', tension: 0.4, pointRadius: 0 },
-              ]
-            };
-
-            setChartData(mergedData);
-            lastUpdateRef.current = Date.now();
-            return;
-            }
-          }
-        } catch (error) {
-          console.warn('Gagal memuat history traffic:', error);
-        }
-
-        // Fallback to local storage if API fails or no data
-        const saved = loadSavedData();
-        if (saved) {
-          setChartData(saved);
-          try {
-            const savedItem = localStorage.getItem(storageKey);
-            if (savedItem) {
-              const parsed = JSON.parse(savedItem);
-              lastUpdateRef.current = parsed.lastUpdate || Date.now();
-            }
-          } catch (e) {
-            // Ignore error
-          }
-        }
-      };
-
-      fetchHistory();
-    }
-    // Re-fetch when range changes
-    if (isInitializedRef.current && deviceId) {
-        // Redo fetch if historyHours changed
-        const redoFetch = async () => {
-            try {
-                const apiUrl = process.env.NEXT_PUBLIC_API_BASE_URL;
-                const res = await apiFetch(`${apiUrl}/api/devices/${deviceId}/traffic-history?interface=${interfaceName}&hours=${historyHours}${workspaceId ? `&workspaceId=${workspaceId}` : ''}`);
-                if (res.ok) {
-                    const data = await res.json();
-                    if (data && data.length > 0) {
-                        const historyLabels = data.map((r: any) => new Date(r.timestamp).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
-                        const historyTx = data.map((r: any) => parseFloat((r.tx_bps / 1000000).toFixed(2)));
-                        const historyRx = data.map((r: any) => parseFloat((r.rx_bps / 1000000).toFixed(2)));
-                        const maxLength = historyHours * 60;
-                        const sliceLabels = historyLabels.slice(-maxLength);
-                        const sliceTx = historyTx.slice(-maxLength);
-                        const sliceRx = historyRx.slice(-maxLength);
-                        while (sliceLabels.length < 30) {
-                            sliceLabels.unshift('');
-                            sliceTx.unshift(0);
-                            sliceRx.unshift(0);
-                        }
-                        setChartData({
-                            labels: sliceLabels,
-                            datasets: [
-                                { label: 'Upload (Mbps)', data: sliceTx, borderColor: '#ef4444', backgroundColor: '#ef444433', tension: 0.4, pointRadius: 0 },
-                                { label: 'Download (Mbps)', data: sliceRx, borderColor: '#3b82f6', backgroundColor: '#3b82f633', tension: 0.4, pointRadius: 0 },
-                            ]
-                        });
-                    }
-                }
-            } catch (e) {
-                console.warn('Failed to re-fetch history:', e);
-            }
-        };
-        redoFetch();
-    }
-  }, [deviceId, interfaceName, storageKey, historyHours]);
+  // When historyHours changes (user clicks 1h/3h/6h/24h): re-fetch
+  useEffect(() => {
+    if (!deviceId || !isInitializedRef.current) return;
+    fetchAndSetHistory(historyHours);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [historyHours]);
 
   useEffect(() => {
     if (!trafficData || !isInitializedRef.current) return;
@@ -503,11 +454,8 @@ const MainContent = () => {
 
         const deviceData = allDevicesData[deviceId];
         
-        if (deviceData && deviceData.traffic && deviceData.traffic[ifaceName]) {
-            const currentTraffic = deviceData.traffic[ifaceName];
-            if (currentTraffic && (currentTraffic['tx-bits-per-second'] || currentTraffic['rx-bits-per-second'])) {
-                filtered.push(key);
-            }
+        if (deviceData && deviceData.traffic && deviceData.traffic[ifaceName] !== undefined) {
+            filtered.push(key);
         }
     });
 
