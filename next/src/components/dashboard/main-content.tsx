@@ -6,7 +6,7 @@ import { Chart as ChartJS, CategoryScale, LinearScale, PointElement, LineElement
 import { useMikrotik } from '@/components/providers/mikrotik-provider';
 import { useAuth } from '@/components/providers/auth-provider';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
-import { Loader2, Filter, GripVertical, ChevronDown, ChevronUp, Cpu, HardDrive, Activity } from 'lucide-react';
+import { Filter, GripVertical, ChevronDown, ChevronUp, Activity } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { apiFetch } from '@/utils/api';
@@ -212,29 +212,24 @@ const EtherChart = ({ trafficData, interfaceName, deviceId, workspaceId, history
             ticks: { callback: (value: number) => `${value} Mbps` }
         },
         x: {
+            afterBuildTicks: (axis: any) => {
+                const ticks = axis.ticks;
+                if (!ticks || ticks.length < 2) return;
+                const total = ticks.length;
+                // Hanya simpan 5 tick: awal, 25%, 50%, 75%, akhir
+                const indices = [0, Math.floor(total / 4), Math.floor(total / 2), Math.floor(3 * total / 4), total - 1];
+                const unique = [...new Set(indices)].filter(i => i < total);
+                axis.ticks = unique.map(i => ticks[i]);
+            },
             ticks: {
-                autoSkip: false,
                 maxRotation: 0,
                 callback: function(val: any, index: number, ticks: any[]) {
-                    const total = ticks.length;
                     const stripSec = (s: string) => s.replace(/:\d{2}(\s*(AM|PM))$/i, '$1');
-
-                    // Selalu tampilkan label pertama (kiri) = waktu awal filter
-                    if (index === 0) {
-                        return stripSec(formatTimeLabel(new Date(Date.now() - historyHours * 3600000)));
-                    }
-                    // Selalu tampilkan label terakhir (kanan) = waktu sekarang
-                    if (index === total - 1) {
-                        return stripSec(formatTimeLabel(new Date()));
-                    }
-                    // Tampilkan ~3 label di tengah secara merata
-                    const step = Math.floor(total / 4);
-                    if (step > 0 && index % step === 0) {
-                        const label = (this as any).getLabelForValue(val) || '';
-                        if (!label) return null;
-                        return stripSec(label);
-                    }
-                    return null;
+                    const total = ticks.length;
+                    if (index === 0) return stripSec(formatTimeLabel(new Date(Date.now() - historyHours * 3600000)));
+                    if (index === total - 1) return stripSec(formatTimeLabel(new Date()));
+                    const label = (this as any).getLabelForValue(val) || '';
+                    return label ? stripSec(label) : null;
                 }
             }
         }
@@ -277,13 +272,11 @@ interface SortableInterfaceCardProps {
   id: string;
   etherId: string;
   currentTraffic: any;
-  index: number;
-  itemCount: number;
   deviceId: number | null;
   workspaceId?: number;
 }
 
-const SortableInterfaceCard = ({ id, etherId, currentTraffic, index, itemCount, deviceId, workspaceId }: SortableInterfaceCardProps) => {
+const SortableInterfaceCard = ({ id, etherId, currentTraffic, deviceId, workspaceId }: SortableInterfaceCardProps) => {
   const [historyHours, setHistoryHours] = useState(3);
   const {
     attributes,
@@ -386,7 +379,6 @@ const MainContent = () => {
   const [minimizedDevices, setMinimizedDevices] = useState<Set<number>>(new Set());
   const [interfaceOrder, setInterfaceOrder] = useState<string[]>([]);
   const [hasLoadedSavedSelection, setHasLoadedSavedSelection] = useState(false);
-  const [hasUserSelection, setHasUserSelection] = useState(false); // Track if user has ever made a selection
 
   // Load saved order and selected interfaces from localStorage
   useEffect(() => {
@@ -406,8 +398,7 @@ const MainContent = () => {
       try {
         const parsed = JSON.parse(savedSelection);
         setSelectedInterfaces(new Set(parsed));
-        setHasUserSelection(true);
-      } catch (e) {
+        } catch (e) {
         console.error('Failed to load selected interfaces:', e);
       }
     }
@@ -589,7 +580,6 @@ const MainContent = () => {
       } else {
         newSet.add(key);
       }
-      setHasUserSelection(true);
       return newSet;
     });
   };
@@ -633,7 +623,7 @@ const MainContent = () => {
   const itemCount = displayedInterfaces.length;
   const gridLayoutClass = itemCount >= 3 ? 'md:grid-cols-2' : 'md:grid-cols-1';
 
-  const isConnected = selectedDeviceIds.length > 0 && selectedDeviceIds.some((id: number) => allDevicesStatus[id]?.isConnected);
+
 
   return (
     <div className="flex-grow space-y-4">
@@ -737,7 +727,7 @@ const MainContent = () => {
         >
           <div className={cn("grid grid-cols-1 gap-6 traffic-grid", gridLayoutClass)}>
             {displayedInterfaces.length > 0 ? (
-              displayedInterfaces.map((key, index) => {
+              displayedInterfaces.map((key) => {
                 const [deviceIdStr, ifaceName] = key.split(':');
                 const deviceId = parseInt(deviceIdStr);
                 const deviceData = allDevicesData[deviceId];
@@ -756,8 +746,6 @@ const MainContent = () => {
                         id={key}
                         etherId={ifaceName}
                         currentTraffic={currentTraffic}
-                        index={index}
-                        itemCount={itemCount}
                         deviceId={deviceId}
                         workspaceId={workspaceIdForDevice}
                     />
