@@ -138,16 +138,21 @@ const EtherChart = ({ trafficData, interfaceName, deviceId, workspaceId, history
   }, [historyHours]);
 
   useEffect(() => {
-    if (!trafficData || !isInitializedRef.current) return;
+    if (!trafficData || !isInitializedRef.current) {
+      console.log(`[EtherChart ${interfaceName}] SKIP update — trafficData:`, !!trafficData, 'initialized:', isInitializedRef.current);
+      return;
+    }
 
     const now = Date.now();
 
-    // Throttle check di LUAR setChartData — mencegah race condition async
-    // Throttle 1.5 detik: polling backend 3 detik, jadi setiap update PASTI lolos
-    if (lastUpdateRef.current && now - lastUpdateRef.current < 1500) return;
+    if (lastUpdateRef.current && now - lastUpdateRef.current < 1500) {
+      console.log(`[EtherChart ${interfaceName}] THROTTLED — gap:`, now - lastUpdateRef.current, 'ms');
+      return;
+    }
 
     const txBps = parseFloat(trafficData['tx-bits-per-second'] || '0');
     const rxBps = parseFloat(trafficData['rx-bits-per-second'] || '0');
+    console.log(`[EtherChart ${interfaceName}] UPDATE → tx:${txBps} rx:${rxBps}`);
     const txMbps = parseFloat((txBps / 1000000).toFixed(2));
     const rxMbps = parseFloat((rxBps / 1000000).toFixed(2));
 
