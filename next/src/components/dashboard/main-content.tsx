@@ -213,17 +213,13 @@ const EtherChart = ({ trafficData, interfaceName, deviceId, workspaceId, history
         },
         x: {
             ticks: {
-                // X-axis hanya tampil HH:MM AM/PM, tanpa detik
-                callback: (_: any, index: number, ticks: any[]) => {
-                    if (index === 0 || index === ticks.length - 1 || index % Math.ceil(ticks.length / 6) === 0) {
-                        const label = (ticks[index] as any)?.label || '';
-                        // Strip detik: "02:30:45 PM" → "02:30 PM"
-                        return label.replace(/:\d{2}(\s*(AM|PM))$/i, '$1');
-                    }
-                    return '';
-                },
+                maxTicksLimit: 6,
                 maxRotation: 0,
-                autoSkip: false,
+                callback: function(val: any) {
+                    const label = (this as any).getLabelForValue(val) || '';
+                    // Strip detik: "02:30:45 PM" → "02:30 PM"
+                    return label.replace(/:\d{2}(\s*(AM|PM))$/i, '$1');
+                }
             }
         }
     },
