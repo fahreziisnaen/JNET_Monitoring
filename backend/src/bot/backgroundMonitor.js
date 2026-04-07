@@ -68,29 +68,30 @@ async function startPhysicalMonitor(group, broadcastCallback) {
             const workspaceId = rep.workspace_id;
             const deviceId = rep.id;
 
-            // 1. Resource
-            const resource = await runCommandForWorkspace(workspaceId, '/system/resource/print', [], deviceId)
-                .then(r => r[0] || {})
-                .catch(() => ({}));
-            
-            // 2. Active users
-            const pppoeActive = await runCommandForWorkspace(workspaceId, '/ppp/active/print', [], deviceId).catch(err => {
-                console.error(`[Pemantauan] Gagal mengambil daftar user aktif di ${label}: ${err.message}`);
-                return null;
-            });
-
+            // 1. Ambil data current secara paralel untuk menghemat puluhan-ratusan milidetik
+            const [resource, pppoeActive, allInterfaces] = await Promise.all([
+                runCommandForWorkspace(workspaceId, '/system/resource/print', [], deviceId)
+                    .then(r => r ? r[0] : null).catch(() => null),
+                runCommandForWorkspace(workspaceId, '/ppp/active/print', [], deviceId)
+                    .catch(err => {
+                        console.error(`[Pemantauan] Gagal mengambil daftar user aktif di ${label}: ${err.message}`);
+                        return null;
+                    }),
+                runCommandForWorkspace(workspaceId, '/interface/print', [], deviceId)
+                    .catch(() => [])
+            ]);
             // Update status untuk SEMUA instance yang menggunakan router ini
             for (const inst of group.devices) {
                 if (pppoeActive !== null) {
                     state.failCount = 0; // Reset on success
                     mikrotikStore.setActive(inst.workspace_id, inst.id, pppoeActive);
                     mikrotikStore.setDeviceStatus(inst.workspace_id, inst.id, 'connected');
-                    mikrotikStore.setResource(inst.workspace_id, inst.id, resource);
+                    mikrotikStore.setResource(inst.workspace_id, inst.id, resource || {});
 
                     // Update database untuk Dashboard Snapshot
                     pool.query(
                         'UPDATE mikrotik_devices SET last_known_cpu = ?, last_known_uptime = ?, last_known_active_users = ?, last_status_update = NOW() WHERE id = ?',
-                        [resource['cpu-load'] || 0, resource['uptime'] || 'unknown', pppoeActive.length, inst.id]
+                        [resource?.['cpu-load'] || 0, resource?.['uptime'] || 'unknown', pppoeActive.length, inst.id]
                     ).catch(() => {});
                 } else {
                     state.failCount++;
@@ -102,30 +103,6 @@ async function startPhysicalMonitor(group, broadcastCallback) {
                 }
             }
 
-            // 2b. Hotspot active users (DISABLED - Not needed as per user request)
-            /*
-            if (state.hasHotspot !== false) {
-                // Gunakan device Connection Key default (shared) agar tidak buka socket baru
-                runCommandForWorkspace(workspaceId, '/ip/hotspot/active/print', [], deviceId)
-                    .then(hotspotActive => {
-                        state.hasHotspot = true;
-                        if (hotspotActive && hotspotActive.length > 0) {
-                            for (const inst of group.devices) {
-                                mikrotikStore.setHotspotActive(inst.workspace_id, inst.id, hotspotActive);
-                            }
-                        }
-                    })
-                    .catch(err => {
-                        const errMsg = (err.message || "").toLowerCase();
-                        if (errMsg.includes('no such command') || errMsg.includes('unknown command')) {
-                            state.hasHotspot = false; 
-                        }
-                    });
-            }
-            */
-
-            // 2c. Interfaces & Traffic
-            const allInterfaces = await runCommandForWorkspace(workspaceId, '/interface/print', [], deviceId).catch(() => []);
             const activeInterfaces = allInterfaces
                 .filter(iface => iface.running === 'true' || iface.running === true || iface.running === 'yes')
                 .map(iface => ({ name: iface.name, type: iface.type || 'unknown', running: iface.running }));
@@ -180,11 +157,8 @@ async function startPhysicalMonitor(group, broadcastCallback) {
             // Gunakan satu perintah untuk semua interface sekaligus agar jauh lebih cepat (menghindari queue bottleneck)
             let trafficResults = [];
             if (interfacesToMonitor.length > 0) {
-                const paramInterface = interfacesToMonitor.map(name => {
-                    return (name.includes(' ') || name.includes('(') || name.includes(')') || name.includes('/') || name.includes('\\')) 
-                        ? `"${name}"` 
-                        : name;
-                }).join(',');
+                // Di API MikroTik, string value tidak perlu diberi tanda kutip meskipun ada spasinya
+                const paramInterface = interfacesToMonitor.join(',');
 
                 try {
                     const results = await runCommandForWorkspace(workspaceId, '/interface/monitor-traffic', [`=interface=${paramInterface}`, '=once='], deviceId);
@@ -502,11 +476,15 @@ async function startPhysicalMonitor(group, broadcastCallback) {
         }
 
         state.isRunning = true;
+        const cycleStart = Date.now();
         try {
             await runCycle();
         } finally {
             state.isRunning = false;
-            state.timeoutId = setTimeout(() => state.runCycle(), POLLING_INTERVAL_MS);
+            // Kompensasi delay eksekusi: Pastikan script berjalan TEPAT setiap 3 detik, bukan 3 detik + waktu eksekusi runCycle
+            const elapsed = Date.now() - cycleStart;
+            const nextTimeout = Math.max(100, POLLING_INTERVAL_MS - elapsed);
+            state.timeoutId = setTimeout(() => state.runCycle(), nextTimeout);
         }
     };
 
