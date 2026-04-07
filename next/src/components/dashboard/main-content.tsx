@@ -32,6 +32,9 @@ ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, T
 const formatTimeLabel = (date: Date) =>
   date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
 
+const formatTimeLabelWithSeconds = (date: Date) =>
+  date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true });
+
 const formatDateLabel = (date: Date) =>
   date.toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' });
 
@@ -99,7 +102,7 @@ const EtherChart = ({ trafficData, interfaceName, deviceId, workspaceId, history
       if (res.ok) {
         const data = await res.json();
         if (data && data.length > 0) {
-          const historyLabels = data.map((r: any) => formatTimeLabel(new Date(r.timestamp)));
+          const historyLabels = data.map((r: any) => formatTimeLabelWithSeconds(new Date(r.timestamp)));
           const historyTx = data.map((r: any) => parseFloat((r.tx_bps / 1000000).toFixed(2)));
           const historyRx = data.map((r: any) => parseFloat((r.rx_bps / 1000000).toFixed(2)));
           const maxLength = hours * 60;
@@ -174,7 +177,7 @@ const EtherChart = ({ trafficData, interfaceName, deviceId, workspaceId, history
 
     setChartData((prevData: typeof initialData) => {
       const newData = {
-        labels: [...prevData.labels.slice(1), formatTimeLabel(new Date())],
+        labels: [...prevData.labels.slice(1), formatTimeLabelWithSeconds(new Date())],
         datasets: [
           { ...prevData.datasets[0], data: [...(prevData.datasets[0].data as number[]).slice(1), txMbps] },
           { ...prevData.datasets[1], data: [...(prevData.datasets[1].data as number[]).slice(1), rxMbps] },
@@ -203,12 +206,27 @@ const EtherChart = ({ trafficData, interfaceName, deviceId, workspaceId, history
         mode: 'index' as const,
         intersect: false,
     },
-    scales: { 
-        y: { 
-            beginAtZero: true, 
-            ticks: { callback: (value: number) => `${value} Mbps` } 
-        } 
-    }, 
+    scales: {
+        y: {
+            beginAtZero: true,
+            ticks: { callback: (value: number) => `${value} Mbps` }
+        },
+        x: {
+            ticks: {
+                // X-axis hanya tampil HH:MM AM/PM, tanpa detik
+                callback: (_: any, index: number, ticks: any[]) => {
+                    if (index === 0 || index === ticks.length - 1 || index % Math.ceil(ticks.length / 6) === 0) {
+                        const label = (ticks[index] as any)?.label || '';
+                        // Strip detik: "02:30:45 PM" → "02:30 PM"
+                        return label.replace(/:\d{2}(\s*(AM|PM))$/i, '$1');
+                    }
+                    return '';
+                },
+                maxRotation: 0,
+                autoSkip: false,
+            }
+        }
+    },
     plugins: { 
         legend: { position: 'top' as const },
         tooltip: {
