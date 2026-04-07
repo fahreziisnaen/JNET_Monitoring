@@ -68,6 +68,7 @@ const EtherChart = ({ trafficData, interfaceName, deviceId, workspaceId, history
   const [chartData, setChartData] = useState(initialData);
   const lastUpdateRef = useRef<number | null>(null);
   const isInitializedRef = useRef(false);
+  const isFirstHistoryHoursRender = useRef(true);
 
   // Initialize chart data from API or localStorage on mount
   const fetchAndSetHistory = async (hours: number) => {
@@ -127,6 +128,10 @@ const EtherChart = ({ trafficData, interfaceName, deviceId, workspaceId, history
 
   // When historyHours changes (user clicks 1h/3h/6h/24h): re-fetch
   useEffect(() => {
+    if (isFirstHistoryHoursRender.current) {
+      isFirstHistoryHoursRender.current = false;
+      return;
+    }
     if (!deviceId || !isInitializedRef.current) return;
     fetchAndSetHistory(historyHours);
   // eslint-disable-next-line react-hooks/exhaustive-deps
