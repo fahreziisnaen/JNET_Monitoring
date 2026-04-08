@@ -9,7 +9,7 @@ interface NocMapTabProps {
 
 const NocMapTab: React.FC<NocMapTabProps> = ({ workspaces }) => {
     return (
-        <div className="h-[calc(100vh-200px)] min-h-[500px] lg:h-[850px] -mx-4 md:mx-0 border-y md:border md:rounded-xl overflow-hidden bg-background">
+        <div className="min-h-[500px] lg:h-[850px] -mx-4 md:mx-0 border-y md:border md:rounded-xl lg:overflow-hidden bg-background">
             {workspaces.length === 0 ? (
                 <div className="flex flex-col items-center justify-center h-full bg-secondary/50">
                     <h2 className="text-xl font-bold mb-2">Tidak ada data peta</h2>
