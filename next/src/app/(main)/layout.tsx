@@ -11,7 +11,7 @@ export default function MainAppLayout({
   return (
     <div className="flex flex-col h-screen">
       <Header />
-      <main className="flex-1 overflow-y-auto pb-32">
+      <main className="flex-1 overflow-y-auto pb-24 sm:pb-28 lg:pb-32">
         {children}
       </main>
       <ConnectionStatusToast />

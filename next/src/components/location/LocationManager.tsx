@@ -1273,7 +1273,7 @@ const LocationManager: React.FC<LocationManagerProps> = ({ isNocMode = false, no
         </div>
 
         <div className="flex-grow grid grid-cols-1 lg:grid-cols-5 gap-2 sm:gap-4 lg:gap-6 min-h-0">
-          <div className="lg:col-span-1 lg:h-[calc(100vh-200px)] flex flex-col gap-2 lg:gap-4 lg:min-h-0 order-2 lg:order-1">
+          <div className="lg:col-span-1 lg:h-[calc(100vh-200px)] flex flex-col gap-2 lg:gap-4 lg:min-h-0 order-2 lg:order-1 pb-28 lg:pb-0">
             <AssetList
               assets={filteredAssets}
               loading={loading}

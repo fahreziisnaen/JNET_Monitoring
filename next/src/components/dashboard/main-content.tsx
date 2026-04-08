@@ -328,8 +328,8 @@ const SortableInterfaceCard = ({ id, etherId, currentTraffic, deviceId, workspac
           <GripVertical size={18} className="text-muted-foreground" />
         </div>
         <CardHeader>
-          <div className="flex justify-between items-start mb-2 pr-8">
-            <CardTitle>{etherId.toUpperCase()}</CardTitle>
+          <div className="flex justify-between items-start mb-2 pr-10 sm:pr-8">
+            <CardTitle className="text-sm sm:text-base truncate">{etherId.toUpperCase()}</CardTitle>
             <div className="flex flex-col items-end gap-1">
               <div className="flex bg-secondary/50 p-0.5 rounded-lg border border-border">
                 {[1, 3, 6, 24].map((h) => (
@@ -337,7 +337,7 @@ const SortableInterfaceCard = ({ id, etherId, currentTraffic, deviceId, workspac
                         key={h}
                         onClick={() => setHistoryHours(h)}
                         className={cn(
-                            "px-2 py-0.5 text-[10px] uppercase font-bold rounded transition-all",
+                            "px-2 py-1 sm:py-0.5 text-[10px] uppercase font-bold rounded transition-all min-w-[32px] sm:min-w-0",
                             historyHours === h
                                 ? "bg-primary text-primary-foreground shadow-sm"
                                 : "text-muted-foreground hover:text-foreground"
@@ -350,20 +350,20 @@ const SortableInterfaceCard = ({ id, etherId, currentTraffic, deviceId, workspac
               <ChartDateRange historyHours={historyHours} />
             </div>
           </div>
-          <div className="flex items-center gap-4 text-sm">
-            <div className="flex items-center gap-2">
-              <div className="w-3 h-3 rounded-full bg-red-500"></div>
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs sm:text-sm">
+            <div className="flex items-center gap-1.5">
+              <div className="w-2.5 h-2.5 sm:w-3 sm:h-3 rounded-full bg-red-500 shrink-0"></div>
               <span className="text-muted-foreground">Upload:</span>
               <span className="font-semibold text-red-500">{formatSpeed(txMbps)}</span>
             </div>
-            <div className="flex items-center gap-2">
-              <div className="w-3 h-3 rounded-full bg-blue-500"></div>
+            <div className="flex items-center gap-1.5">
+              <div className="w-2.5 h-2.5 sm:w-3 sm:h-3 rounded-full bg-blue-500 shrink-0"></div>
               <span className="text-muted-foreground">Download:</span>
               <span className="font-semibold text-blue-500">{formatSpeed(rxMbps)}</span>
             </div>
           </div>
         </CardHeader>
-        <CardContent className="h-80">
+        <CardContent className="h-48 sm:h-64 md:h-80">
           <EtherChart trafficData={currentTraffic} interfaceName={etherId} deviceId={deviceId} workspaceId={workspaceId} historyHours={historyHours} />
         </CardContent>
       </Card>
@@ -751,7 +751,7 @@ const MainContent = () => {
                 );
               })
             ) : (
-              <div className="md:col-span-2 flex items-center justify-center bg-secondary rounded-xl p-10 h-full">
+              <div className="md:col-span-2 flex items-center justify-center bg-secondary rounded-xl p-4 sm:p-10 min-h-[120px]">
                 <div className="text-center space-y-2">
                   <p className="text-muted-foreground">
                     {selectedInterfaces.size === 0

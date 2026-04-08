@@ -288,7 +288,7 @@ const ClientList = ({ clients, loading, selectedClientId, onClientSelect, onClie
       </CardHeader>
 
       {!isCollapsed && (
-        <CardContent className="flex-grow overflow-y-auto p-1.5 max-h-[240px] lg:max-h-none">
+        <CardContent className="flex-grow overflow-y-auto p-1.5 max-h-[320px] lg:max-h-none">
           {loading ? (
             <div className="flex justify-center items-center h-full"><Loader2 className="animate-spin h-6 w-6 text-muted-foreground" /></div>
           ) : filteredClients.length === 0 ? (
