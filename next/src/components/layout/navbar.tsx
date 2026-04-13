@@ -2,8 +2,9 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Home, Settings, SlidersHorizontal, MapPin, Wifi, ShieldCheck, FileText } from 'lucide-react';
+import { Home, Settings, SlidersHorizontal, MapPin, Wifi, ShieldCheck, FileText, X, Menu } from 'lucide-react';
 import { useAuth } from '@/components/providers/auth-provider';
+import { useState, useEffect } from 'react';
 
 const NocIcon = ({ className }: { className?: string }) => (
     <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
@@ -30,6 +31,23 @@ const Navbar = () => {
     const { user } = useAuth();
     const isNoc = user?.role === 'noc';
     const showNoc = user?.is_super_admin || isNoc || user?.role === 'admin';
+    const [isOpen, setIsOpen] = useState(false);
+
+    // Close FAB when route changes
+    useEffect(() => {
+        setIsOpen(false);
+    }, [pathname]);
+
+    // Close FAB when clicking outside
+    useEffect(() => {
+        if (!isOpen) return;
+        const handler = (e: MouseEvent) => {
+            const target = e.target as HTMLElement;
+            if (!target.closest('[data-fab]')) setIsOpen(false);
+        };
+        document.addEventListener('mousedown', handler);
+        return () => document.removeEventListener('mousedown', handler);
+    }, [isOpen]);
 
     const filteredNavItems = navItems.filter(item => {
         if (isNoc) return ['Dashboard', 'Settings'].includes(item.label);
@@ -43,32 +61,68 @@ const Navbar = () => {
 
     return (
         <>
-            {/* Mobile FAB navbar */}
-            <nav className="sm:hidden fixed bottom-4 inset-x-0 flex justify-center z-50 px-3 pointer-events-none">
-                <div className="pointer-events-auto flex items-end gap-2 px-3 py-3 bg-card/90 backdrop-blur-md rounded-2xl shadow-lg border overflow-x-auto max-w-full [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
-                    {allItems.map((item) => {
+            {/* Mobile FAB speed dial */}
+            <div className="sm:hidden fixed bottom-6 right-5 z-50 flex flex-col items-end gap-3" data-fab>
+                {/* Menu items — shown when open */}
+                <div
+                    className={`flex flex-col items-end gap-2 transition-all duration-200 ${
+                        isOpen ? 'opacity-100 pointer-events-auto translate-y-0' : 'opacity-0 pointer-events-none translate-y-4'
+                    }`}
+                >
+                    {allItems.map((item, i) => {
                         const isActive = pathname === item.href;
                         const Icon = item.icon;
                         return (
                             <Link
                                 key={item.label}
                                 href={item.href}
-                                className={`flex flex-col items-center gap-1 px-3 py-2 rounded-xl transition-all duration-200 min-w-[52px] ${
-                                    isActive
-                                        ? 'bg-primary text-primary-foreground shadow-sm'
-                                        : 'text-muted-foreground hover:bg-accent hover:text-foreground'
-                                }`}
+                                className="flex items-center gap-3"
+                                style={{ transitionDelay: isOpen ? `${i * 30}ms` : '0ms' }}
                             >
-                                <Icon className="h-5 w-5 shrink-0" />
-                                <span className="text-[10px] font-medium leading-none">{item.label}</span>
+                                {/* Label pill */}
+                                <span className={`px-3 py-1.5 rounded-full text-sm font-medium shadow-md border transition-colors ${
+                                    isActive
+                                        ? 'bg-primary text-primary-foreground border-primary'
+                                        : 'bg-card text-foreground border-border'
+                                }`}>
+                                    {item.label}
+                                </span>
+                                {/* Icon circle */}
+                                <div className={`h-11 w-11 rounded-full flex items-center justify-center shadow-md border transition-colors ${
+                                    isActive
+                                        ? 'bg-primary text-primary-foreground border-primary'
+                                        : 'bg-card text-muted-foreground border-border'
+                                }`}>
+                                    <Icon className="h-5 w-5" />
+                                </div>
                             </Link>
                         );
                     })}
                 </div>
-            </nav>
+
+                {/* Main FAB button */}
+                <button
+                    onClick={() => setIsOpen(prev => !prev)}
+                    className="h-14 w-14 rounded-full bg-primary text-primary-foreground flex items-center justify-center shadow-lg transition-transform duration-200 active:scale-95"
+                    aria-label="Toggle menu"
+                >
+                    {isOpen
+                        ? <X className="h-6 w-6" />
+                        : <Menu className="h-6 w-6" />
+                    }
+                </button>
+            </div>
+
+            {/* Backdrop */}
+            {isOpen && (
+                <div
+                    className="sm:hidden fixed inset-0 z-40 bg-black/20 backdrop-blur-[1px]"
+                    onClick={() => setIsOpen(false)}
+                />
+            )}
 
             {/* Desktop pill navbar */}
-            <nav className="hidden sm:flex fixed bottom-6 inset-x-0 justify-center z-50 px-0 pointer-events-none">
+            <nav className="hidden sm:flex fixed bottom-6 inset-x-0 justify-center z-50 pointer-events-none">
                 <div className="pointer-events-auto flex items-center gap-x-6 md:gap-x-8 px-6 md:px-8 py-3 bg-card/80 backdrop-blur-md rounded-full shadow-lg border">
                     {allItems.map((item) => {
                         const isActive = pathname === item.href;
