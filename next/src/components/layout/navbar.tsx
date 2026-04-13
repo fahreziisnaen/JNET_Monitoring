@@ -66,7 +66,7 @@ const Navbar = () => {
                 {/* Menu items — shown when open */}
                 <div
                     className={`flex flex-col items-end gap-2 transition-all duration-200 ${
-                        isOpen ? 'opacity-100 pointer-events-auto translate-y-0' : 'opacity-0 pointer-events-none translate-y-4'
+                        isOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none h-0 overflow-hidden'
                     }`}
                 >
                     {allItems.map((item, i) => {
