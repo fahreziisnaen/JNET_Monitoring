@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { Home, Settings, SlidersHorizontal, MapPin, Wifi, ShieldCheck, FileText, X, Menu } from 'lucide-react';
 import { useAuth } from '@/components/providers/auth-provider';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 
 const NocIcon = ({ className }: { className?: string }) => (
     <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
@@ -33,21 +33,38 @@ const Navbar = () => {
     const showNoc = user?.is_super_admin || isNoc || user?.role === 'admin';
     const [isOpen, setIsOpen] = useState(false);
 
+    // Lock body scroll when FAB menu is open
+    useEffect(() => {
+        if (isOpen) {
+            const scrollY = window.scrollY;
+            document.body.style.position = 'fixed';
+            document.body.style.top = `-${scrollY}px`;
+            document.body.style.width = '100%';
+            document.body.style.overflowY = 'scroll';
+        } else {
+            const scrollY = document.body.style.top;
+            document.body.style.position = '';
+            document.body.style.top = '';
+            document.body.style.width = '';
+            document.body.style.overflowY = '';
+            if (scrollY) {
+                window.scrollTo(0, parseInt(scrollY || '0') * -1);
+            }
+        }
+        return () => {
+            document.body.style.position = '';
+            document.body.style.top = '';
+            document.body.style.width = '';
+            document.body.style.overflowY = '';
+        };
+    }, [isOpen]);
+
     // Close FAB when route changes
     useEffect(() => {
         setIsOpen(false);
     }, [pathname]);
 
-    // Close FAB when clicking outside
-    useEffect(() => {
-        if (!isOpen) return;
-        const handler = (e: MouseEvent) => {
-            const target = e.target as HTMLElement;
-            if (!target.closest('[data-fab]')) setIsOpen(false);
-        };
-        document.addEventListener('mousedown', handler);
-        return () => document.removeEventListener('mousedown', handler);
-    }, [isOpen]);
+    const close = useCallback(() => setIsOpen(false), []);
 
     const filteredNavItems = navItems.filter(item => {
         if (isNoc) return ['Dashboard', 'Settings'].includes(item.label);
@@ -61,8 +78,20 @@ const Navbar = () => {
 
     return (
         <>
+            {/* Backdrop — intercepts all touch/click events behind FAB */}
+            {isOpen && (
+                <div
+                    className="sm:hidden fixed inset-0 z-40 bg-black/20 backdrop-blur-[1px]"
+                    onClick={close}
+                    onTouchStart={(e) => { e.preventDefault(); close(); }}
+                />
+            )}
+
             {/* Mobile FAB speed dial */}
-            <div className="sm:hidden fixed bottom-6 right-5 z-50 flex flex-col items-end gap-3" data-fab>
+            <div
+                className="sm:hidden fixed bottom-6 right-5 z-50 flex flex-col items-end gap-3"
+                style={{ willChange: 'transform', transform: 'translateZ(0)' }}
+            >
                 {/* Menu items — shown when open */}
                 <div
                     className={`flex flex-col items-end gap-2 transition-all duration-200 ${
@@ -78,6 +107,7 @@ const Navbar = () => {
                                 href={item.href}
                                 className="flex items-center gap-3"
                                 style={{ transitionDelay: isOpen ? `${i * 30}ms` : '0ms' }}
+                                onClick={close}
                             >
                                 {/* Label pill */}
                                 <span className={`px-3 py-1.5 rounded-full text-sm font-medium shadow-md border transition-colors ${
@@ -102,8 +132,9 @@ const Navbar = () => {
 
                 {/* Main FAB button */}
                 <button
-                    onClick={() => setIsOpen(prev => !prev)}
-                    className="h-14 w-14 rounded-full bg-primary text-primary-foreground flex items-center justify-center shadow-lg transition-transform duration-200 active:scale-95"
+                    onPointerDown={(e) => e.stopPropagation()}
+                    onClick={(e) => { e.stopPropagation(); setIsOpen(prev => !prev); }}
+                    className="h-14 w-14 rounded-full bg-primary text-primary-foreground flex items-center justify-center shadow-lg transition-transform duration-200 active:scale-95 touch-manipulation"
                     aria-label="Toggle menu"
                 >
                     {isOpen
@@ -112,14 +143,6 @@ const Navbar = () => {
                     }
                 </button>
             </div>
-
-            {/* Backdrop */}
-            {isOpen && (
-                <div
-                    className="sm:hidden fixed inset-0 z-40 bg-black/20 backdrop-blur-[1px]"
-                    onClick={() => setIsOpen(false)}
-                />
-            )}
 
             {/* Desktop pill navbar */}
             <nav className="hidden sm:flex fixed bottom-6 inset-x-0 justify-center z-50 pointer-events-none">

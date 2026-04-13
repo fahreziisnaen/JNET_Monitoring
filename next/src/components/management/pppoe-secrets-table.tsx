@@ -24,6 +24,7 @@ export interface PppoeSecret {
   isActive?: boolean; // Status aktif dari backend
   activeConnectionId?: string; // .id dari active connection untuk keperluan kick
   deviceId?: number;
+  workspaceId?: number;
   uptime?: string;
 }
 
@@ -70,6 +71,7 @@ const PppoeSecretsTable = ({ refreshTrigger, onActionComplete, initialFilter = '
     // Transform secrets dari WebSocket ke format yang diharapkan
     // Data sudah di-enrich di backend dengan isActive, uptime, currentAddress, activeConnectionId
     const transformedSecrets: PppoeSecret[] = secretsArray.map((secret: any) => {
+      const resolvedDeviceId = secret.deviceId || selectedDeviceId;
       const secretData: PppoeSecret = {
         '.id': secret['.id'] || '',
         name: secret.name || '',
@@ -78,7 +80,8 @@ const PppoeSecretsTable = ({ refreshTrigger, onActionComplete, initialFilter = '
         disabled: secret.disabled || 'false',
         isActive: secret.isActive === true,
         activeConnectionId: secret.activeConnectionId || undefined,
-        deviceId: secret.deviceId || selectedDeviceId,
+        deviceId: resolvedDeviceId,
+        workspaceId: secret.workspaceId || secret.workspace_id || (resolvedDeviceId ? getDeviceWorkspaceId(resolvedDeviceId) ?? undefined : undefined),
         uptime: secret.uptime || 'N/A'
       };
       return secretData;
