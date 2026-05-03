@@ -193,6 +193,15 @@ const PppoeDetailModal: React.FC<PppoeDetailModalProps> = ({
     const isDisabled = secret.disabled === 'true' || secret.disabled === true;
     const remoteIp = secret['remote-address'] || secret.remoteAddress || secret.currentAddress || 'IP Dinamis';
 
+    let waLink = '';
+    if (secret.whatsapp_number) {
+        let num = secret.whatsapp_number.replace(/\D/g, ''); // hapus non-digit
+        if (num.startsWith('0')) {
+            num = '62' + num.substring(1);
+        }
+        waLink = `https://wa.me/${num}`;
+    }
+
     // Chart Data Preparation
     const labels = trafficData.map(d => {
         const date = new Date(d.time);
@@ -333,7 +342,18 @@ const PppoeDetailModal: React.FC<PppoeDetailModalProps> = ({
                                     <span className="text-xs text-muted-foreground flex items-center gap-1 border-b pb-1 border-border/50">
                                         <Phone className="w-3 h-3"/> No WhatsApp
                                     </span>
-                                    <span className="text-sm font-semibold truncate">{secret.whatsapp_number || '-'}</span>
+                                    {secret.whatsapp_number ? (
+                                        <a 
+                                            href={waLink} 
+                                            target="_blank" 
+                                            rel="noopener noreferrer"
+                                            className="text-sm font-semibold truncate text-primary hover:underline hover:text-green-500 transition-colors"
+                                        >
+                                            {secret.whatsapp_number}
+                                        </a>
+                                    ) : (
+                                        <span className="text-sm font-semibold truncate">-</span>
+                                    )}
                                 </div>
                                 <div className="bg-background/50 border rounded-lg p-3 flex flex-col gap-1">
                                     <span className="text-xs text-muted-foreground flex items-center gap-1 border-b pb-1 border-border/50">
