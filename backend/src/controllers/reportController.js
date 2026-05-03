@@ -274,7 +274,7 @@ function drawInfoBox(doc, x, y, width, title, items) {
 }
 
 exports.generateMonthlyReport = async (req, res) => {
-    const workspaceId = req.user.workspace_id;
+    const user = req.user;
     const { year, month, devices } = req.query;
 
     if (!year || !month) {
@@ -304,22 +304,25 @@ exports.generateMonthlyReport = async (req, res) => {
     }
 
     try {
-        // Get workspace info
+        // Get all authorized workspaces
+        const [permWorkspaces] = await pool.query(
+            'SELECT workspace_id FROM noc_permissions WHERE user_id = ?',
+            [user.id]
+        );
+        const authorizedIds = [user.workspace_id, ...permWorkspaces.map(p => p.workspace_id)];
+
+        // Get workspace info for the main workspace (or the first one found)
         const [workspaces] = await pool.query(
-            'SELECT id, name FROM workspaces WHERE id = ?',
-            [workspaceId]
+            'SELECT id, name FROM workspaces WHERE id IN (?)',
+            [authorizedIds]
         );
 
         if (workspaces.length === 0) {
             return res.status(404).json({ message: 'Workspace tidak ditemukan.' });
         }
 
-        const workspace = workspaces[0];
-
-        // Validate workspace data
-        if (!workspace || !workspace.name) {
-            return res.status(400).json({ message: 'Workspace data tidak valid.' });
-        }
+        // Use the first workspace name as a default or list them
+        const workspaceName = workspaces.length > 1 ? 'Multiple Workspaces' : workspaces[0].name;
 
         // Calculate date range for the month
         const startDate = new Date(yearNum, monthNum - 1, 1);
@@ -342,9 +345,9 @@ exports.generateMonthlyReport = async (req, res) => {
                     SUM(CASE WHEN end_time IS NOT NULL THEN duration_seconds ELSE 0 END) as total_downtime_seconds,
                     COUNT(CASE WHEN end_time IS NULL THEN 1 END) as ongoing_events
                  FROM downtime_events
-                 WHERE workspace_id = ? 
+                 WHERE workspace_id IN (?) AND device_id IN (?)
                  AND DATE(start_time) >= ? AND DATE(start_time) <= ?`,
-                [workspaceId, startDate, endDate]
+                [authorizedIds, selectedDevices, startDate, endDate]
             );
 
             totalDowntimeSeconds = downtimeStats[0]?.total_downtime_seconds || 0;
@@ -365,10 +368,10 @@ exports.generateMonthlyReport = async (req, res) => {
                     COUNT(DISTINCT pppoe_user) as total_users,
                     SUM(total_bytes) as total_usage
                  FROM pppoe_usage_logs
-                 WHERE workspace_id = ? 
+                 WHERE workspace_id IN (?) 
                  AND device_id IN (?)
                  AND usage_date >= ? AND usage_date <= ?`,
-                [workspaceId, selectedDevices, startDate, endDate]
+                [authorizedIds, selectedDevices, startDate, endDate]
             );
 
             totalUsers = pppoeStats[0]?.total_users || 0;
@@ -387,18 +390,19 @@ exports.generateMonthlyReport = async (req, res) => {
 
         for (const deviceId of selectedDevices) {
             try {
-                // Verify device belongs to workspace
+                // Verify device belongs to an authorized workspace
                 const [deviceInfo] = await pool.query(
-                    'SELECT id, name FROM mikrotik_devices WHERE id = ? AND workspace_id = ?',
-                    [deviceId, workspaceId]
+                    'SELECT id, name, workspace_id FROM mikrotik_devices WHERE id = ? AND workspace_id IN (?)',
+                    [deviceId, authorizedIds]
                 );
 
                 if (deviceInfo.length === 0) {
-                    console.log(`[Report] Device ${deviceId} not found in workspace ${workspaceId}`);
+                    console.log(`[Report] Device ${deviceId} not found or not authorized for user ${user.id}`);
                     continue;
                 }
 
                 const deviceName = deviceInfo[0].name;
+                const deviceWorkspaceId = deviceInfo[0].workspace_id;
 
                 // Get average CPU and Memory usage from resource_logs for this device in the selected month
                 let avgCpu = null;
@@ -414,7 +418,7 @@ exports.generateMonthlyReport = async (req, res) => {
                          FROM resource_logs
                          WHERE workspace_id = ? AND device_id = ?
                          AND DATE(timestamp) >= ? AND DATE(timestamp) <= ?`,
-                        [workspaceId, deviceId, startDate, endDate]
+                        [deviceWorkspaceId, deviceId, startDate, endDate]
                     );
 
                     avgCpu = resourceStats[0]?.avg_cpu_load ? Math.round(resourceStats[0].avg_cpu_load) : null;
@@ -448,7 +452,7 @@ exports.generateMonthlyReport = async (req, res) => {
                          GROUP BY pppoe_user
                          ORDER BY total_usage DESC
                          LIMIT 1000`,
-                        [workspaceId, deviceId, startDate, endDate]
+                        [deviceWorkspaceId, deviceId, startDate, endDate]
                     );
 
                     // Process client stats with error handling
@@ -462,7 +466,7 @@ exports.generateMonthlyReport = async (req, res) => {
                                      FROM downtime_events
                                      WHERE workspace_id = ? AND device_id = ? AND pppoe_user = ?
                                      AND start_time >= ? AND start_time <= ?`,
-                                    [workspaceId, deviceId, client.pppoe_user, startDate, endDate]
+                                    [deviceWorkspaceId, deviceId, client.pppoe_user, startDate, endDate]
                                 );
 
                                 return {
@@ -541,7 +545,7 @@ exports.generateMonthlyReport = async (req, res) => {
             .text('JNET MONITORING', 50, 60, { align: 'center', width: doc.page.width - 100 });
 
         doc.fontSize(12)
-            .text(`Workspace: ${workspace.name}`, 50, 85, { align: 'center', width: doc.page.width - 100 });
+            .text(`Workspace: ${workspaceName}`, 50, 85, { align: 'center', width: doc.page.width - 100 });
 
         doc.fontSize(11)
             .text(`${monthName} ${yearNum}`, 50, 105, { align: 'center', width: doc.page.width - 100 });
