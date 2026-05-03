@@ -161,6 +161,8 @@ export const MikrotikProvider = ({ children }: { children: React.ReactNode }) =>
                     const hasInterfaces = payload.activeInterfaces && payload.activeInterfaces.length > 0;
                     const hasTraffic = payload.traffic && Object.keys(payload.traffic).length > 0;
 
+                    const secretsChanged = JSON.stringify(prev.pppoeSecrets) !== JSON.stringify(payload.pppoeSecrets || []);
+
                     updateDeviceData(deviceId, {
                         pppoeSecrets: payload.pppoeSecrets || [],
                         hotspotActive: payload.hotspotActive || [],
@@ -169,6 +171,10 @@ export const MikrotikProvider = ({ children }: { children: React.ReactNode }) =>
                         traffic: hasTraffic ? payload.traffic : prev.traffic,
                         isConnected: true, // Pastikan connected jika ada data batch
                     });
+
+                    if (secretsChanged) {
+                        triggerSecretRender();
+                    }
 
                     // Auto-dismiss Offline toast if data is finally arriving
                     if (!prev.isConnected && selectedDeviceIdsRef.current.includes(deviceId)) {
