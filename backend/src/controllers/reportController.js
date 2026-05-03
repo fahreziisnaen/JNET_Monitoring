@@ -594,6 +594,9 @@ exports.generateMonthlyReport = async (req, res) => {
         const monthName = monthNames[monthNum - 1];
         const filename = `Laporan-${monthName}-${yearNum}.pdf`;
 
+        const totalDays = new Date(yearNum, monthNum, 0).getDate();
+        const totalSecondsInMonth = totalDays * 24 * 60 * 60;
+
         // 1. Draw Cover Page
         drawCoverPage(doc, monthName, yearNum, workspaceName);
 
