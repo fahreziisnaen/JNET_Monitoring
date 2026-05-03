@@ -94,43 +94,31 @@ exports.getAggregatedMapData = async (req, res) => {
             }
         }
 
-        // ODC Logic
+        // ODC Logic — rekursif in-memory untuk menangani rantai ODC→ODP→ODP→...
+        // Fungsi rekursif: ambil semua ODP descendant dari sebuah parentId
+        const getAllOdpDescendantsNoc = (parentId) => {
+            const result = [];
+            assets.forEach(a => {
+                if (a && a.parent_asset_id === parentId && a.type === 'ODP') {
+                    result.push(a);
+                    // Rekursif: ODP yang parentnya ODP ini
+                    result.push(...getAllOdpDescendantsNoc(a.id));
+                }
+            });
+            return result;
+        };
+
         const odcIds = assets.filter(a => a && a.type === 'ODC' && a.id).map(a => a.id);
         if (odcIds.length > 0) {
-            try {
-                const placeholders = odcIds.map(() => '?').join(',');
-
-                const [childAssetsResult] = await pool.query(
-                    `SELECT parent_asset_id, COUNT(*) as count FROM network_assets WHERE parent_asset_id IN (${placeholders}) GROUP BY parent_asset_id`,
-                    [...odcIds]
-                );
-                const childMap = new Map();
-                if (Array.isArray(childAssetsResult)) {
-                    childAssetsResult.forEach(row => {
-                        childMap.set(row.parent_asset_id, parseInt(row.count) || 0);
-                    });
+            assets.forEach(asset => {
+                if (asset && asset.type === 'ODC' && asset.id) {
+                    const allODPs = getAllOdpDescendantsNoc(asset.id);
+                    // totalUsers = jumlah semua ODP descendant
+                    asset.totalUsers = allODPs.length;
+                    // activeUsers = jumlah ODP descendant yang connection_status = 'terpasang'
+                    asset.activeUsers = allODPs.filter(a => a.connection_status === 'terpasang').length;
                 }
-
-                const [activeChildResult] = await pool.query(
-                    `SELECT parent_asset_id, COUNT(*) as count FROM network_assets WHERE parent_asset_id IN (${placeholders}) AND connection_status = 'terpasang' GROUP BY parent_asset_id`,
-                    [...odcIds]
-                );
-                const activeChildMap = new Map();
-                if (Array.isArray(activeChildResult)) {
-                    activeChildResult.forEach(row => {
-                        activeChildMap.set(row.parent_asset_id, parseInt(row.count) || 0);
-                    });
-                }
-
-                assets.forEach(asset => {
-                    if (asset && asset.type === 'ODC' && asset.id) {
-                        asset.totalUsers = childMap.get(asset.id) || 0;
-                        asset.activeUsers = activeChildMap.get(asset.id) || 0;
-                    }
-                });
-            } catch (queryError) {
-                console.warn('[NOC Controller] Error in batch ODC child query:', queryError.message);
-            }
+            });
         }
 
         // Ambil Clients dengan status aktif dari pppoe_user_status

@@ -43,6 +43,21 @@ const injectFlowAnimation = (leafletPath: any) => {
   pathElement.appendChild(animate);
 };
 
+// Helper: Rekursif mengambil semua ODP descendant dari sebuah asset (ODC/ODP)
+// Menangani rantai hierarki: ODC → ODP → ODP → ... tanpa batas kedalaman
+const getAllOdpDescendants = (assetId: number, childAssetsByParent: Map<number, any[]>): any[] => {
+  const directChildren = childAssetsByParent.get(assetId) || [];
+  const result: any[] = [];
+  for (const child of directChildren) {
+    if (child.type === 'ODP') {
+      result.push(child);
+      // Rekursif: cari ODP yang parent-nya ODP ini (chain ODP → ODP)
+      result.push(...getAllOdpDescendants(child.id, childAssetsByParent));
+    }
+  }
+  return result;
+};
+
 // Component untuk auto-fit bounds menampilkan semua marker
 const FitBoundsHandler = ({
   assets,
@@ -352,12 +367,13 @@ const MemoizedAssetMarker = React.memo(({
               {asset.type === 'ODC' ? (
                 <>
                   {(() => {
-                    const children = childAssetsByParent.get(asset.id) || [];
-                    const childODPs = children.filter((a: any) => a.type === 'ODP');
-                    const childOLTs = children.filter((a: any) => a.type === 'OLT');
+                    // Rekursif: ambil semua ODP descendant (termasuk ODP→ODP→ODC)
+                    const allODPs = getAllOdpDescendants(asset.id, childAssetsByParent);
+                    const directChildren = childAssetsByParent.get(asset.id) || [];
+                    const childOLTs = directChildren.filter((a: any) => a.type === 'OLT');
 
-                    const activeODPs = childODPs.filter((a: any) => a.connection_status === 'terpasang').length;
-                    const totalODPs = childODPs.length;
+                    const activeODPs = allODPs.filter((a: any) => a.connection_status === 'terpasang').length;
+                    const totalODPs = allODPs.length;
                     const activeOLTs = childOLTs.filter((a: any) => a.connection_status === 'terpasang').length;
                     const totalOLTs = childOLTs.length;
 
@@ -391,21 +407,35 @@ const MemoizedAssetMarker = React.memo(({
               {asset.type === 'ODC' && (
                 <div className="mt-2 pt-1.5 border-t border-gray-400/30">
                   {(() => {
-                    const children = childAssetsByParent.get(asset.id) || [];
-                    const childODPs = children.filter((a: any) => a.type === 'ODP');
-                    if (childODPs.length === 0) return null;
+                    // Rekursif: ambil semua ODP descendant termasuk rantai ODP→ODP→ODC
+                    const allODPs = getAllOdpDescendants(asset.id, childAssetsByParent);
+                    if (allODPs.length === 0) return null;
 
                     let totalODPClients = 0;
                     let activeODPClients = 0;
 
-                    const odpList = childODPs.map((odp: any) => {
+                    // Buat indentasi visual berdasarkan kedalaman hierarki
+                    const getDepth = (odp: any): number => {
+                      let depth = 0;
+                      let currentParentId = odp.parent_asset_id;
+                      while (currentParentId && currentParentId !== asset.id) {
+                        const parentAsset = allODPs.find((o: any) => o.id === currentParentId);
+                        if (!parentAsset) break;
+                        depth++;
+                        currentParentId = parentAsset.parent_asset_id;
+                      }
+                      return depth;
+                    };
+
+                    const odpList = allODPs.map((odp: any) => {
                       const t = odp.totalUsers || 0;
                       const a = odp.activeUsers || 0;
                       totalODPClients += t;
                       activeODPClients += a;
+                      const depth = getDepth(odp);
                       return (
-                        <div key={odp.id} className="text-[10px] text-muted-foreground flex justify-between gap-4">
-                          <span className="truncate max-w-[120px]">{odp.name}</span>
+                        <div key={odp.id} className="text-[10px] text-muted-foreground flex justify-between gap-4" style={{ paddingLeft: `${depth * 8}px` }}>
+                          <span className="truncate max-w-[120px]">{depth > 0 ? '↳ ' : ''}{odp.name}</span>
                           <span className={a === 0 && t > 0 ? "text-red-500 font-medium" : a === t && t > 0 ? "text-green-500 font-medium" : a > 0 ? "text-amber-500 font-medium" : "font-medium"}>
                             ({a}/{t} clients)
                           </span>

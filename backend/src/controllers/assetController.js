@@ -112,48 +112,35 @@ exports.getAssets = async (req, res) => {
             }
 
             // --- Logika untuk ODC ---
-            // Ambil semua ODC IDs
+            // Gunakan pendekatan rekursif in-memory (sudah punya semua assets)
+            // Ini menangani rantai ODC → ODP → ODP → ... tanpa query tambahan
+            const assetById = new Map();
+            assets.forEach(a => { if (a && a.id) assetById.set(a.id, a); });
+
+            // Fungsi rekursif: ambil semua ODP descendant dari sebuah assetId
+            const getAllOdpDescendants = (parentId) => {
+                const result = [];
+                assets.forEach(a => {
+                    if (a && a.parent_asset_id === parentId && a.type === 'ODP') {
+                        result.push(a);
+                        // Rekursif: ODP yang parentnya ODP ini
+                        result.push(...getAllOdpDescendants(a.id));
+                    }
+                });
+                return result;
+            };
+
             const odcIds = assets.filter(a => a && a.type === 'ODC' && a.id).map(a => a.id);
             if (odcIds.length > 0) {
-                try {
-                    const placeholders = odcIds.map(() => '?').join(',');
-                    // Hitung total child assets 
-                    const [childAssetsResult] = await pool.query(
-                        `SELECT parent_asset_id, COUNT(*) as count FROM network_assets WHERE parent_asset_id IN (${placeholders}) AND workspace_id = ? GROUP BY parent_asset_id`,
-                        [...odcIds, workspaceId]
-                    );
-                    const childMap = new Map();
-                    if (Array.isArray(childAssetsResult)) {
-                        childAssetsResult.forEach(row => {
-                            if (row && row.parent_asset_id) {
-                                childMap.set(row.parent_asset_id, parseInt(row.count) || 0);
-                            }
-                        });
+                assets.forEach(asset => {
+                    if (asset && asset.type === 'ODC' && asset.id) {
+                        const allODPs = getAllOdpDescendants(asset.id);
+                        // totalUsers = jumlah semua ODP descendant
+                        asset.totalUsers = allODPs.length;
+                        // activeUsers = jumlah ODP descendant yang connection_status = 'terpasang'
+                        asset.activeUsers = allODPs.filter(a => a.connection_status === 'terpasang').length;
                     }
-
-                    // Hitung child assets yang terpasang (active)
-                    const [activeChildResult] = await pool.query(
-                        `SELECT parent_asset_id, COUNT(*) as count FROM network_assets WHERE parent_asset_id IN (${placeholders}) AND workspace_id = ? AND connection_status = 'terpasang' GROUP BY parent_asset_id`,
-                        [...odcIds, workspaceId]
-                    );
-                    const activeChildMap = new Map();
-                    if (Array.isArray(activeChildResult)) {
-                        activeChildResult.forEach(row => {
-                            if (row && row.parent_asset_id) {
-                                activeChildMap.set(row.parent_asset_id, parseInt(row.count) || 0);
-                            }
-                        });
-                    }
-
-                    assets.forEach(asset => {
-                        if (asset && asset.type === 'ODC' && asset.id) {
-                            asset.totalUsers = childMap.get(asset.id) || 0;
-                            asset.activeUsers = activeChildMap.get(asset.id) || 0;
-                        }
-                    });
-                } catch (queryError) {
-                    console.warn('[GET ASSETS] Error in batch ODC child query:', queryError.message);
-                }
+                });
             }
         }
 
