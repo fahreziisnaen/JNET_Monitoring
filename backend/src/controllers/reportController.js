@@ -911,3 +911,86 @@ function formatDuration(totalSeconds) {
 
     return parts.join(' ');
 }
+
+function drawInfoBox(doc, x, y, width, title, items) {
+    const padding = 15;
+    const lineHeight = 18;
+    const boxHeight = (items.length * lineHeight) + 40;
+
+    // Box background
+    doc.fillColor('#f8fafc').rect(x, y, width, boxHeight).fill();
+    // Box border
+    doc.strokeColor('#e2e8f0').rect(x, y, width, boxHeight).stroke();
+
+    // Title
+    doc.fillColor('#475569').fontSize(10).font('Helvetica-Bold').text(title, x + padding, y + 10);
+
+    // Items
+    doc.fillColor('#1e293b').fontSize(11).font('Helvetica');
+    items.forEach((item, index) => {
+        doc.text(item, x + padding, y + 30 + (index * lineHeight));
+    });
+
+    return y + boxHeight;
+}
+
+function addFooterAndNewPage(doc, pageNum) {
+    const footerText = `Dibuat pada: ${new Date().toLocaleString('id-ID')} | Halaman ${pageNum}`;
+    doc.fontSize(8).fillColor('#718096').text(footerText, 50, 750, { align: 'center', width: doc.page.width - 100 });
+    doc.addPage();
+    return pageNum + 1;
+}
+
+function drawTableWithHeader(doc, options) {
+    const { startY, columnWidths, headers, rows, fontSize = 9, headerFontSize = 10, pageBottom = 750 } = options;
+    let { pageNum } = options;
+    let currentY = startY;
+
+    // Draw headers
+    doc.fillColor('#edf2f7').rect(50, currentY, doc.page.width - 100, 25).fill();
+    doc.fillColor('#2d3748').fontSize(headerFontSize).font('Helvetica-Bold');
+    
+    let currentX = 50;
+    headers.forEach((header, i) => {
+        doc.text(header, currentX + 5, currentY + 7, { width: columnWidths[i] });
+        currentX += columnWidths[i];
+    });
+    
+    currentY += 25;
+
+    // Draw rows
+    doc.font('Helvetica').fontSize(fontSize).fillColor('#4a5568');
+    rows.forEach((row, rowIndex) => {
+        // Check for new page
+        if (currentY > pageBottom) {
+            pageNum = addFooterAndNewPage(doc, pageNum);
+            currentY = 50;
+            
+            // Redraw headers on new page
+            doc.fillColor('#edf2f7').rect(50, currentY, doc.page.width - 100, 25).fill();
+            doc.fillColor('#2d3748').fontSize(headerFontSize).font('Helvetica-Bold');
+            let headerX = 50;
+            headers.forEach((header, i) => {
+                doc.text(header, headerX + 5, currentY + 7, { width: columnWidths[i] });
+                headerX += columnWidths[i];
+            });
+            currentY += 25;
+            doc.font('Helvetica').fontSize(fontSize).fillColor('#4a5568');
+        }
+
+        // Draw background for alternate rows
+        if (rowIndex % 2 === 1) {
+            doc.fillColor('#f7fafc').rect(50, currentY, doc.page.width - 100, 20).fill();
+        }
+
+        doc.fillColor('#4a5568');
+        let rowX = 50;
+        row.forEach((cell, i) => {
+            doc.text(cell.toString(), rowX + 5, currentY + 5, { width: columnWidths[i] });
+            rowX += columnWidths[i];
+        });
+        currentY += 20;
+    });
+
+    return { currentY, pageNum };
+}
