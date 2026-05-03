@@ -223,7 +223,9 @@ const NocManagementTab: React.FC<NocManagementTabProps> = ({ workspaces }) => {
                 s.profile.toLowerCase().includes(query) ||
                 (s['remote-address'] || '').toLowerCase().includes(query) ||
                 (s.workspace_name || '').toLowerCase().includes(query) ||
-                (s.router_name || '').toLowerCase().includes(query)
+                (s.router_name || '').toLowerCase().includes(query) ||
+                (s.client_name || '').toLowerCase().includes(query) ||
+                (s.whatsapp_number || '').toLowerCase().includes(query)
             );
         }
 
@@ -399,7 +401,7 @@ const NocManagementTab: React.FC<NocManagementTabProps> = ({ workspaces }) => {
                                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                                 <Input
                                     type="text"
-                                    placeholder="Cari nama, profil, IP, router..."
+                                    placeholder="Cari nama, profil, IP, WA..."
                                     value={searchQuery}
                                     onChange={(e) => setSearchQuery(e.target.value)}
                                     className="pl-9 pr-8 bg-input h-9"

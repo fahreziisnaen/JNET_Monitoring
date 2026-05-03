@@ -317,6 +317,10 @@ async function startPhysicalMonitor(group, broadcastCallback) {
             // Meskipun Secrets belum selesai difetch di awal startup
             for (const inst of group.devices) {
                 try {
+                    const [clientData] = await pool.query('SELECT pppoe_secret_name, client_name, whatsapp_number FROM clients WHERE workspace_id = ? AND (device_id = ? OR device_id IS NULL)', [inst.workspace_id, inst.id]).catch(() => [[]]);
+                    const clientMap = new Map();
+                    clientData.forEach(c => clientMap.set(c.pppoe_secret_name, c));
+
                     const currentSecrets = mikrotikStore.getSecrets(inst.workspace_id, inst.id) || [];
                     const enriched = currentSecrets
                         .filter(s => !mikrotikStore.isPendingDelete(inst.workspace_id, inst.id, s.name))
@@ -328,6 +332,13 @@ async function startPhysicalMonitor(group, broadcastCallback) {
                                 router_name: inst.name,
                                 workspace_name: inst.workspace_name
                             };
+
+                            const clientInfo = clientMap.get(secret.name);
+                            if (clientInfo) {
+                                enrichedSecret.client_name = clientInfo.client_name;
+                                enrichedSecret.whatsapp_number = clientInfo.whatsapp_number;
+                            }
+
                             if (activeInfo?.uptime) enrichedSecret.uptime = activeInfo.uptime;
                             if (activeInfo?.['.id']) enrichedSecret.activeConnectionId = activeInfo['.id'];
                             if (activeInfo?.address) {

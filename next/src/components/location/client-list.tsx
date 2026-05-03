@@ -70,7 +70,8 @@ const ClientList = ({ clients, loading, selectedClientId, onClientSelect, onClie
         const nameMatch = client.pppoe_secret_name.toLowerCase().includes(query);
         const odpMatch = client.odp_name?.toLowerCase().includes(query);
         const clientNameMatch = client.client_name?.toLowerCase().includes(query);
-        return nameMatch || odpMatch || clientNameMatch;
+        const phoneMatch = client.whatsapp_number?.toLowerCase().includes(query);
+        return nameMatch || odpMatch || clientNameMatch || phoneMatch;
       });
     }
 
@@ -221,7 +222,7 @@ const ClientList = ({ clients, loading, selectedClientId, onClientSelect, onClie
                     <Input
                       ref={searchInputRef}
                       type="text"
-                      placeholder="Cari client..."
+                      placeholder="Cari client, odp, no hp..."
                       value={searchQuery}
                       autoFocus
                       onClick={() => {
@@ -264,7 +265,7 @@ const ClientList = ({ clients, loading, selectedClientId, onClientSelect, onClie
                       window.dispatchEvent(new CustomEvent('collapse-asset-list'));
                     }}
                   >
-                    <Search size={14} className="mr-2" /> Cari client...
+                    <Search size={14} className="mr-2" /> Cari client, odp, no hp...
                   </Button>
                 )
               )}

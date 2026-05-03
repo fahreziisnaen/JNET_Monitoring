@@ -26,6 +26,8 @@ export interface PppoeSecret {
   deviceId?: number;
   workspaceId?: number;
   uptime?: string;
+  client_name?: string;
+  whatsapp_number?: string;
 }
 
 interface PppoeSecretsTableProps {
@@ -82,7 +84,9 @@ const PppoeSecretsTable = ({ refreshTrigger, onActionComplete, initialFilter = '
         activeConnectionId: secret.activeConnectionId || undefined,
         deviceId: resolvedDeviceId,
         workspaceId: secret.workspaceId || secret.workspace_id || (resolvedDeviceId ? getDeviceWorkspaceId(resolvedDeviceId) ?? undefined : undefined),
-        uptime: secret.uptime || 'N/A'
+        uptime: secret.uptime || 'N/A',
+        client_name: secret.client_name,
+        whatsapp_number: secret.whatsapp_number
       };
       return secretData;
     });
@@ -134,7 +138,9 @@ const PppoeSecretsTable = ({ refreshTrigger, onActionComplete, initialFilter = '
         const nameMatch = secret.name.toLowerCase().includes(query);
         const profileMatch = secret.profile.toLowerCase().includes(query);
         const addressMatch = secret['remote-address']?.toLowerCase().includes(query);
-        return nameMatch || profileMatch || addressMatch;
+        const clientMatch = secret.client_name?.toLowerCase().includes(query);
+        const waMatch = secret.whatsapp_number?.toLowerCase().includes(query);
+        return nameMatch || profileMatch || addressMatch || clientMatch || waMatch;
       });
     }
 
@@ -429,7 +435,7 @@ const PppoeSecretsTable = ({ refreshTrigger, onActionComplete, initialFilter = '
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input
                 type="text"
-                placeholder="Cari nama, profil, atau IP..."
+                placeholder="Cari nama, profil, IP, No WA..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="pl-9 pr-8 bg-input h-9"

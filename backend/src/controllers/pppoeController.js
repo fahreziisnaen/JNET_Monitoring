@@ -86,32 +86,35 @@ exports.getSecrets = async (req, res) => {
 
         let query = `
             SELECT 
-                device_id as deviceId,
-                name, 
-                profile, 
-                remote_address as 'remote-address', 
-                current_address as currentAddress,
-                disabled, 
-                is_active as isActive, 
-                uptime, 
-                active_connection_id as activeConnectionId
-            FROM pppoe_secrets 
-            WHERE workspace_id = ?
+                ps.device_id as deviceId,
+                ps.name, 
+                ps.profile, 
+                ps.remote_address as 'remote-address', 
+                ps.current_address as currentAddress,
+                ps.disabled, 
+                ps.is_active as isActive, 
+                ps.uptime, 
+                ps.active_connection_id as activeConnectionId,
+                c.client_name,
+                c.whatsapp_number
+            FROM pppoe_secrets ps
+            LEFT JOIN clients c ON ps.name = c.pppoe_secret_name AND ps.workspace_id = c.workspace_id AND (c.device_id IS NULL OR ps.device_id = c.device_id)
+            WHERE ps.workspace_id = ?
         `;
         let params = [workspaceId];
 
         if (deviceId) {
-            query += ' AND device_id = ?';
+            query += ' AND ps.device_id = ?';
             params.push(deviceId);
         }
 
         if (disabled === 'true') {
-            query += ' AND disabled = 1';
+            query += ' AND ps.disabled = 1';
         } else if (disabled === 'false') {
-            query += ' AND disabled = 0';
+            query += ' AND ps.disabled = 0';
         }
 
-        query += ' ORDER BY name ASC';
+        query += ' ORDER BY ps.name ASC';
 
         const [secretsWithStatus] = await pool.query(query, params);
         
