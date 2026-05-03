@@ -594,52 +594,12 @@ exports.generateMonthlyReport = async (req, res) => {
         const monthName = monthNames[monthNum - 1];
         const filename = `Laporan-${monthName}-${yearNum}.pdf`;
 
-        // Beautiful Header with background
-        const headerHeight = 120;
-        doc.rect(0, 0, doc.page.width, headerHeight)
-            .fill('#2d3748');
+        // 1. Draw Cover Page
+        drawCoverPage(doc, monthName, yearNum, workspaceName);
 
-        doc.fillColor('#ffffff')
-            .fontSize(24)
-            .font('Helvetica-Bold')
-            .text('LAPORAN BULANAN', 50, 30, { align: 'center', width: doc.page.width - 100 });
-
-        doc.fontSize(16)
-            .font('Helvetica')
-            .text('JNET MONITORING', 50, 60, { align: 'center', width: doc.page.width - 100 });
-
-        doc.fontSize(12)
-            .text(`Workspace: ${workspaceName}`, 50, 85, { align: 'center', width: doc.page.width - 100 });
-
-        doc.fontSize(11)
-            .text(`${monthName} ${yearNum}`, 50, 105, { align: 'center', width: doc.page.width - 100 });
-
-        let currentY = headerHeight + 30;
-
-        // Summary Section with Info Box
-        const usageItems = [
-            `Total Data Terpakai: ${formatDataSize(totalUserUsage)}`,
-            `Total Pengguna Aktif: ${totalUsers}`
-        ];
-        currentY = drawInfoBox(doc, 50, currentY, doc.page.width - 100, 'RINGKASAN PENGGUNAAN', usageItems);
-        currentY += 20;
-
-        // SLA Section with Info Box
-        const totalDays = new Date(yearNum, monthNum, 0).getDate();
-        const totalSecondsInMonth = totalDays * 24 * 60 * 60;
-        const uptimeSeconds = totalSecondsInMonth - totalDowntimeSeconds;
-        const slaPercentage = totalSecondsInMonth > 0 ? (uptimeSeconds / totalSecondsInMonth) * 100 : 100;
-
-        const slaItems = [
-            `SLA Percentage: ${slaPercentage.toFixed(2)}%`,
-            `Total Downtime Events: ${totalEvents}`,
-            `Total Downtime: ${formatDuration(totalDowntimeSeconds)}`
-        ];
-        if (ongoingEvents > 0) {
-            slaItems.push(`Downtime Berlangsung: ${ongoingEvents} (Perhatian!)`);
-        }
-        currentY = drawInfoBox(doc, 50, currentY, doc.page.width - 100, 'SLA & DOWNTIME', slaItems);
-        currentY += 20;
+        // Track page number for footer
+        let pageNum = 1;
+        let currentY = 50; // Will be reset for each device page
 
         // Track page number for footer
         let pageNum = 1;
@@ -830,6 +790,111 @@ exports.generateMonthlyReport = async (req, res) => {
         }
     }
 };
+
+function drawCoverPage(doc, monthName, yearNum, workspaceName) {
+    const width = doc.page.width;
+    const height = doc.page.height;
+
+    // Background Shapes
+    // Top right shape
+    doc.save();
+    doc.translate(width - 100, -120);
+    doc.rotate(25);
+    doc.rect(0, 0, 500, 500).fill('#0a2f73');
+    doc.restore();
+
+    // Middle right shape
+    doc.save();
+    doc.translate(width - 80, 290);
+    doc.rotate(10);
+    doc.rect(0, 0, 420, 650).fillOpacity(0.95).fill('#2196f3');
+    doc.restore();
+
+    // Bottom left shape
+    doc.save();
+    doc.translate(-120, height - 320);
+    doc.rotate(20);
+    doc.rect(0, 0, 500, 500).fill('#001f4d');
+    doc.restore();
+
+    // Circles
+    doc.fillOpacity(0.12).fillColor('white');
+    doc.circle(width - 180, 120, 80).fill();
+    doc.circle(120, height - 260, 45).fill();
+
+    // Reset Opacity
+    doc.fillOpacity(1);
+
+    // Logo
+    doc.fillColor('#0d47a1')
+       .fontSize(58)
+       .font('Helvetica-Bold')
+       .text('JNET', 70, 70);
+    doc.fillColor('#666')
+       .fontSize(14)
+       .font('Helvetica')
+       .text('CONNECTING POSSIBILITIES', 70, 125, { characterSpacing: 2 });
+
+    // Main Title
+    doc.fillColor('#052a68')
+       .fontSize(76)
+       .font('Helvetica-Bold')
+       .text('LAPORAN', 70, 280);
+    doc.fillColor('#2196f3')
+       .fontSize(64)
+       .text('BULANAN', 70, 350);
+
+    // Line
+    doc.rect(70, 430, 90, 6).fill('#2196f3');
+
+    // Subtitle
+    doc.fillColor('#16345d')
+       .fontSize(28)
+       .font('Helvetica-Bold')
+       .text('JNET MONITORING', 70, 460);
+
+    // Description
+    doc.fillColor('#666')
+       .fontSize(18)
+       .font('Helvetica')
+       .text('Monitoring performa jaringan, stabilitas koneksi, dan kualitas layanan secara berkala untuk memastikan operasional berjalan optimal.', 70, 510, { width: 400, lineGap: 5 });
+
+    // Icon Boxes
+    const iconY = height - 340;
+    const icons = [
+        { label: 'MONITORING', color: '#0d47a1' },
+        { label: 'RELIABILITY', color: '#1a73e8' },
+        { label: 'PERFORMANCE', color: '#052a68' }
+    ];
+
+    icons.forEach((item, index) => {
+        const x = 70 + (index * 150);
+        doc.rect(x, iconY, 120, 120).fill('white');
+        
+        // Simple shape as icon
+        doc.fillColor(item.color).circle(x + 60, iconY + 45, 25).fill();
+        doc.fillColor('white').circle(x + 60, iconY + 45, 12).fill();
+        
+        doc.fillColor('#0d47a1')
+           .fontSize(11)
+           .font('Helvetica-Bold')
+           .text(item.label, x, iconY + 85, { width: 120, align: 'center' });
+    });
+
+    // Footer Info
+    doc.fillColor('#0d47a1')
+       .fontSize(20)
+       .font('Helvetica-Bold')
+       .text(`${monthName.toUpperCase()} / ${yearNum}`, 70, height - 150);
+    doc.moveTo(70, height - 120).lineTo(330, height - 120).dash(5, { space: 2 }).stroke('#999');
+
+    // Vertical Text
+    doc.save();
+    doc.translate(width - 30, height / 2);
+    doc.rotate(-90);
+    doc.fillColor('white').fillOpacity(0.8).fontSize(16).font('Helvetica-Bold').text('NETWORK PERFORMANCE REPORT', -200, 0, { characterSpacing: 5, width: 400, align: 'center' });
+    doc.restore();
+}
 
 function formatDuration(totalSeconds) {
     if (!totalSeconds || totalSeconds < 0) {
