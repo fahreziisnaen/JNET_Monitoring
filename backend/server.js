@@ -567,11 +567,23 @@ wss.on('connection', (ws, req) => {
             // Jika background monitor sudah punya data, kirim snapshot langsung
             if (storedSecrets.length > 0 && deviceStatus === 'connected') {
                 console.log(`[WebSocket] Data BGMonitor tersedia untuk perangkat ${finalDeviceId}, mengirim snapshot langsung`);
+                
+                const [clientData] = await pool.query('SELECT pppoe_secret_name, client_name, whatsapp_number FROM clients WHERE workspace_id = ? AND (device_id = ? OR device_id IS NULL)', [ws.workspaceId, finalDeviceId]).catch(() => [[]]);
+                const clientMap = new Map();
+                clientData.forEach(c => clientMap.set(c.pppoe_secret_name, c));
+
                 const activeMap = new Map(storedActive.map(u => [u.name, u]));
                 const enriched = storedSecrets.map(secret => {
                     const activeInfo = activeMap.get(secret.name);
                     const s = Object.assign({}, secret);
                     s.isActive = !!activeInfo;
+
+                    const clientInfo = clientMap.get(secret.name);
+                    if (clientInfo) {
+                        s.client_name = clientInfo.client_name;
+                        s.whatsapp_number = clientInfo.whatsapp_number;
+                    }
+
                     if (activeInfo?.uptime) s.uptime = activeInfo.uptime;
                     if (activeInfo?.['.id']) s.activeConnectionId = activeInfo['.id'];
                     if (activeInfo?.address) {
@@ -633,11 +645,22 @@ wss.on('connection', (ws, req) => {
                             }
                         });
 
+                        const [clientData] = await pool.query('SELECT pppoe_secret_name, client_name, whatsapp_number FROM clients WHERE workspace_id = ? AND (device_id = ? OR device_id IS NULL)', [ws.workspaceId, finalDeviceId]).catch(() => [[]]);
+                        const clientMap = new Map();
+                        clientData.forEach(c => clientMap.set(c.pppoe_secret_name, c));
+
                         const enrichedSecrets = pppoeSecrets.map(secret => {
                             const activeInfo = activeUserMap.get(secret.name);
                             const isActive = !!activeInfo;
                             const enriched = Object.assign({}, secret);
                             enriched.isActive = isActive;
+
+                            const clientInfo = clientMap.get(secret.name);
+                            if (clientInfo) {
+                                enriched.client_name = clientInfo.client_name;
+                                enriched.whatsapp_number = clientInfo.whatsapp_number;
+                            }
+
                             if (isActive && activeInfo.uptime) enriched.uptime = activeInfo.uptime;
                             if (isActive && activeInfo['.id']) enriched.activeConnectionId = activeInfo['.id'];
                             if (isActive && activeInfo.address) {
