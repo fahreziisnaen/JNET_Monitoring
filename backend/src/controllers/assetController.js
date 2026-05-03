@@ -407,10 +407,23 @@ exports.getAssetConnections = async (req, res) => {
             );
             connections = userConnections.map(c => ({ name: c.pppoe_secret_name, type: 'user' }));
         } else if (assetType === 'ODC') {
-            const [odpConnections] = await pool.query(
-                'SELECT id, name FROM network_assets WHERE parent_asset_id = ? AND workspace_id = ? AND type = "ODP"',
-                [id, workspace_id]
+            const [allAssets] = await pool.query(
+                'SELECT id, name, parent_asset_id, type FROM network_assets WHERE workspace_id = ?',
+                [workspace_id]
             );
+
+            const getAllOdpDescendants = (parentId, depth = 0) => {
+                const result = [];
+                allAssets.forEach(a => {
+                    if (a && a.parent_asset_id == parentId && a.type === 'ODP') {
+                        result.push({ ...a, depth });
+                        result.push(...getAllOdpDescendants(a.id, depth + 1));
+                    }
+                });
+                return result;
+            };
+
+            const odpConnections = getAllOdpDescendants(id);
 
             if (odpConnections.length === 0) {
                 connections = [];
@@ -450,7 +463,8 @@ exports.getAssetConnections = async (req, res) => {
                     name: c.name,
                     type: 'ODP',
                     totalUsers: totalMap.get(c.id) || 0,
-                    activeUsers: activeMap.get(c.id) || 0
+                    activeUsers: activeMap.get(c.id) || 0,
+                    depth: c.depth
                 }));
             }
         }

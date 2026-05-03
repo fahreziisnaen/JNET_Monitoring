@@ -25,6 +25,7 @@ interface Connection {
   type: "user" | "ODP" | "client";
   totalUsers?: number;
   activeUsers?: number;
+  depth?: number;
 }
 
 interface AssetDetailModalProps {
@@ -74,7 +75,8 @@ const AssetDetailModal = ({
             name: conn.name,
             type: conn.type || 'user' as const,
             totalUsers: conn.totalUsers,
-            activeUsers: conn.activeUsers
+            activeUsers: conn.activeUsers,
+            depth: conn.depth
           }));
 
           // Gabungkan connections dan clientConnections
@@ -225,8 +227,9 @@ const AssetDetailModal = ({
                         <div
                           key={`${conn.type}-${conn.name}-${index}`}
                           className="text-xs bg-secondary p-2 rounded-md flex justify-between items-center"
+                          style={conn.depth && conn.depth > 0 ? { marginLeft: `${conn.depth * 12}px` } : undefined}
                         >
-                          <span className="truncate">{conn.name}</span>
+                          <span className="truncate">{conn.depth && conn.depth > 0 ? '↳ ' : ''}{conn.name}</span>
                           {conn.type === 'ODP' && conn.totalUsers !== undefined && (
                             <span className={conn.activeUsers === 0 && conn.totalUsers > 0 ? "text-red-500 font-medium whitespace-nowrap" : conn.activeUsers === conn.totalUsers && conn.totalUsers > 0 ? "text-green-500 font-medium whitespace-nowrap" : conn.activeUsers && conn.activeUsers > 0 ? "text-amber-500 font-medium whitespace-nowrap" : "text-muted-foreground font-medium whitespace-nowrap"}>
                               ({conn.activeUsers || 0}/{conn.totalUsers} clients)
