@@ -601,9 +601,6 @@ exports.generateMonthlyReport = async (req, res) => {
         let pageNum = 1;
         let currentY = 50; // Will be reset for each device page
 
-        // Track page number for footer
-        let pageNum = 1;
-
         // MikroTik Device Statistics Section (CPU & Memory) and Client Statistics
         if (deviceStatsMap.size > 0) {
             // Render each device
