@@ -33,6 +33,8 @@ interface PppoeSecret {
     workspace_id: number;
     deviceId: number;
     router_name?: string;
+    client_name?: string;
+    whatsapp_number?: string;
 }
 
 interface NocManagementTabProps {
