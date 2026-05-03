@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from '@/components/motion';
-import { Activity, Clock, Database, Globe, Hash, Info, MapPin, Network, Server, ShieldAlert, Monitor, WifiOff, X } from 'lucide-react';
+import { Activity, Clock, Database, Globe, Hash, Info, MapPin, Network, Server, ShieldAlert, Monitor, WifiOff, X, User, Phone } from 'lucide-react';
 import { useAuth } from '@/components/providers/auth-provider';
 import { formatUptime, parseUptimeToSeconds, formatSecondsToUptime } from '@/utils/format';
 import { Line } from 'react-chartjs-2';
@@ -34,6 +34,8 @@ interface PppoeSecret {
     deviceId?: number | string;
     workspaceId?: number | string;
     workspace_id?: number | string;
+    client_name?: string;
+    whatsapp_number?: string;
 }
 
 interface TrafficPoint {
@@ -320,7 +322,19 @@ const PppoeDetailModal: React.FC<PppoeDetailModalProps> = ({
 
                         <div className="p-5 space-y-5 overflow-y-auto max-h-[80vh]">
                             {/* INFO CARDS */}
-                            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                            <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                                <div className="bg-background/50 border rounded-lg p-3 flex flex-col gap-1">
+                                    <span className="text-xs text-muted-foreground flex items-center gap-1 border-b pb-1 border-border/50">
+                                        <User className="w-3 h-3"/> Nama Klien
+                                    </span>
+                                    <span className="text-sm font-semibold truncate">{secret.client_name || '-'}</span>
+                                </div>
+                                <div className="bg-background/50 border rounded-lg p-3 flex flex-col gap-1">
+                                    <span className="text-xs text-muted-foreground flex items-center gap-1 border-b pb-1 border-border/50">
+                                        <Phone className="w-3 h-3"/> No WhatsApp
+                                    </span>
+                                    <span className="text-sm font-semibold truncate">{secret.whatsapp_number || '-'}</span>
+                                </div>
                                 <div className="bg-background/50 border rounded-lg p-3 flex flex-col gap-1">
                                     <span className="text-xs text-muted-foreground flex items-center gap-1 border-b pb-1 border-border/50">
                                         <Monitor className="w-3 h-3"/> Profil
