@@ -170,6 +170,8 @@ const NocManagementTab: React.FC<NocManagementTabProps> = ({ workspaces }) => {
                 workspace_name: secret.workspace_name || '',
                 router_name: secret.router_name || '',
                 uptime: secret.uptime || 'N/A',
+                client_name: secret.client_name || undefined,
+                whatsapp_number: secret.whatsapp_number || undefined,
             } as PppoeSecret));
     }, [allPppoeSecrets, workspaceIds, recentlyDeleted, allDevicesStatus]);
 
