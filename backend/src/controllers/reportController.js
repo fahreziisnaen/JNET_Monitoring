@@ -321,18 +321,37 @@ exports.generateMonthlyReport = async (req, res) => {
             authorizedIds = [user.workspace_id, ...permWorkspaces.map(p => p.workspace_id)].filter(id => id !== null);
         }
 
-        // Get workspace info for the main workspace (or the first one found)
-        const [workspaces] = await pool.query(
-            'SELECT id, name FROM workspaces WHERE id IN (?)',
-            [authorizedIds]
-        );
+        // Get workspace info for the selected devices
+        const usedWorkspaceIds = new Set();
+        const verifiedDeviceInfos = [];
+        
+        for (const deviceId of selectedDevices) {
+            const [deviceInfo] = await pool.query(
+                'SELECT id, name, workspace_id FROM mikrotik_devices WHERE id = ? AND workspace_id IN (?)',
+                [deviceId, authorizedIds]
+            );
 
-        if (workspaces.length === 0) {
-            return res.status(404).json({ message: 'Workspace tidak ditemukan.' });
+            if (deviceInfo.length > 0) {
+                verifiedDeviceInfos.push(deviceInfo[0]);
+                usedWorkspaceIds.add(deviceInfo[0].workspace_id);
+            }
         }
 
-        // Use the first workspace name as a default or list them
-        const workspaceName = workspaces.length > 1 ? 'Multiple Workspaces' : workspaces[0].name;
+        if (verifiedDeviceInfos.length === 0) {
+            return res.status(400).json({ message: 'Tidak ada device yang valid untuk dilaporkan.' });
+        }
+
+        // Determine workspace name for header
+        let workspaceName = '';
+        if (usedWorkspaceIds.size === 1) {
+            const [wsInfo] = await pool.query(
+                'SELECT name FROM workspaces WHERE id = ?',
+                [Array.from(usedWorkspaceIds)[0]]
+            );
+            workspaceName = wsInfo[0]?.name || 'Unknown Workspace';
+        } else {
+            workspaceName = 'Multiple Workspaces';
+        }
 
         // Calculate date range for the month
         const startDate = new Date(yearNum, monthNum - 1, 1);
@@ -395,26 +414,16 @@ exports.generateMonthlyReport = async (req, res) => {
         const dailyTraffic = [];
 
         // Get device statistics (CPU & Memory) and client statistics per device
-        const deviceStatsMap = new Map(); // deviceId -> { device_name, avg_cpu, avg_memory }
+        const deviceStatsMap = new Map(); // deviceId -> { device_name, avg_cpu, avg_memory, usage, users, SLA }
         const clientStatsPerDevice = new Map(); // deviceId -> [client stats]
 
-        for (const deviceId of selectedDevices) {
+        for (const devInfo of verifiedDeviceInfos) {
+            const deviceId = devInfo.id;
+            const deviceName = devInfo.name;
+            const deviceWorkspaceId = devInfo.workspace_id;
+
             try {
-                // Verify device belongs to an authorized workspace
-                const [deviceInfo] = await pool.query(
-                    'SELECT id, name, workspace_id FROM mikrotik_devices WHERE id = ? AND workspace_id IN (?)',
-                    [deviceId, authorizedIds]
-                );
-
-                if (deviceInfo.length === 0) {
-                    console.log(`[Report] Device ${deviceId} not found or not authorized for user ${user.id}`);
-                    continue;
-                }
-
-                const deviceName = deviceInfo[0].name;
-                const deviceWorkspaceId = deviceInfo[0].workspace_id;
-
-                // Get average CPU and Memory usage from resource_logs for this device in the selected month
+                // 1. Get average CPU and Memory usage from resource_logs for this device in the selected month
                 let avgCpu = null;
                 let avgMemory = null;
                 let logCount = 0;
@@ -436,14 +445,59 @@ exports.generateMonthlyReport = async (req, res) => {
                     logCount = resourceStats[0]?.log_count || 0;
                 } catch (resourceError) {
                     console.error(`[Report] Error fetching resource stats for device ${deviceId}:`, resourceError);
-                    // Continue with null values
+                }
+
+                // 2. Get SLA data for this specific device
+                let deviceDowntimeSeconds = 0;
+                let deviceEvents = 0;
+                let deviceOngoingEvents = 0;
+                try {
+                    const [downtimeStats] = await pool.query(
+                        `SELECT 
+                            COUNT(*) as total_events,
+                            SUM(CASE WHEN end_time IS NOT NULL THEN duration_seconds ELSE 0 END) as total_downtime_seconds,
+                            COUNT(CASE WHEN end_time IS NULL THEN 1 END) as ongoing_events
+                         FROM downtime_events
+                         WHERE workspace_id = ? AND device_id = ?
+                         AND DATE(start_time) >= ? AND DATE(start_time) <= ?`,
+                        [deviceWorkspaceId, deviceId, startDate, endDate]
+                    );
+                    deviceDowntimeSeconds = downtimeStats[0]?.total_downtime_seconds || 0;
+                    deviceEvents = downtimeStats[0]?.total_events || 0;
+                    deviceOngoingEvents = downtimeStats[0]?.ongoing_events || 0;
+                } catch (e) {
+                    console.error(`[Report] Error fetching device downtime:`, e);
+                }
+
+                // 3. Get Usage for this specific device
+                let deviceUsage = 0;
+                let deviceUsers = 0;
+                try {
+                    const [usageStats] = await pool.query(
+                        `SELECT 
+                            COUNT(DISTINCT pppoe_user) as total_users,
+                            SUM(total_bytes) as total_usage
+                         FROM pppoe_usage_logs
+                         WHERE workspace_id = ? AND device_id = ?
+                         AND usage_date >= ? AND usage_date <= ?`,
+                        [deviceWorkspaceId, deviceId, startDate, endDate]
+                    );
+                    deviceUsage = usageStats[0]?.total_usage || 0;
+                    deviceUsers = usageStats[0]?.total_users || 0;
+                } catch (e) {
+                    console.error(`[Report] Error fetching device usage:`, e);
                 }
 
                 deviceStatsMap.set(deviceId, {
                     device_name: deviceName,
                     avg_cpu: avgCpu,
                     avg_memory: avgMemory,
-                    log_count: logCount
+                    log_count: logCount,
+                    usage: deviceUsage,
+                    users: deviceUsers,
+                    downtime_seconds: deviceDowntimeSeconds,
+                    events: deviceEvents,
+                    ongoing_events: deviceOngoingEvents
                 });
 
                 // Get all client statistics for this workspace (all PPPoE users)
@@ -594,33 +648,39 @@ exports.generateMonthlyReport = async (req, res) => {
         if (deviceStatsMap.size > 0) {
             // Render each device
             for (const [deviceId, deviceStats] of deviceStatsMap) {
-                // Check if we need a new page
-                if (currentY > 600) {
-                    pageNum = addFooterAndNewPage(doc, pageNum);
-                    currentY = 50;
-                }
+                // Always start each device on a new page to treat it like a sub-report
+                pageNum = addFooterAndNewPage(doc, pageNum);
+                currentY = 50;
 
-                doc.fontSize(16)
+                doc.fontSize(18)
                     .fillColor('#2d3748')
                     .font('Helvetica-Bold')
-                    .text(`DEVICE: ${deviceStats.device_name}`, 50, currentY);
-                currentY += 25;
+                    .text(`DETAIL PERANGKAT: ${deviceStats.device_name}`, 50, currentY);
+                currentY += 30;
 
-                // Device Statistics (CPU & Memory)
-                const deviceStatsItems = [];
+                // Device Summary & Statistics
+                const deviceSummaryItems = [
+                    `Total Data Terpakai: ${formatDataSize(deviceStats.usage)}`,
+                    `Total Pengguna Aktif: ${deviceStats.users}`
+                ];
+
+                const devUptimeSeconds = totalSecondsInMonth - deviceStats.downtime_seconds;
+                const devSlaPercentage = totalSecondsInMonth > 0 ? (devUptimeSeconds / totalSecondsInMonth) * 100 : 100;
+
+                deviceSummaryItems.push(`SLA Percentage: ${devSlaPercentage.toFixed(2)}%`);
+                deviceSummaryItems.push(`Total Downtime: ${formatDuration(deviceStats.downtime_seconds)}`);
+                if (deviceStats.ongoing_events > 0) {
+                    deviceSummaryItems.push(`Downtime Berlangsung: ${deviceStats.ongoing_events} (Perhatian!)`);
+                }
+
                 if (deviceStats.avg_cpu !== null) {
-                    deviceStatsItems.push(`Rata-rata CPU Load: ${deviceStats.avg_cpu}%`);
-                } else {
-                    deviceStatsItems.push(`Rata-rata CPU Load: N/A (tidak ada data)`);
+                    deviceSummaryItems.push(`Rata-rata CPU Load: ${deviceStats.avg_cpu}%`);
                 }
                 if (deviceStats.avg_memory !== null) {
-                    deviceStatsItems.push(`Rata-rata Memory Usage: ${formatDataSize(deviceStats.avg_memory)}`);
-                } else {
-                    deviceStatsItems.push(`Rata-rata Memory Usage: N/A (tidak ada data)`);
+                    deviceSummaryItems.push(`Rata-rata Memory Usage: ${formatDataSize(deviceStats.avg_memory)}`);
                 }
-                deviceStatsItems.push(`Total Log Entries: ${deviceStats.log_count}`);
 
-                currentY = drawInfoBox(doc, 50, currentY, doc.page.width - 100, 'DEVICE STATISTICS', deviceStatsItems);
+                currentY = drawInfoBox(doc, 50, currentY, doc.page.width - 100, 'DEVICE SUMMARY & STATISTICS', deviceSummaryItems);
                 currentY += 20;
 
                 // Client Statistics for this device

@@ -218,6 +218,21 @@ async function startPhysicalMonitor(group, broadcastCallback) {
                 }
             }
 
+            // Simpan Resource Logs (CPU/Memory) ke DB per Workspace/Device (Historis untuk Laporan)
+            if (SHIFT_TRAFFIC_LOG && resource) {
+                for (const inst of group.devices) {
+                    const cpuLoad = parseInt(resource['cpu-load'], 10) || 0;
+                    const totalMemory = parseInt(resource['total-memory'], 10) || 0;
+                    const freeMemory = parseInt(resource['free-memory'], 10) || 0;
+                    const memoryUsage = totalMemory - freeMemory;
+
+                    pool.query(
+                        'INSERT INTO resource_logs (workspace_id, device_id, cpu_load, memory_usage) VALUES (?, ?, ?, ?)',
+                        [inst.workspace_id, inst.id, cpuLoad, memoryUsage > 0 ? memoryUsage : 0]
+                    ).catch(err => console.error(`[Pencatatan] Gagal simpan resource_logs: ${err.message}`));
+                }
+            }
+
             // ── AKUMULASI pppoe_usage_logs (Byte Harian per User) ──────────────────
             // Menggunakan data delta byte PPPoE yang sudah dihitung di atas.
             // Interface PPPoE-in bernama sama dengan username PPPoE (cth: "<pppoe-jnet123>")
