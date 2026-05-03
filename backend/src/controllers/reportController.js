@@ -305,11 +305,21 @@ exports.generateMonthlyReport = async (req, res) => {
 
     try {
         // Get all authorized workspaces
-        const [permWorkspaces] = await pool.query(
-            'SELECT workspace_id FROM noc_permissions WHERE user_id = ?',
-            [user.id]
-        );
-        const authorizedIds = [user.workspace_id, ...permWorkspaces.map(p => p.workspace_id)];
+        const isSuper = user.is_super_admin === 1 || user.is_super_admin === true;
+        let authorizedIds = [];
+
+        if (isSuper) {
+            // Superadmin can access all workspaces
+            const [allWorkspaces] = await pool.query('SELECT id FROM workspaces');
+            authorizedIds = allWorkspaces.map(w => w.id);
+        } else {
+            // Get all authorized workspaces for NOC/Regular user
+            const [permWorkspaces] = await pool.query(
+                'SELECT workspace_id FROM noc_permissions WHERE user_id = ?',
+                [user.id]
+            );
+            authorizedIds = [user.workspace_id, ...permWorkspaces.map(p => p.workspace_id)].filter(id => id !== null);
+        }
 
         // Get workspace info for the main workspace (or the first one found)
         const [workspaces] = await pool.query(
