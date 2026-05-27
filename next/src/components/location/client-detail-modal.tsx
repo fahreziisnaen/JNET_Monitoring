@@ -20,13 +20,24 @@ import {
   Image as ImageIcon,
   Phone,
   Server,
-  Copy
+  Copy,
+  Info
 } from 'lucide-react';
 import { toast } from 'sonner';
-import { Doughnut } from 'react-chartjs-2';
-import { Chart as ChartJS, ArcElement, Tooltip } from 'chart.js';
+import { Doughnut, Line } from 'react-chartjs-2';
+import {
+  Chart as ChartJS,
+  ArcElement,
+  Tooltip,
+  CategoryScale,
+  LinearScale,
+  PointElement,
+  LineElement,
+  Title,
+  Legend
+} from 'chart.js';
 
-ChartJS.register(ArcElement, Tooltip);
+ChartJS.register(ArcElement, Tooltip, CategoryScale, LinearScale, PointElement, LineElement, Title, Legend);
 import { Button } from '@/components/ui/button';
 import { Client } from './client-list';
 import { apiFetch } from '@/utils/api';
@@ -72,6 +83,20 @@ interface ClientDetailModalProps {
   nocWorkspaceId?: number;
   overrideSecrets?: any[];
 }
+
+interface TrafficPoint {
+  time: string;
+  tx: number;
+  rx: number;
+}
+
+const formatBytes = (bytes: number) => {
+  if (bytes === 0) return '0 bps';
+  const k = 1000;
+  const sizes = ['bps', 'kbps', 'Mbps', 'Gbps'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+};
 
 const formatDate = (dateString: string) => {
   return new Date(dateString).toLocaleString('id-ID', {
@@ -124,6 +149,9 @@ const ClientDetailModal = ({
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [showFullImage, setShowFullImage] = useState(false);
   const [deviceName, setDeviceName] = useState<string | null>(null);
+  const [trafficData, setTrafficData] = useState<TrafficPoint[]>([]);
+  const [isTrafficLoading, setIsTrafficLoading] = useState(false);
+  const [trafficError, setTrafficError] = useState<string | null>(null);
   const apiUrl = process.env.NEXT_PUBLIC_API_BASE_URL;
 
   // Get PPPoE details from WebSocket data
@@ -223,6 +251,72 @@ const ClientDetailModal = ({
     }
   }, [client, isOpen, fetchClientData, apiUrl]);
 
+  // Traffic history fetching
+  useEffect(() => {
+    if (!isOpen || !client) {
+      setTrafficData([]);
+      return;
+    }
+
+    const deviceId = (client as any).device_id;
+    if (!deviceId) return;
+
+    let isMounted = true;
+    let interval: NodeJS.Timeout;
+
+    const queryString = nocWorkspaceId ? `?workspaceId=${nocWorkspaceId}` : '';
+
+    const fetchInitialHistory = async () => {
+      setIsTrafficLoading(true);
+      setTrafficError(null);
+      try {
+        const res = await apiFetch(
+          `${apiUrl}/api/pppoe/${deviceId}/traffic-history/${encodeURIComponent(client.pppoe_secret_name)}${queryString}`
+        );
+        if (!res.ok) throw new Error('Gagal memuat histori traffic');
+        const data = await res.json();
+        if (isMounted) setTrafficData(data);
+      } catch (err: any) {
+        if (isMounted) setTrafficError(err.message);
+      } finally {
+        if (isMounted) setIsTrafficLoading(false);
+      }
+    };
+
+    const fetchLiveTraffic = async () => {
+      if (!pppoeDetails?.isActive) return;
+      try {
+        const res = await apiFetch(
+          `${apiUrl}/api/pppoe/${deviceId}/live-traffic/${encodeURIComponent(client.pppoe_secret_name)}${queryString}`
+        );
+        if (res.ok) {
+          const freshPoint = await res.json();
+          if (isMounted) {
+            setTrafficData(prev => {
+              const pointObj = { tx: freshPoint.tx, rx: freshPoint.rx, time: freshPoint.timestamp };
+              const newArr = [...prev, pointObj];
+              if (newArr.length > 2880) return newArr.slice(newArr.length - 2880);
+              return newArr;
+            });
+          }
+        }
+      } catch {
+        // Silent error
+      }
+    };
+
+    fetchInitialHistory().then(() => {
+      if (isMounted) {
+        interval = setInterval(fetchLiveTraffic, 3000);
+      }
+    });
+
+    return () => {
+      isMounted = false;
+      if (interval) clearInterval(interval);
+    };
+  }, [isOpen, client, nocWorkspaceId, apiUrl, pppoeDetails?.isActive]);
+
   // Handle ESC key to close modal or full image
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -250,6 +344,62 @@ const ClientDetailModal = ({
   const lon = parseFloat(client.longitude.toString());
   const pppoe = pppoeDetails;
   const odpName = client.odp_name;
+
+  const trafficLabels = trafficData.map(d => {
+    const date = new Date(d.time);
+    return date.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
+  });
+  const trafficChartData = {
+    labels: trafficLabels,
+    datasets: [
+      {
+        label: 'Download',
+        data: trafficData.map(d => d.tx),
+        borderColor: '#10b981',
+        backgroundColor: '#10b98133',
+        tension: 0.2,
+        pointRadius: 0,
+        borderWidth: 2
+      },
+      {
+        label: 'Upload',
+        data: trafficData.map(d => d.rx),
+        borderColor: '#ef4444',
+        backgroundColor: '#ef444433',
+        tension: 0.2,
+        pointRadius: 0,
+        borderWidth: 2
+      },
+    ],
+  };
+  const trafficChartOptions: any = {
+    responsive: true,
+    maintainAspectRatio: false,
+    animation: { duration: 0 },
+    interaction: { mode: 'index', intersect: false },
+    scales: {
+      y: {
+        beginAtZero: true,
+        ticks: { callback: (value: number) => formatBytes(value) },
+        grid: { color: 'rgba(255, 255, 255, 0.1)' }
+      },
+      x: {
+        grid: { display: false },
+        ticks: { maxTicksLimit: Math.min(trafficLabels.length, 12), font: { size: 10 } }
+      }
+    },
+    plugins: {
+      legend: { position: 'top', labels: { font: { size: 12 } } },
+      tooltip: {
+        backgroundColor: 'rgba(0, 0, 0, 0.8)',
+        padding: 12,
+        titleFont: { size: 13 },
+        callbacks: {
+          label: (context: any) => `${context.dataset.label}: ${formatBytes(context.parsed.y)}`
+        }
+      }
+    }
+  };
 
   let waLink = '';
   if (client.whatsapp_number) {
@@ -468,6 +618,33 @@ const ClientDetailModal = ({
                               {pppoe.isActive ? 'Aktif' : pppoe.disabled ? 'Nonaktif' : 'Tidak Aktif'}
                             </p>
                           </div>
+                        </div>
+                      </div>
+
+                      {/* Riwayat Trafik Kecepatan */}
+                      <div className="bg-background/30 border rounded-lg shadow-sm overflow-hidden flex flex-col">
+                        <div className="border-b bg-secondary/30 p-3 flex justify-between items-center">
+                          <h4 className="text-xs font-semibold flex items-center gap-2">
+                            <Network className="w-3.5 h-3.5 text-primary" />
+                            Riwayat Trafik Kecepatan
+                          </h4>
+                          {isTrafficLoading && (
+                            <span className="text-xs font-medium text-muted-foreground animate-pulse">Memuat...</span>
+                          )}
+                        </div>
+                        <div className="p-3 h-[180px] w-full relative bg-card">
+                          {trafficError ? (
+                            <div className="absolute inset-0 flex items-center justify-center text-red-500 text-xs">
+                              {trafficError}
+                            </div>
+                          ) : trafficData.length === 0 && !isTrafficLoading ? (
+                            <div className="absolute inset-0 flex items-center justify-center text-muted-foreground text-xs flex-col gap-2">
+                              <Info className="w-5 h-5 opacity-50" />
+                              Belum ada data trafik dalam 24 jam terakhir.
+                            </div>
+                          ) : (
+                            <Line data={trafficChartData} options={trafficChartOptions} />
+                          )}
                         </div>
                       </div>
 
