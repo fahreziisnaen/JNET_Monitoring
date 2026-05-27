@@ -621,7 +621,57 @@ const ClientDetailModal = ({
                         </div>
                       </div>
 
-                      {/* Riwayat Trafik Kecepatan */}
+                      {/* Remote Address + Uptime sejajar */}
+                      <div className="grid grid-cols-2 gap-3">
+                        {pppoe['remote-address'] && (
+                          <div className="flex items-center gap-3">
+                            <Network size={16} className="text-muted-foreground flex-shrink-0" />
+                            <div className="flex-1 min-w-0">
+                              <p className="text-xs text-muted-foreground">Remote Address</p>
+                              <a
+                                href={`http://${pppoe['remote-address']}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-sm font-mono font-semibold text-primary hover:underline break-all"
+                              >
+                                {pppoe['remote-address']}
+                              </a>
+                            </div>
+                          </div>
+                        )}
+
+                        {pppoe.uptime && (
+                          <div className="flex items-center gap-3">
+                            <Network size={16} className="text-muted-foreground flex-shrink-0" />
+                            <div className="flex-1 min-w-0">
+                              <p className="text-xs text-muted-foreground">Uptime</p>
+                              <p className="text-sm font-semibold">{formatUptime(pppoe.uptime)}</p>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+
+                      {pppoe.comment && (
+                        <div className="flex items-start gap-3">
+                          <AlertCircle size={16} className="text-muted-foreground mt-0.5" />
+                          <div className="flex-1 min-w-0">
+                            <p className="text-xs text-muted-foreground">Komentar</p>
+                            <p className="text-sm">{pppoe.comment}</p>
+                          </div>
+                        </div>
+                      )}
+
+                      {!pppoe.isActive && pppoe.lastLoggedOut && (
+                        <div className="flex items-center gap-3">
+                          <History size={16} className="text-muted-foreground" />
+                          <div className="flex-1 min-w-0">
+                            <p className="text-xs text-muted-foreground">Terakhir Disconnect</p>
+                            <p className="text-sm font-semibold text-muted-foreground">{pppoe.lastLoggedOut}</p>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Riwayat Trafik Kecepatan — paling bawah */}
                       <div className="bg-background/30 border rounded-lg shadow-sm overflow-hidden flex flex-col">
                         <div className="border-b bg-secondary/30 p-3 flex justify-between items-center">
                           <h4 className="text-xs font-semibold flex items-center gap-2">
@@ -647,53 +697,6 @@ const ClientDetailModal = ({
                           )}
                         </div>
                       </div>
-
-                      {pppoe['remote-address'] && (
-                        <div className="flex items-center gap-3">
-                          <Network size={16} className="text-muted-foreground" />
-                          <div className="flex-1 min-w-0">
-                            <p className="text-xs text-muted-foreground">Remote Address</p>
-                            <a
-                              href={`http://${pppoe['remote-address']}`}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="text-sm font-mono font-semibold text-primary hover:underline break-all"
-                            >
-                              {pppoe['remote-address']}
-                            </a>
-                          </div>
-                        </div>
-                      )}
-
-                      {pppoe.comment && (
-                        <div className="flex items-start gap-3">
-                          <AlertCircle size={16} className="text-muted-foreground mt-0.5" />
-                          <div className="flex-1 min-w-0">
-                            <p className="text-xs text-muted-foreground">Komentar</p>
-                            <p className="text-sm">{pppoe.comment}</p>
-                          </div>
-                        </div>
-                      )}
-
-                      {pppoe.uptime && (
-                        <div className="flex items-center gap-3">
-                          <Network size={16} className="text-muted-foreground" />
-                          <div className="flex-1 min-w-0">
-                            <p className="text-xs text-muted-foreground">Uptime</p>
-                            <p className="text-sm font-semibold">{formatUptime(pppoe.uptime)}</p>
-                          </div>
-                        </div>
-                      )}
-
-                      {!pppoe.isActive && pppoe.lastLoggedOut && (
-                        <div className="flex items-center gap-3">
-                          <History size={16} className="text-muted-foreground" />
-                          <div className="flex-1 min-w-0">
-                            <p className="text-xs text-muted-foreground">Terakhir Disconnect</p>
-                            <p className="text-sm font-semibold text-muted-foreground">{pppoe.lastLoggedOut}</p>
-                          </div>
-                        </div>
-                      )}
                     </div>
                   )}
 
