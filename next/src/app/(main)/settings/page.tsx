@@ -119,7 +119,7 @@ const SettingsPage = () => {
       </CollapsibleSection>
 
       <CollapsibleSection 
-        title="Manajemen Layanan BOT" 
+        title="Integrasi & Layanan Eksternal"
         isOpen={openSections.bot} 
         onToggle={() => toggleSection('bot')}
       >
