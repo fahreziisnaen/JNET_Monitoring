@@ -85,9 +85,10 @@ CREATE TABLE `noc_permissions` (
 
 CREATE TABLE `api_keys` (
   `id` int NOT NULL AUTO_INCREMENT,
-  `workspace_id` int NOT NULL,
+  `workspace_id` int DEFAULT NULL,
   `name` varchar(100) NOT NULL,
   `key_string` varchar(255) NOT NULL,
+  `is_global` tinyint(1) NOT NULL DEFAULT 0,
   `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
   UNIQUE KEY `key_string` (`key_string`),

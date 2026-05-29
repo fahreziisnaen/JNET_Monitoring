@@ -5,11 +5,12 @@ const crypto = require('crypto');
 exports.getAllApiKeys = async (req, res) => {
     try {
         const [apiKeys] = await pool.query(`
-            SELECT 
-                k.id, 
-                k.workspace_id, 
-                k.name, 
-                k.key_string, 
+            SELECT
+                k.id,
+                k.workspace_id,
+                k.name,
+                k.key_string,
+                k.is_global,
                 k.created_at,
                 w.name AS workspace_name
             FROM api_keys k
@@ -24,35 +25,44 @@ exports.getAllApiKeys = async (req, res) => {
     }
 };
 
-// Create a new API Key for a workspace
+// Create a new API Key (workspace-scoped or global)
 exports.createApiKey = async (req, res) => {
     try {
-        const { workspace_id, name } = req.body;
+        const { workspace_id, name, is_global } = req.body;
 
-        if (!workspace_id || !name) {
-            return res.status(400).json({ message: 'Workspace ID dan Nama API Key wajib diisi' });
+        if (!name || !name.trim()) {
+            return res.status(400).json({ message: 'Nama API Key wajib diisi' });
         }
 
-        // Generate a random 32-character hex key
+        const isGlobal = is_global === true || is_global === 1 || is_global === '1';
+
+        // Global key tidak perlu workspace
+        if (!isGlobal && !workspace_id) {
+            return res.status(400).json({ message: 'Workspace ID wajib diisi untuk key yang bukan Global' });
+        }
+
+        // Validasi workspace jika bukan global
+        if (!isGlobal) {
+            const [workspace] = await pool.query('SELECT id FROM workspaces WHERE id = ?', [workspace_id]);
+            if (workspace.length === 0) {
+                return res.status(404).json({ message: 'Workspace tidak ditemukan' });
+            }
+        }
+
         const keyString = crypto.randomBytes(16).toString('hex');
 
-        // Check if workspace exists
-        const [workspace] = await pool.query('SELECT id FROM workspaces WHERE id = ?', [workspace_id]);
-        if (workspace.length === 0) {
-            return res.status(404).json({ message: 'Workspace tidak ditemukan' });
-        }
-
         const [result] = await pool.query(
-            'INSERT INTO api_keys (workspace_id, name, key_string) VALUES (?, ?, ?)',
-            [workspace_id, name, keyString]
+            'INSERT INTO api_keys (workspace_id, name, key_string, is_global) VALUES (?, ?, ?, ?)',
+            [isGlobal ? null : workspace_id, name.trim(), keyString, isGlobal ? 1 : 0]
         );
 
         return res.status(201).json({
             message: 'API Key berhasil dibuat',
             apiKey: {
                 id: result.insertId,
-                workspace_id,
-                name,
+                workspace_id: isGlobal ? null : workspace_id,
+                name: name.trim(),
+                is_global: isGlobal,
                 key_string: keyString
             }
         });

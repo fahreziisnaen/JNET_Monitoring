@@ -11,10 +11,11 @@ import ConfirmModal from '@/components/ui/confirm-modal';
 
 interface ApiKey {
     id: number;
-    workspace_id: number;
-    workspace_name: string;
+    workspace_id: number | null;
+    workspace_name: string | null;
     name: string;
     key_string: string;
+    is_global: number;
     created_at: string;
 }
 
@@ -30,6 +31,7 @@ const ApiKeyManagementCard = () => {
     const [isCreating, setIsCreating] = useState(false);
     const [newKeyName, setNewKeyName] = useState('');
     const [selectedWorkspaceId, setSelectedWorkspaceId] = useState('');
+    const [isGlobal, setIsGlobal] = useState(false);
 
     // Delete state
     const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
@@ -75,8 +77,12 @@ const ApiKeyManagementCard = () => {
     }, [fetchData]);
 
     const handleCreateKey = async () => {
-        if (!newKeyName.trim() || !selectedWorkspaceId) {
-            toast.error("Validasi Gagal", { description: "Nama API Key dan Workspace harus diisi." });
+        if (!newKeyName.trim()) {
+            toast.error("Validasi Gagal", { description: "Nama API Key harus diisi." });
+            return;
+        }
+        if (!isGlobal && !selectedWorkspaceId) {
+            toast.error("Validasi Gagal", { description: "Pilih Workspace atau aktifkan mode Global." });
             return;
         }
 
@@ -86,7 +92,8 @@ const ApiKeyManagementCard = () => {
                 method: 'POST',
                 body: JSON.stringify({
                     name: newKeyName.trim(),
-                    workspace_id: parseInt(selectedWorkspaceId)
+                    workspace_id: isGlobal ? null : parseInt(selectedWorkspaceId),
+                    is_global: isGlobal
                 })
             });
             const data = await res.json();
@@ -96,6 +103,7 @@ const ApiKeyManagementCard = () => {
             toast.success("API Key Dibuat", { description: "Simpan API Key ini, karena tidak akan ditampilkan lagi." });
             setNewKeyName('');
             setSelectedWorkspaceId('');
+            setIsGlobal(false);
 
             // Show the newly generated key in a modal instead of alert
             setGeneratedKey(data.apiKey.key_string);
@@ -161,40 +169,56 @@ const ApiKeyManagementCard = () => {
                     <Key size={20} /> Manajemen API Key (Service Accounts)
                 </CardTitle>
                 <p className="text-sm text-muted-foreground mt-1">
-                    Kelola akses API eksternal seperti integrasi agen AI OpenClaw. API Key hanya ditampilkan saat pertama kali dibuat.
+                    Kelola akses API untuk integrasi eksternal (billing, bot, agen AI, dll). Key <b>Global</b> dapat mengakses semua workspace dengan menambahkan <code className="bg-muted px-1 rounded text-xs">?workspaceId=X</code> pada setiap request. API Key hanya ditampilkan saat pertama kali dibuat.
                 </p>
             </CardHeader>
             <CardContent className="space-y-6 pt-6">
                 {/* Buat API Key Baru */}
                 <div className="bg-secondary/20 p-4 rounded-xl border border-border/50">
                     <h4 className="text-sm font-semibold mb-3">Buat API Key Baru</h4>
-                    <div className="flex flex-col sm:flex-row gap-3">
-                        <select
-                            className="p-2 rounded-md border bg-background text-sm flex-1 sm:max-w-[200px]"
-                            value={selectedWorkspaceId}
-                            onChange={(e) => setSelectedWorkspaceId(e.target.value)}
-                            disabled={isCreating}
-                        >
-                            <option value="">-- Pilih Workspace --</option>
-                            {workspaces.map(ws => (
-                                <option key={ws.id} value={ws.id}>{ws.name}</option>
-                            ))}
-                        </select>
-                        <input
-                            type="text"
-                            placeholder="Nama / Identifier (misal: OpenClaw PC Utama)"
-                            className="p-2 rounded-md border bg-background text-sm flex-1"
-                            value={newKeyName}
-                            onChange={(e) => setNewKeyName(e.target.value)}
-                            disabled={isCreating}
-                        />
-                        <Button
-                            onClick={handleCreateKey}
-                            disabled={isCreating || !newKeyName.trim() || !selectedWorkspaceId}
-                        >
-                            {isCreating ? <Loader2 size={16} className="animate-spin mr-2" /> : <Plus size={16} className="mr-2" />}
-                            Generate Key
-                        </Button>
+                    <div className="flex flex-col gap-3">
+                        <div className="flex flex-col sm:flex-row gap-3">
+                            <select
+                                className="p-2 rounded-md border bg-background text-sm flex-1 sm:max-w-[200px] disabled:opacity-50"
+                                value={selectedWorkspaceId}
+                                onChange={(e) => setSelectedWorkspaceId(e.target.value)}
+                                disabled={isCreating || isGlobal}
+                            >
+                                <option value="">-- Pilih Workspace --</option>
+                                {workspaces.map(ws => (
+                                    <option key={ws.id} value={ws.id}>{ws.name}</option>
+                                ))}
+                            </select>
+                            <input
+                                type="text"
+                                placeholder="Nama / Identifier (misal: JNET Billing)"
+                                className="p-2 rounded-md border bg-background text-sm flex-1"
+                                value={newKeyName}
+                                onChange={(e) => setNewKeyName(e.target.value)}
+                                disabled={isCreating}
+                            />
+                            <Button
+                                onClick={handleCreateKey}
+                                disabled={isCreating || !newKeyName.trim() || (!isGlobal && !selectedWorkspaceId)}
+                            >
+                                {isCreating ? <Loader2 size={16} className="animate-spin mr-2" /> : <Plus size={16} className="mr-2" />}
+                                Generate Key
+                            </Button>
+                        </div>
+                        <label className="flex items-center gap-2 cursor-pointer w-fit select-none">
+                            <input
+                                type="checkbox"
+                                checked={isGlobal}
+                                onChange={(e) => {
+                                    setIsGlobal(e.target.checked);
+                                    if (e.target.checked) setSelectedWorkspaceId('');
+                                }}
+                                disabled={isCreating}
+                                className="w-4 h-4 accent-primary"
+                            />
+                            <span className="text-sm font-medium">Global Key</span>
+                            <span className="text-xs text-muted-foreground">(dapat mengakses semua workspace — cocok untuk billing / integrasi lintas workspace)</span>
+                        </label>
                     </div>
                 </div>
 
@@ -216,8 +240,16 @@ const ApiKeyManagementCard = () => {
                                     apiKeys.map(key => (
                                         <tr key={key.id} className="hover:bg-muted/50 transition-colors">
                                             <td className="px-4 py-3">
-                                                <div className="font-medium">{key.workspace_name || 'Terhapus'}</div>
-                                                <div className="text-[10px] text-muted-foreground">ID: {key.workspace_id}</div>
+                                                {key.is_global ? (
+                                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-primary/15 text-primary border border-primary/30">
+                                                        🌐 Global
+                                                    </span>
+                                                ) : (
+                                                    <>
+                                                        <div className="font-medium">{key.workspace_name || 'Terhapus'}</div>
+                                                        <div className="text-[10px] text-muted-foreground">ID: {key.workspace_id}</div>
+                                                    </>
+                                                )}
                                             </td>
                                             <td className="px-4 py-3 font-medium">{key.name}</td>
                                             <td className="px-4 py-3 font-mono text-xs text-muted-foreground">

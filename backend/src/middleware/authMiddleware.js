@@ -44,16 +44,18 @@ const protect = async (req, res, next) => {
 
                 if (apiKeys.length > 0) {
                     isApiKey = true;
+                    const apiKey = apiKeys[0];
                     // Mock dbUser untuk API Key (diperlakukan seperti admin di workspace tersebut)
                     dbUser = {
                         id: -1, // ID khusus untuk Service Account/API Key
-                        username: `api_key_${apiKeys[0].name}`,
-                        display_name: `Service Account (${apiKeys[0].name})`,
-                        workspace_id: apiKeys[0].workspace_id,
+                        username: `api_key_${apiKey.name}`,
+                        display_name: `Service Account (${apiKey.name})`,
+                        workspace_id: apiKey.workspace_id,
                         role: 'admin',
                         is_owner: false,
                         is_super_admin: false,
-                        jti: `apikey_${apiKeys[0].id}`
+                        is_global_key: !!apiKey.is_global, // Global key bisa akses semua workspace
+                        jti: `apikey_${apiKey.id}`
                     };
                 } else {
                     // Jika bukan JWT valid dan bukan API key, kembalikan error JWT
@@ -140,6 +142,7 @@ const protect = async (req, res, next) => {
                 role: dbUser.role || 'user',
                 is_owner: dbUser.is_owner,
                 is_super_admin: dbUser.is_super_admin,
+                is_global_key: dbUser.is_global_key || false,
                 is_noc: dbUser.role === 'noc',
                 jti: dbUser.jti
             };
@@ -149,8 +152,8 @@ const protect = async (req, res, next) => {
             // check if they are allowed to access it.
             const targetWorkspaceId = (req.body && req.body.workspaceId) || (req.query && req.query.workspaceId);
             if (targetWorkspaceId && targetWorkspaceId != req.user.workspace_id) {
-                if (req.user.is_super_admin) {
-                    // SuperAdmin can access any workspace
+                if (req.user.is_super_admin || req.user.is_global_key) {
+                    // SuperAdmin dan Global API Key dapat akses workspace manapun
                     req.user.workspace_id = parseInt(targetWorkspaceId, 10);
                 } else if (req.user.is_noc) {
                     // NOC can only access workspaces where they have been granted permission
