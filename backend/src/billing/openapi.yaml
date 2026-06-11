@@ -3,43 +3,43 @@ info:
   title: JNET Monitoring — Billing API
   version: 0.1.0
   description: |
-    Kontrak API modul **Billing** (pembayaran pelanggan ISP) yang berjalan di
-    dalam backend JNET Monitoring. Hanya modul billing yang didokumentasikan di sini.
+    API contract for the **Billing** module (ISP customer payments) that runs
+    inside the JNET Monitoring backend. Only the billing module is documented here.
 
-    ## Autentikasi
-    - **customerAuth** — JWT pelanggan (klaim `aud: billing-customer`), didapat dari
-      `POST /customer/auth/verify-otp`. Dikirim via `Authorization: Bearer <token>`
-      (atau cookie `billing_token`). Dipakai aplikasi billing (React Native).
-    - **adminAuth** — JWT admin existing JNET Monitoring (`protect` + `authorizeAdmin`).
-      Token pelanggan & admin TIDAK saling bisa dipakai (audience berbeda).
-    - **Webhook** tidak pakai bearer; keamanannya dari signature HMAC-SHA256
-      (`X-Callback-Signature`).
+    ## Authentication
+    - **customerAuth** — Customer JWT (claim `aud: billing-customer`), obtained from
+      `POST /customer/auth/verify-otp`. Sent via `Authorization: Bearer <token>`
+      (or the `billing_token` cookie). Used by the billing app (React Native).
+    - **adminAuth** — Existing JNET Monitoring admin JWT (`protect` + `authorizeAdmin`).
+      Customer and admin tokens are NOT interchangeable (different audience).
+    - **Webhook** does not use a bearer token; it is secured by an HMAC-SHA256
+      signature (`X-Callback-Signature`).
   contact:
     name: JNET Monitoring
 servers:
   - url: /api/billing
-    description: Relatif terhadap host backend (mis. https://monitor.domain.com)
+    description: Relative to the backend host (e.g. https://monitor.domain.com)
 
 tags:
   - name: Customer Auth
-    description: Login pelanggan via OTP WhatsApp
+    description: Customer login via WhatsApp OTP
   - name: Customer Portal
-    description: Data milik pelanggan sendiri (langganan, invoice, pembayaran)
+    description: The customer's own data (subscription, invoices, payments)
   - name: Admin
-    description: Manajemen paket, pelanggan, langganan, invoice, pengaturan
+    description: Manage packages, customers, subscriptions, invoices, settings
   - name: Webhook
-    description: Callback payment gateway (Tripay)
+    description: Payment gateway callback (Tripay)
 
 paths:
   # ============================ CUSTOMER AUTH ============================
   /customer/auth/request-otp:
     post:
       tags: [Customer Auth]
-      summary: Minta OTP login via WhatsApp
+      summary: Request a login OTP via WhatsApp
       description: |
-        Mengirim OTP ke nomor WhatsApp pelanggan yang sudah terdaftar (oleh admin).
-        Respons selalu generik agar tidak membocorkan nomor mana yang terdaftar.
-        Jika gateway WhatsApp mati, balas 503 (TIDAK ada bypass).
+        Sends an OTP to a registered customer's WhatsApp number (registered by an
+        admin). The response is always generic so it never reveals which numbers
+        are registered. If the WhatsApp gateway is down it returns 503 (no bypass).
       security: []
       requestBody:
         required: true
@@ -54,19 +54,19 @@ paths:
                   example: "081234567890"
       responses:
         '200':
-          description: OTP dikirim (atau nomor tidak terdaftar — respons sama)
+          description: OTP sent (or the number is not registered — identical response)
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Message' }
         '400': { $ref: '#/components/responses/BadRequest' }
-        '403': { description: Akun pelanggan nonaktif, content: { application/json: { schema: { $ref: '#/components/schemas/Message' } } } }
-        '503': { description: Layanan WhatsApp tidak tersedia, content: { application/json: { schema: { $ref: '#/components/schemas/Message' } } } }
+        '403': { description: Customer account is inactive, content: { application/json: { schema: { $ref: '#/components/schemas/Message' } } } }
+        '503': { description: WhatsApp service unavailable, content: { application/json: { schema: { $ref: '#/components/schemas/Message' } } } }
 
   /customer/auth/verify-otp:
     post:
       tags: [Customer Auth]
-      summary: Verifikasi OTP & login
-      description: Memverifikasi OTP, membuat sesi, dan mengembalikan token JWT pelanggan (berlaku 30 hari). Juga men-set cookie `billing_token`.
+      summary: Verify OTP and log in
+      description: Verifies the OTP, creates a session, and returns a customer JWT (valid 30 days). Also sets the `billing_token` cookie.
       security: []
       requestBody:
         required: true
@@ -80,14 +80,14 @@ paths:
                 otp: { type: string, example: "123456" }
       responses:
         '200':
-          description: Login berhasil
+          description: Login successful
           content:
             application/json:
               schema:
                 type: object
                 properties:
                   message: { type: string }
-                  token: { type: string, description: JWT pelanggan }
+                  token: { type: string, description: Customer JWT }
                   customer:
                     type: object
                     properties:
@@ -95,22 +95,22 @@ paths:
                       name: { type: string, nullable: true }
                       whatsapp_number: { type: string }
         '400': { $ref: '#/components/responses/BadRequest' }
-        '401': { description: OTP salah atau kedaluwarsa, content: { application/json: { schema: { $ref: '#/components/schemas/Message' } } } }
+        '401': { description: Wrong or expired OTP, content: { application/json: { schema: { $ref: '#/components/schemas/Message' } } } }
         '404': { $ref: '#/components/responses/NotFound' }
 
   /customer/auth/logout:
     post:
       tags: [Customer Auth]
-      summary: Logout (revoke sesi)
+      summary: Log out (revoke session)
       security: [{ customerAuth: [] }]
       responses:
-        '200': { description: Logout berhasil, content: { application/json: { schema: { $ref: '#/components/schemas/Message' } } } }
+        '200': { description: Logged out, content: { application/json: { schema: { $ref: '#/components/schemas/Message' } } } }
         '401': { $ref: '#/components/responses/Unauthorized' }
 
   /customer/me:
     get:
       tags: [Customer Auth]
-      summary: Profil pelanggan saat ini
+      summary: Current customer profile
       security: [{ customerAuth: [] }]
       responses:
         '200':
@@ -127,7 +127,7 @@ paths:
   /customer/subscription:
     get:
       tags: [Customer Portal]
-      summary: Langganan & paket aktif milik pelanggan
+      summary: The customer's active subscription and package
       security: [{ customerAuth: [] }]
       responses:
         '200':
@@ -146,7 +146,7 @@ paths:
   /customer/invoices:
     get:
       tags: [Customer Portal]
-      summary: Daftar invoice milik pelanggan
+      summary: The customer's invoices
       security: [{ customerAuth: [] }]
       responses:
         '200':
@@ -164,7 +164,7 @@ paths:
   /customer/invoices/{id}:
     get:
       tags: [Customer Portal]
-      summary: Detail invoice + riwayat pembayaran
+      summary: Invoice detail with payment history
       security: [{ customerAuth: [] }]
       parameters: [{ $ref: '#/components/parameters/PathId' }]
       responses:
@@ -185,11 +185,11 @@ paths:
   /customer/invoices/{id}/pay:
     post:
       tags: [Customer Portal]
-      summary: Buat transaksi pembayaran untuk invoice
+      summary: Create a payment transaction for an invoice
       description: |
-        Membuat transaksi di payment gateway. Jika sudah ada pembayaran `pending`,
-        transaksi itu dikembalikan (idempoten). Bila gateway belum dikonfigurasi,
-        dikembalikan transaksi mode simulasi (`simulated: true`).
+        Creates a transaction at the payment gateway. If a `pending` payment
+        already exists, it is returned instead (idempotent). When the gateway is
+        not configured, a simulated transaction is returned (`simulated: true`).
       security: [{ customerAuth: [] }]
       parameters: [{ $ref: '#/components/parameters/PathId' }]
       requestBody:
@@ -199,11 +199,11 @@ paths:
             schema:
               type: object
               properties:
-                method: { type: string, description: Channel pembayaran (mis. QRIS, BRIVA), opsional }
+                method: { type: string, description: Payment channel (e.g. QRIS, BRIVA), optional }
       responses:
-        '200': { description: Transaksi pending sudah ada, content: { application/json: { schema: { type: object, properties: { message: { type: string }, payment: { $ref: '#/components/schemas/Payment' } } } } } }
+        '200': { description: A pending transaction already exists, content: { application/json: { schema: { type: object, properties: { message: { type: string }, payment: { $ref: '#/components/schemas/Payment' } } } } } }
         '201':
-          description: Transaksi dibuat
+          description: Transaction created
           content:
             application/json:
               schema:
@@ -222,13 +222,13 @@ paths:
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '404': { $ref: '#/components/responses/NotFound' }
-        '502': { description: Gagal membuat transaksi di gateway, content: { application/json: { schema: { $ref: '#/components/schemas/Message' } } } }
+        '502': { description: Failed to create the transaction at the gateway, content: { application/json: { schema: { $ref: '#/components/schemas/Message' } } } }
 
-  # ============================ ADMIN: PAKET ============================
+  # ============================ ADMIN: PACKAGES ============================
   /admin/packages:
     get:
       tags: [Admin]
-      summary: Daftar paket
+      summary: List packages
       security: [{ adminAuth: [] }]
       parameters: [{ $ref: '#/components/parameters/WorkspaceOverride' }]
       responses:
@@ -236,7 +236,7 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
     post:
       tags: [Admin]
-      summary: Buat paket
+      summary: Create a package
       security: [{ adminAuth: [] }]
       requestBody:
         required: true
@@ -251,7 +251,7 @@ paths:
   /admin/packages/{id}:
     put:
       tags: [Admin]
-      summary: Perbarui paket
+      summary: Update a package
       security: [{ adminAuth: [] }]
       parameters: [{ $ref: '#/components/parameters/PathId' }]
       requestBody:
@@ -265,20 +265,20 @@ paths:
         '404': { $ref: '#/components/responses/NotFound' }
     delete:
       tags: [Admin]
-      summary: Hapus paket
+      summary: Delete a package
       security: [{ adminAuth: [] }]
       parameters: [{ $ref: '#/components/parameters/PathId' }]
       responses:
         '200': { $ref: '#/components/responses/OkMessage' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '404': { $ref: '#/components/responses/NotFound' }
-        '409': { description: Paket masih dipakai langganan, content: { application/json: { schema: { $ref: '#/components/schemas/Message' } } } }
+        '409': { description: Package is still used by a subscription, content: { application/json: { schema: { $ref: '#/components/schemas/Message' } } } }
 
-  # ============================ ADMIN: PELANGGAN ============================
+  # ============================ ADMIN: CUSTOMERS ============================
   /admin/customers:
     get:
       tags: [Admin]
-      summary: Daftar pelanggan billing
+      summary: List billing customers
       security: [{ adminAuth: [] }]
       parameters: [{ $ref: '#/components/parameters/WorkspaceOverride' }]
       responses:
@@ -286,8 +286,8 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
     post:
       tags: [Admin]
-      summary: Buat pelanggan billing
-      description: Bisa otomatis menautkan ke `clients` existing via `client_id` (mewarisi nama, secret PPPoE, device).
+      summary: Create a billing customer
+      description: Can auto-link to an existing `clients` row via `client_id` (inheriting name, PPPoE secret, device).
       security: [{ adminAuth: [] }]
       requestBody:
         required: true
@@ -298,12 +298,12 @@ paths:
         '201': { $ref: '#/components/responses/Created' }
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
-        '409': { description: Nomor WhatsApp sudah terdaftar, content: { application/json: { schema: { $ref: '#/components/schemas/Message' } } } }
+        '409': { description: WhatsApp number already registered, content: { application/json: { schema: { $ref: '#/components/schemas/Message' } } } }
 
   /admin/customers/{id}:
     put:
       tags: [Admin]
-      summary: Perbarui pelanggan
+      summary: Update a customer
       security: [{ adminAuth: [] }]
       parameters: [{ $ref: '#/components/parameters/PathId' }]
       requestBody:
@@ -316,11 +316,11 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '404': { $ref: '#/components/responses/NotFound' }
 
-  # ============================ ADMIN: LANGGANAN ============================
+  # ============================ ADMIN: SUBSCRIPTIONS ============================
   /admin/subscriptions:
     get:
       tags: [Admin]
-      summary: Daftar langganan
+      summary: List subscriptions
       security: [{ adminAuth: [] }]
       parameters: [{ $ref: '#/components/parameters/WorkspaceOverride' }]
       responses:
@@ -328,7 +328,7 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
     post:
       tags: [Admin]
-      summary: Buat langganan (pelanggan ↔ paket)
+      summary: Create a subscription (customer ↔ package)
       security: [{ adminAuth: [] }]
       requestBody:
         required: true
@@ -351,7 +351,7 @@ paths:
   /admin/subscriptions/{id}:
     put:
       tags: [Admin]
-      summary: Perbarui langganan
+      summary: Update a subscription
       security: [{ adminAuth: [] }]
       parameters: [{ $ref: '#/components/parameters/PathId' }]
       requestBody:
@@ -369,11 +369,11 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '404': { $ref: '#/components/responses/NotFound' }
 
-  # ============================ ADMIN: INVOICE ============================
+  # ============================ ADMIN: INVOICES ============================
   /admin/invoices:
     get:
       tags: [Admin]
-      summary: Daftar invoice (filter status/tahun/bulan)
+      summary: List invoices (filter by status/year/month)
       security: [{ adminAuth: [] }]
       parameters:
         - { $ref: '#/components/parameters/WorkspaceOverride' }
@@ -387,7 +387,7 @@ paths:
   /admin/invoices/generate:
     post:
       tags: [Admin]
-      summary: Generate invoice (idempotent) untuk semua langganan aktif
+      summary: Generate invoices (idempotent) for all active subscriptions
       security: [{ adminAuth: [] }]
       requestBody:
         required: false
@@ -396,11 +396,11 @@ paths:
             schema:
               type: object
               properties:
-                year: { type: integer, description: Default tahun berjalan }
-                month: { type: integer, minimum: 1, maximum: 12, description: Default bulan berjalan }
+                year: { type: integer, description: Defaults to current year }
+                month: { type: integer, minimum: 1, maximum: 12, description: Defaults to current month }
       responses:
         '200':
-          description: Ringkasan generate
+          description: Generation summary
           content:
             application/json:
               schema:
@@ -423,7 +423,7 @@ paths:
   /admin/settings:
     get:
       tags: [Admin]
-      summary: Ambil pengaturan billing (kunci gateway di-mask)
+      summary: Get billing settings (gateway keys are masked)
       security: [{ adminAuth: [] }]
       parameters: [{ $ref: '#/components/parameters/WorkspaceOverride' }]
       responses:
@@ -431,7 +431,7 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
     put:
       tags: [Admin]
-      summary: Simpan pengaturan billing (upsert)
+      summary: Save billing settings (upsert)
       security: [{ adminAuth: [] }]
       requestBody:
         required: true
@@ -446,19 +446,20 @@ paths:
   /webhook/tripay:
     post:
       tags: [Webhook]
-      summary: Callback pembayaran Tripay
+      summary: Tripay payment callback
       description: |
-        Dipanggil oleh Tripay saat status transaksi berubah. Body MENTAH
-        diverifikasi dengan HMAC-SHA256 menggunakan `tripay_private_key`
-        (header `X-Callback-Signature`). Jika `status: PAID`, invoice ditandai
-        lunas dan pelanggan otomatis di-unisolir (jika punya secret PPPoE).
+        Called by Tripay when a transaction status changes. The RAW body is
+        verified with HMAC-SHA256 using `tripay_private_key` (the
+        `X-Callback-Signature` header). When `status: PAID`, the invoice is
+        marked paid and the customer is automatically un-isolated (if they have
+        a PPPoE secret).
       security: []
       parameters:
         - name: X-Callback-Signature
           in: header
           required: true
           schema: { type: string }
-          description: HMAC-SHA256(rawBody, tripay_private_key) dalam hex
+          description: HMAC-SHA256(rawBody, tripay_private_key) in hex
       requestBody:
         required: true
         content:
@@ -470,10 +471,10 @@ paths:
                 reference: { type: string, example: "T123456789" }
                 status: { type: string, enum: [PAID, EXPIRED, FAILED, REFUND], example: PAID }
       responses:
-        '200': { description: Diterima, content: { application/json: { schema: { type: object, properties: { success: { type: boolean } } } } } }
-        '400': { description: Body/merchant_ref tidak valid }
-        '403': { description: Signature tidak valid }
-        '404': { description: Transaksi tidak ditemukan }
+        '200': { description: Acknowledged, content: { application/json: { schema: { type: object, properties: { success: { type: boolean } } } } } }
+        '400': { description: Invalid body / missing merchant_ref }
+        '403': { description: Invalid signature }
+        '404': { description: Transaction not found }
 
 components:
   securitySchemes:
@@ -481,12 +482,12 @@ components:
       type: http
       scheme: bearer
       bearerFormat: JWT
-      description: JWT pelanggan (aud=billing-customer) dari verify-otp
+      description: Customer JWT (aud=billing-customer) from verify-otp
     adminAuth:
       type: http
       scheme: bearer
       bearerFormat: JWT
-      description: JWT admin JNET Monitoring (role admin/owner/super_admin)
+      description: JNET Monitoring admin JWT (role admin/owner/super_admin)
 
   parameters:
     PathId:
@@ -499,14 +500,14 @@ components:
       in: query
       required: false
       schema: { type: integer }
-      description: Override workspace (hanya admin/noc/superadmin)
+      description: Override workspace (admin/noc/superadmin only)
 
   responses:
     OkMessage:
-      description: Berhasil
+      description: Success
       content: { application/json: { schema: { $ref: '#/components/schemas/Message' } } }
     Created:
-      description: Dibuat
+      description: Created
       content:
         application/json:
           schema:
@@ -515,13 +516,13 @@ components:
               message: { type: string }
               id: { type: integer }
     BadRequest:
-      description: Input tidak valid
+      description: Invalid input
       content: { application/json: { schema: { $ref: '#/components/schemas/Message' } } }
     Unauthorized:
-      description: Tidak terotorisasi / token tidak valid
+      description: Unauthorized / invalid token
       content: { application/json: { schema: { $ref: '#/components/schemas/Message' } } }
     NotFound:
-      description: Tidak ditemukan
+      description: Not found
       content: { application/json: { schema: { $ref: '#/components/schemas/Message' } } }
 
   schemas:
@@ -546,7 +547,7 @@ components:
       type: object
       required: [whatsapp_number]
       properties:
-        client_id: { type: integer, nullable: true, description: Tautkan ke clients.id }
+        client_id: { type: integer, nullable: true, description: Link to clients.id }
         device_id: { type: integer, nullable: true }
         pppoe_secret_name: { type: string, nullable: true }
         name: { type: string }
@@ -574,7 +575,7 @@ components:
         description: { type: string }
         price: { type: number, format: float, minimum: 0 }
         speed_mbps: { type: integer }
-        pppoe_profile: { type: string, description: Profil PPPoE yg dipulihkan saat lunas }
+        pppoe_profile: { type: string, description: PPPoE profile restored when paid }
         is_active: { type: boolean }
     Subscription:
       type: object
@@ -639,8 +640,8 @@ components:
       properties:
         workspace_id: { type: integer }
         tripay_merchant_code: { type: string, nullable: true }
-        tripay_api_key: { type: string, nullable: true, description: Di-mask saat GET }
-        tripay_private_key: { type: string, nullable: true, description: Di-mask saat GET }
+        tripay_api_key: { type: string, nullable: true, description: Masked on GET }
+        tripay_private_key: { type: string, nullable: true, description: Masked on GET }
         tripay_mode: { type: string, enum: [sandbox, production] }
         invoice_gen_day: { type: integer }
         reminder_days_before: { type: integer }
