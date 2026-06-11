@@ -6,6 +6,7 @@
  */
 const pool = require('../../config/database');
 const { generateInvoicesForWorkspace } = require('../services/billingService');
+const { normalizeWa } = require('../utils/phone');
 
 /** Tentukan workspace target (dukung override admin/noc/superadmin via query/body). */
 function resolveWorkspaceId(req) {
@@ -146,7 +147,7 @@ exports.createCustomer = async (req, res) => {
                 (workspace_id, client_id, device_id, pppoe_secret_name, name, whatsapp_number, email, address)
              VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
             [ws, client_id || null, device_id || null, pppoe_secret_name || null,
-             name || null, String(whatsapp_number).trim(), email || null, address || null]
+             name || null, normalizeWa(whatsapp_number), email || null, address || null]
         );
         return res.status(201).json({ message: 'Pelanggan dibuat.', id: result.insertId });
     } catch (e) {
@@ -173,7 +174,7 @@ exports.updateCustomer = async (req, res) => {
                 device_id = COALESCE(?, device_id),
                 client_id = COALESCE(?, client_id)
              WHERE id = ? AND workspace_id = ?`,
-            [name ?? null, whatsapp_number ?? null, email ?? null, address ?? null, status ?? null,
+            [name ?? null, whatsapp_number ? normalizeWa(whatsapp_number) : null, email ?? null, address ?? null, status ?? null,
              pppoe_secret_name ?? null, device_id ?? null, client_id ?? null, req.params.id, ws]
         );
         if (result.affectedRows === 0) return res.status(404).json({ message: 'Pelanggan tidak ditemukan.' });

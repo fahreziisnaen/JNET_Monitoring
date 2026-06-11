@@ -10,16 +10,9 @@ const crypto = require('crypto');
 const pool = require('../../config/database');
 const { signCustomerToken } = require('../middleware/customerAuthMiddleware');
 const { sendWhatsAppMessage, isWhatsAppConnected } = require('../../services/whatsappService');
+const { normalizeWa } = require('../utils/phone');
 
 const OTP_TTL_MINUTES = 10;
-
-/** Normalisasi nomor: buang spasi/strip, ubah 0 awalan jadi 62. */
-function normalizeWa(number) {
-    if (!number) return '';
-    let n = String(number).replace(/[^0-9]/g, '');
-    if (n.startsWith('0')) n = '62' + n.slice(1);
-    return n;
-}
 
 function genOtp() {
     return String(crypto.randomInt(0, 1000000)).padStart(6, '0');
