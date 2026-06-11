@@ -54,8 +54,8 @@ Paket `GET/POST/PUT/DELETE /packages[/:id]` · Pelanggan `GET/POST/PUT /customer
 ### Webhook — `/api/billing/webhook/tripay`
 Raw body + verifikasi HMAC-SHA256 (`X-Callback-Signature`). Saat `PAID`: invoice→lunas, lalu **buka isolir** pelanggan otomatis.
 
-### Dokumentasi API — `/api/billing/docs` (Scalar)
-Kontrak lengkap ada di **`openapi.yaml`** (ditulis tangan = sumber kebenaran). Scalar hanya merender spec itu (embed CDN, tanpa dependency npm). Spec mentah: `/api/billing/docs/openapi.yaml` (bisa di-import ke Postman/Insomnia). Aktif default; set `BILLING_DOCS_ENABLED=false` di produksi. **Hanya billing yang dipublish** — API monitoring tidak.
+### Dokumentasi API — `/api/docs` (Scalar)
+Kontrak lengkap ada di **`openapi.yaml`** (ditulis tangan = sumber kebenaran). Scalar hanya merender spec itu (embed CDN, tanpa dependency npm). Spec mentah: `/api/docs/openapi.yaml` (bisa di-import ke Postman/Insomnia). Aktif default; set `BILLING_DOCS_ENABLED=false` di produksi. **Hanya billing yang dipublish** — API monitoring tidak.
 
 ## Model data (8 tabel `billing_*`)
 `billing_settings` (gateway+kebijakan per-ws) · `billing_packages` (plan→profil PPPoE) · `billing_customers` (identitas login, link ke `clients`+secret) · `billing_customer_sessions` · `billing_customer_otps` · `billing_subscriptions` · `billing_invoices` · `billing_payments`.

@@ -47,7 +47,7 @@ router.get('/', (req, res) => {
   <body>
     <script
       id="api-reference"
-      data-url="/api/billing/docs/openapi.yaml"
+      data-url="${req.baseUrl}/openapi.yaml"
       data-configuration='{"theme":"purple"}'></script>
     <script src="${SCALAR_CDN}"></script>
   </body>

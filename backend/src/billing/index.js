@@ -24,8 +24,8 @@ function register(app) {
     // Dokumentasi API (Scalar) — hanya billing. Default AKTIF; set
     // BILLING_DOCS_ENABLED=false di produksi agar tidak mengekspos surface API.
     if (process.env.BILLING_DOCS_ENABLED !== 'false') {
-        app.use('/api/billing/docs', require('./routes/docsRoutes'));
-        console.log('[Billing] Docs (Scalar) di /api/billing/docs');
+        app.use('/api/docs', require('./routes/docsRoutes'));
+        console.log('[Billing] Docs (Scalar) di /api/docs');
     }
 
     startBillingScheduler();
