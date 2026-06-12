@@ -5,10 +5,11 @@
 const express = require('express');
 const router = express.Router();
 const admin = require('../controllers/billingAdminController');
-const { protect, authorizeAdmin } = require('../../middleware/authMiddleware');
+const { protect, authorizeNoc } = require('../../middleware/authMiddleware');
 
 router.use(protect);
-router.use(authorizeAdmin);
+// authorizeNoc = noc + admin + owner + super_admin (sesuai kebijakan akses billing)
+router.use(authorizeNoc);
 
 // Paket
 router.get('/packages', admin.listPackages);
