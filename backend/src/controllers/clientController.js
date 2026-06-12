@@ -333,6 +333,21 @@ exports.createClient = async (req, res) => {
             }
         }
 
+        // Auto-sync ke billing (best-effort; jangan ganggu pembuatan client jika billing gagal/absen).
+        try {
+            const { upsertFromClient } = require('../billing/services/customerSyncService');
+            await upsertFromClient({
+                workspaceId: workspace_id,
+                clientId: result.insertId,
+                name: client_name,
+                whatsapp: whatsapp_number,
+                secret: pppoe_secret_name,
+                deviceId,
+            });
+        } catch (syncErr) {
+            console.warn('[CREATE CLIENT] auto-sync billing dilewati:', syncErr.message);
+        }
+
         res.status(201).json({ message: 'Client berhasil dibuat', clientId: result.insertId });
     } catch (error) {
         console.error("[CREATE CLIENT ERROR]:", error);

@@ -7,6 +7,7 @@
 const pool = require('../../config/database');
 const { generateInvoicesForWorkspace } = require('../services/billingService');
 const { normalizeWa } = require('../utils/phone');
+const { upsertFromClient } = require('../services/customerSyncService');
 
 /** Tentukan workspace target (dukung override admin/noc/superadmin via query/body). */
 function resolveWorkspaceId(req) {
@@ -120,6 +121,81 @@ exports.listCustomers = async (req, res) => {
     } catch (e) {
         console.error('[Billing][Admin] listCustomers:', e.message);
         return res.status(500).json({ message: 'Gagal mengambil pelanggan.' });
+    }
+};
+
+// GET /api/billing/admin/importable-clients
+// Client monitoring yang punya nomor WA & belum jadi billing_customer.
+exports.listImportableClients = async (req, res) => {
+    try {
+        const ws = resolveWorkspaceId(req);
+        const [rows] = await pool.query(
+            `SELECT c.id, c.client_name, c.whatsapp_number, c.pppoe_secret_name, c.device_id
+             FROM clients c
+             WHERE c.workspace_id = ?
+               AND c.whatsapp_number IS NOT NULL AND c.whatsapp_number <> ''
+               AND NOT EXISTS (
+                   SELECT 1 FROM billing_customers b
+                   WHERE b.workspace_id = c.workspace_id AND b.client_id = c.id
+               )
+             ORDER BY c.client_name ASC`,
+            [ws]
+        );
+        return res.status(200).json({ clients: rows });
+    } catch (e) {
+        console.error('[Billing][Admin] listImportableClients:', e.message);
+        return res.status(500).json({ message: 'Gagal mengambil client yang bisa diimpor.' });
+    }
+};
+
+// POST /api/billing/admin/import-clients
+// Body: { client_ids?: number[], all?: boolean }
+exports.importClients = async (req, res) => {
+    try {
+        const ws = resolveWorkspaceId(req);
+        const { client_ids, all } = req.body;
+
+        // Ambil kandidat (sama filter dgn importable), dibatasi ke client_ids bila ada.
+        let sql = `SELECT c.id, c.client_name, c.whatsapp_number, c.pppoe_secret_name, c.device_id
+                   FROM clients c
+                   WHERE c.workspace_id = ?
+                     AND c.whatsapp_number IS NOT NULL AND c.whatsapp_number <> ''
+                     AND NOT EXISTS (
+                         SELECT 1 FROM billing_customers b
+                         WHERE b.workspace_id = c.workspace_id AND b.client_id = c.id
+                     )`;
+        const params = [ws];
+        if (!all) {
+            const ids = Array.isArray(client_ids) ? client_ids.map(Number).filter(Boolean) : [];
+            if (ids.length === 0) return res.status(400).json({ message: 'Pilih minimal satu client, atau kirim all=true.' });
+            sql += ` AND c.id IN (${ids.map(() => '?').join(',')})`;
+            params.push(...ids);
+        }
+        const [clients] = await pool.query(sql, params);
+
+        const summary = { total: clients.length, created: 0, relinked: 0, skipped: 0 };
+        for (const c of clients) {
+            try {
+                const r = await upsertFromClient({
+                    workspaceId: ws,
+                    clientId: c.id,
+                    name: c.client_name,
+                    whatsapp: c.whatsapp_number,
+                    secret: c.pppoe_secret_name,
+                    deviceId: c.device_id,
+                });
+                if (r === 'created') summary.created++;
+                else if (r === 'relinked') summary.relinked++;
+                else summary.skipped++;
+            } catch (rowErr) {
+                console.error('[Billing][Admin] importClients row:', rowErr.message);
+                summary.skipped++;
+            }
+        }
+        return res.status(200).json({ message: 'Import selesai.', summary });
+    } catch (e) {
+        console.error('[Billing][Admin] importClients:', e.message);
+        return res.status(500).json({ message: 'Gagal mengimpor client.' });
     }
 };
 

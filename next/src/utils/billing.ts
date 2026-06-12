@@ -86,6 +86,22 @@ export interface BillingSettings {
 // Input paket: is_active boleh boolean (backend menanganinya).
 export type PackageInput = Partial<Omit<BillingPackage, 'is_active'>> & { is_active?: boolean };
 
+// Client monitoring yang bisa diimpor jadi billing_customer.
+export interface ImportableClient {
+  id: number;
+  client_name: string | null;
+  whatsapp_number: string | null;
+  pppoe_secret_name: string | null;
+  device_id: number | null;
+}
+
+export interface ImportSummary {
+  total: number;
+  created: number;
+  relinked: number;
+  skipped: number;
+}
+
 /**
  * Klien billing yang TER-SCOPE ke satu workspace.
  * `workspaceId` di-append sebagai query (?workspaceId=) ke SEMUA request —
@@ -115,6 +131,8 @@ export function billingClient(workspaceId?: number | null) {
     listCustomers: () => req<{ customers: BillingCustomer[] }>('/customers'),
     createCustomer: (b: Partial<BillingCustomer>) => req('/customers', { method: 'POST', ...json(b) }),
     updateCustomer: (id: number, b: Partial<BillingCustomer>) => req(`/customers/${id}`, { method: 'PUT', ...json(b) }),
+    listImportableClients: () => req<{ clients: ImportableClient[] }>('/importable-clients'),
+    importClients: (b: { client_ids?: number[]; all?: boolean }) => req<{ summary: ImportSummary }>('/import-clients', { method: 'POST', ...json(b) }),
 
     // Langganan
     listSubscriptions: () => req<{ subscriptions: BillingSubscription[] }>('/subscriptions'),

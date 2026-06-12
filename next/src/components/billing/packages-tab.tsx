@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useState, useCallback, useMemo } from 'react';
-import { Plus, Pencil, Trash2, Loader2, X } from 'lucide-react';
+import { Plus, Pencil, Trash2, Loader2, X, Wand2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -10,6 +10,16 @@ import { apiFetch } from '@/utils/api';
 import { billingClient, formatRupiah, BillingPackage } from '@/utils/billing';
 
 const selectCls = 'flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm';
+
+// Nama profil MikroTik kerap memuat info, mis. "50M (210rb)" → 50 Mbps, Rp210.000.
+function parseProfileMeta(profileName: string): { speed: number | null; price: number | null } {
+  const sp = profileName.match(/(\d+)\s*M\b/i);
+  const pr = profileName.match(/(\d+)\s*rb/i);
+  return {
+    speed: sp ? Number(sp[1]) : null,
+    price: pr ? Number(pr[1]) * 1000 : null,
+  };
+}
 
 type FormState = {
   id?: number;
@@ -31,6 +41,7 @@ export default function PackagesTab({ workspaceId }: { workspaceId?: number | nu
   const [loading, setLoading] = useState(true);
   const [form, setForm] = useState<FormState | null>(null);
   const [saving, setSaving] = useState(false);
+  const [generating, setGenerating] = useState(false);
   const [profiles, setProfiles] = useState<string[]>([]);
 
   const load = useCallback(async () => {
@@ -109,11 +120,57 @@ export default function PackagesTab({ workspaceId }: { workspaceId?: number | nu
     }
   };
 
+  // Buat paket otomatis dari profil PPPoE yang namanya memuat harga (mis. "50M (210rb)").
+  const generateFromProfiles = async () => {
+    const existing = new Set(items.map((p) => (p.pppoe_profile || '').toLowerCase()));
+    const candidates = profiles
+      .map((name) => ({ name, ...parseProfileMeta(name) }))
+      .filter((c) => c.price != null && !existing.has(c.name.toLowerCase()));
+
+    if (candidates.length === 0) {
+      toast.info('Tidak ada profil baru berharga untuk dibuat', {
+        description: 'Semua profil berharga sudah jadi paket, atau profil tak memuat harga.',
+      });
+      return;
+    }
+    if (!confirm(`Buat ${candidates.length} paket dari profil PPPoE?\n\n${candidates.map((c) => `• ${c.name} → ${formatRupiah(c.price!)}`).join('\n')}`)) return;
+
+    setGenerating(true);
+    let created = 0;
+    try {
+      for (const c of candidates) {
+        await billingApi.createPackage({
+          name: c.name,
+          price: c.price!,
+          speed_mbps: c.speed,
+          pppoe_profile: c.name,
+          description: null,
+          is_active: true,
+        });
+        created++;
+      }
+      toast.success(`Berhasil membuat ${created} paket`);
+      load();
+    } catch (e: any) {
+      toast.error(`Gagal di paket ke-${created + 1}`, { description: e.message });
+      if (created > 0) load();
+    } finally {
+      setGenerating(false);
+    }
+  };
+
   return (
     <div>
-      <div className="flex justify-between items-center mb-4">
+      <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-3 mb-4">
         <p className="text-sm text-muted-foreground">Daftar paket layanan (dipetakan ke profil PPPoE).</p>
-        <Button onClick={openCreate}><Plus size={18} /> Tambah Paket</Button>
+        <div className="flex gap-2">
+          {profiles.some((p) => parseProfileMeta(p).price != null) && (
+            <Button variant="outline" onClick={generateFromProfiles} disabled={generating}>
+              {generating ? <Loader2 className="animate-spin" size={18} /> : <Wand2 size={18} />} Generate dari Profil
+            </Button>
+          )}
+          <Button onClick={openCreate}><Plus size={18} /> Tambah Paket</Button>
+        </div>
       </div>
 
       {form && (
@@ -141,7 +198,18 @@ export default function PackagesTab({ workspaceId }: { workspaceId?: number | nu
                 <select
                   className={selectCls}
                   value={form.pppoe_profile}
-                  onChange={(e) => setForm({ ...form, pppoe_profile: e.target.value })}
+                  onChange={(e) => {
+                    const profile = e.target.value;
+                    // Auto-isi harga/speed/nama dari nama profil bila field masih kosong.
+                    const { speed, price } = parseProfileMeta(profile);
+                    setForm((f) => f && ({
+                      ...f,
+                      pppoe_profile: profile,
+                      price: f.price === '' && price != null ? String(price) : f.price,
+                      speed_mbps: f.speed_mbps === '' && speed != null ? String(speed) : f.speed_mbps,
+                      name: f.name.trim() === '' ? profile : f.name,
+                    }));
+                  }}
                 >
                   <option value="">— pilih profil —</option>
                   {/* Tetap tampilkan nilai tersimpan walau tak ada di daftar router */}
