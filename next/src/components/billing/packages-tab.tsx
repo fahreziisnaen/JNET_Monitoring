@@ -6,7 +6,10 @@ import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card } from '@/components/ui/card';
+import { apiFetch } from '@/utils/api';
 import { billingClient, formatRupiah, BillingPackage } from '@/utils/billing';
+
+const selectCls = 'flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm';
 
 type FormState = {
   id?: number;
@@ -28,6 +31,7 @@ export default function PackagesTab({ workspaceId }: { workspaceId?: number | nu
   const [loading, setLoading] = useState(true);
   const [form, setForm] = useState<FormState | null>(null);
   const [saving, setSaving] = useState(false);
+  const [profiles, setProfiles] = useState<string[]>([]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -42,6 +46,16 @@ export default function PackagesTab({ workspaceId }: { workspaceId?: number | nu
   }, [billingApi]);
 
   useEffect(() => { load(); }, [load]);
+
+  // Tarik daftar profil PPPoE (live dari router, fallback DB) untuk dropdown form.
+  useEffect(() => {
+    if (workspaceId == null) { setProfiles([]); return; }
+    const apiUrl = process.env.NEXT_PUBLIC_API_BASE_URL;
+    apiFetch(`${apiUrl}/api/pppoe/profiles?workspaceId=${workspaceId}`)
+      .then((r) => (r.ok ? r.json() : []))
+      .then((data: string[]) => setProfiles(Array.isArray(data) ? data : []))
+      .catch(() => setProfiles([]));
+  }, [workspaceId]);
 
   const openCreate = () => setForm({ ...emptyForm });
   const openEdit = (p: BillingPackage) => setForm({
@@ -123,7 +137,22 @@ export default function PackagesTab({ workspaceId }: { workspaceId?: number | nu
             </div>
             <div>
               <label className="text-xs text-muted-foreground">Profil PPPoE</label>
-              <Input value={form.pppoe_profile} onChange={(e) => setForm({ ...form, pppoe_profile: e.target.value })} placeholder="mis. 20Mbps" />
+              {profiles.length > 0 ? (
+                <select
+                  className={selectCls}
+                  value={form.pppoe_profile}
+                  onChange={(e) => setForm({ ...form, pppoe_profile: e.target.value })}
+                >
+                  <option value="">— pilih profil —</option>
+                  {/* Tetap tampilkan nilai tersimpan walau tak ada di daftar router */}
+                  {form.pppoe_profile && !profiles.includes(form.pppoe_profile) && (
+                    <option value={form.pppoe_profile}>{form.pppoe_profile} (tersimpan)</option>
+                  )}
+                  {profiles.map((p) => <option key={p} value={p}>{p}</option>)}
+                </select>
+              ) : (
+                <Input value={form.pppoe_profile} onChange={(e) => setForm({ ...form, pppoe_profile: e.target.value })} placeholder="mis. 20Mbps (router tak terjangkau, ketik manual)" />
+              )}
             </div>
             <div className="sm:col-span-2">
               <label className="text-xs text-muted-foreground">Deskripsi</label>
