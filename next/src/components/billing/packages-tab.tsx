@@ -11,9 +11,10 @@ import { billingClient, formatRupiah, BillingPackage } from '@/utils/billing';
 
 const selectCls = 'flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm';
 
-// Nama profil MikroTik kerap memuat info, mis. "50M (210rb)" → 50 Mbps, Rp210.000.
+// Nama profil MikroTik kerap memuat info, mis. "50M (210rb)" atau "Mayangan-15MB".
+// Tangkap kecepatan dari "...15M", "15MB", "15Mbps"; harga dari "...210rb".
 function parseProfileMeta(profileName: string): { speed: number | null; price: number | null } {
-  const sp = profileName.match(/(\d+)\s*M\b/i);
+  const sp = profileName.match(/(\d+)\s*M(?:B|bps|bit)?\b/i);
   const pr = profileName.match(/(\d+)\s*rb/i);
   return {
     speed: sp ? Number(sp[1]) : null,
@@ -180,20 +181,8 @@ export default function PackagesTab({ workspaceId }: { workspaceId?: number | nu
             <button onClick={() => setForm(null)} className="text-muted-foreground hover:text-foreground"><X size={18} /></button>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div>
-              <label className="text-xs text-muted-foreground">Nama Paket *</label>
-              <Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="mis. Home 20 Mbps" />
-            </div>
-            <div>
-              <label className="text-xs text-muted-foreground">Harga (Rp) *</label>
-              <Input type="number" value={form.price} onChange={(e) => setForm({ ...form, price: e.target.value })} placeholder="150000" />
-            </div>
-            <div>
-              <label className="text-xs text-muted-foreground">Kecepatan (Mbps)</label>
-              <Input type="number" value={form.speed_mbps} onChange={(e) => setForm({ ...form, speed_mbps: e.target.value })} placeholder="20" />
-            </div>
-            <div>
-              <label className="text-xs text-muted-foreground">Profil PPPoE</label>
+            <div className="sm:col-span-2">
+              <label className="text-xs text-muted-foreground">1. Profil PPPoE — pilih dulu, sisanya terisi otomatis</label>
               {profiles.length > 0 ? (
                 <select
                   className={selectCls}
@@ -222,11 +211,23 @@ export default function PackagesTab({ workspaceId }: { workspaceId?: number | nu
                 <Input value={form.pppoe_profile} onChange={(e) => setForm({ ...form, pppoe_profile: e.target.value })} placeholder="mis. 20Mbps (router tak terjangkau, ketik manual)" />
               )}
             </div>
-            <div className="sm:col-span-2">
+            <div>
+              <label className="text-xs text-muted-foreground">Nama Paket *</label>
+              <Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="mis. Home 20 Mbps" />
+            </div>
+            <div>
+              <label className="text-xs text-muted-foreground">Harga (Rp) *</label>
+              <Input type="number" value={form.price} onChange={(e) => setForm({ ...form, price: e.target.value })} placeholder="150000" />
+            </div>
+            <div>
+              <label className="text-xs text-muted-foreground">Kecepatan (Mbps)</label>
+              <Input type="number" value={form.speed_mbps} onChange={(e) => setForm({ ...form, speed_mbps: e.target.value })} placeholder="20" />
+            </div>
+            <div>
               <label className="text-xs text-muted-foreground">Deskripsi</label>
               <Input value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} />
             </div>
-            <label className="flex items-center gap-2 text-sm">
+            <label className="flex items-center gap-2 text-sm sm:col-span-2">
               <input type="checkbox" checked={form.is_active} onChange={(e) => setForm({ ...form, is_active: e.target.checked })} />
               Aktif
             </label>

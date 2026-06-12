@@ -530,6 +530,27 @@ exports.updateClient = async (req, res) => {
             values
         );
 
+        // Auto-sync ke billing (best-effort): begitu WA diisi/diubah, pelanggan billing dibuat.
+        try {
+            const [[fresh]] = await pool.query(
+                'SELECT client_name, whatsapp_number, pppoe_secret_name, device_id FROM clients WHERE id = ? AND workspace_id = ?',
+                [id, workspace_id]
+            );
+            if (fresh) {
+                const { upsertFromClient } = require('../billing/services/customerSyncService');
+                await upsertFromClient({
+                    workspaceId: workspace_id,
+                    clientId: parseInt(id),
+                    name: fresh.client_name,
+                    whatsapp: fresh.whatsapp_number,
+                    secret: fresh.pppoe_secret_name,
+                    deviceId: fresh.device_id,
+                });
+            }
+        } catch (syncErr) {
+            console.warn('[UPDATE CLIENT] auto-sync billing dilewati:', syncErr.message);
+        }
+
         res.status(200).json({ message: 'Client berhasil diupdate' });
     } catch (error) {
         console.error("[UPDATE CLIENT ERROR]:", error);
