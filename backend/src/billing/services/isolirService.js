@@ -1,15 +1,3 @@
-/**
- * isolirService.js
- * Jembatan billing -> aksi isolir/unisolir PPPoE di monitoring.
- *
- * PRINSIP (lihat memori billing-app-plan): monitoring tetap satu-satunya
- * pemilik interaksi MikroTik. Service ini REUSE helper `runCommandForWorkspace`
- * yang sama dengan pppoeController, jadi logikanya identik — bukan duplikasi
- * koneksi. Dipanggil oleh engine billing (scheduler) & webhook pembayaran.
- *
- * Catatan: ini sengaja TIDAK meng-import pppoeController (yang berbasis req/res).
- * Logika inti isolir cukup sederhana untuk direplikasi di sini secara aman.
- */
 const pool = require('../../config/database');
 const { runCommandForWorkspace } = require('../../utils/apiConnection');
 
@@ -18,23 +6,15 @@ let mikrotikStore = null;
 try {
     broadcast = require('../../utils/broadcast');
     mikrotikStore = require('../../utils/mikrotikStore');
-} catch {
-    /* opsional — tetap jalan walau modul realtime tak tersedia */
-}
+} catch {}
 
 function notifyStore(workspaceId, deviceId, name, profile) {
     try {
         mikrotikStore?.updateSecret(workspaceId, deviceId, 'change', { name, profile, isActive: false });
         broadcast?.broadcastSinglePppoeUpdate(workspaceId, deviceId, name);
-    } catch {
-        /* non-fatal */
-    }
+    } catch {}
 }
 
-/**
- * Isolir pelanggan: ubah profil PPPoE ke `isolirProfile` lalu kick.
- * @returns {Promise<{ok:boolean, message:string}>}
- */
 async function isolateCustomer({ workspaceId, deviceId, secretName, isolirProfile = 'Isolir' }) {
     if (!secretName) return { ok: false, message: 'pppoe_secret_name kosong' };
 
@@ -49,13 +29,11 @@ async function isolateCustomer({ workspaceId, deviceId, secretName, isolirProfil
 
     await runCommandForWorkspace(workspaceId, '/ppp/secret/set', [`=.id=${current['.id']}`, `=profile=${isolirProfile}`], deviceId);
 
-    // Simpan profil sebelumnya ke cache pppoe_secrets (dipakai unisolir)
     await pool.query(
         'UPDATE pppoe_secrets SET profile = ?, previous_profile = ? WHERE workspace_id = ? AND name = ?',
         [isolirProfile, current.profile, workspaceId, secretName]
     ).catch(() => {});
 
-    // Kick agar profil baru langsung berlaku
     const active = await runCommandForWorkspace(workspaceId, '/ppp/active/print', [`?name=${secretName}`], deviceId);
     for (const a of active || []) {
         await runCommandForWorkspace(workspaceId, '/ppp/active/remove', [`=.id=${a['.id']}`], deviceId).catch(() => {});
@@ -65,10 +43,6 @@ async function isolateCustomer({ workspaceId, deviceId, secretName, isolirProfil
     return { ok: true, message: `Pelanggan ${secretName} di-isolir` };
 }
 
-/**
- * Buka isolir: kembalikan profil ke `targetProfile` (atau previous_profile dari cache).
- * @returns {Promise<{ok:boolean, message:string, profile:string}>}
- */
 async function restoreCustomer({ workspaceId, deviceId, secretName, targetProfile = null }) {
     if (!secretName) return { ok: false, message: 'pppoe_secret_name kosong' };
 

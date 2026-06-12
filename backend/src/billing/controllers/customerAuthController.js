@@ -1,11 +1,3 @@
-/**
- * customerAuthController.js
- * Login pelanggan billing via OTP WhatsApp.
- *
- * Berbeda dengan auth admin: TIDAK ada bypass saat WhatsApp mati (menghindari
- * celah 2FA-bypass yg ada di authController admin). Jika gateway WA mati, OTP
- * tidak bisa dikirim -> login ditolak (503).
- */
 const crypto = require('crypto');
 const pool = require('../../config/database');
 const { signCustomerToken } = require('../middleware/customerAuthMiddleware');
@@ -18,7 +10,6 @@ function genOtp() {
     return String(crypto.randomInt(0, 1000000)).padStart(6, '0');
 }
 
-// POST /api/billing/customer/auth/request-otp  { whatsapp_number }
 exports.requestOtp = async (req, res) => {
     try {
         const wa = normalizeWa(req.body.whatsapp_number);
@@ -26,13 +17,11 @@ exports.requestOtp = async (req, res) => {
             return res.status(400).json({ message: 'Nomor WhatsApp tidak valid.' });
         }
 
-        // Pelanggan harus sudah terdaftar (didaftarkan admin) — cari by nomor WA.
         const [customers] = await pool.query(
             'SELECT id, status FROM billing_customers WHERE whatsapp_number = ? LIMIT 1',
             [wa]
         );
         if (customers.length === 0) {
-            // Jawaban generik agar tidak membocorkan nomor mana yg terdaftar.
             return res.status(200).json({ message: 'Jika nomor terdaftar, OTP telah dikirim via WhatsApp.' });
         }
         if (customers[0].status !== 'active') {
@@ -46,7 +35,6 @@ exports.requestOtp = async (req, res) => {
         const otp = genOtp();
         const expiresAt = new Date(Date.now() + OTP_TTL_MINUTES * 60 * 1000);
 
-        // Buang OTP lama untuk nomor ini lalu simpan yg baru.
         await pool.query('DELETE FROM billing_customer_otps WHERE whatsapp_number = ?', [wa]);
         await pool.query(
             "INSERT INTO billing_customer_otps (whatsapp_number, otp_code, purpose, expires_at) VALUES (?, ?, 'login', ?)",
@@ -68,7 +56,6 @@ exports.requestOtp = async (req, res) => {
     }
 };
 
-// POST /api/billing/customer/auth/verify-otp  { whatsapp_number, otp }
 exports.verifyOtp = async (req, res) => {
     try {
         const wa = normalizeWa(req.body.whatsapp_number);
@@ -97,10 +84,8 @@ exports.verifyOtp = async (req, res) => {
         }
         const customer = customers[0];
 
-        // OTP sekali pakai
         await pool.query('DELETE FROM billing_customer_otps WHERE whatsapp_number = ?', [wa]);
 
-        // Buat sesi + token
         const tokenId = crypto.randomUUID();
         const userAgent = (req.headers['user-agent'] || '').substring(0, 255);
         const ip = (req.headers['x-forwarded-for'] || req.socket?.remoteAddress || '').toString().substring(0, 64);
@@ -129,7 +114,6 @@ exports.verifyOtp = async (req, res) => {
     }
 };
 
-// POST /api/billing/customer/auth/logout
 exports.logout = async (req, res) => {
     try {
         if (req.customer?.jti) {
@@ -143,7 +127,6 @@ exports.logout = async (req, res) => {
     }
 };
 
-// GET /api/billing/customer/me
 exports.me = async (req, res) => {
     return res.status(200).json({ customer: req.customer });
 };

@@ -1,7 +1,3 @@
-/**
- * billing.ts — klien API untuk panel admin Billing.
- * Membungkus apiFetch ke /api/billing/admin/* + tipe entitas billing.
- */
 import { apiFetch } from './api';
 
 const base = () => `${process.env.NEXT_PUBLIC_API_BASE_URL}/api/billing/admin`;
@@ -10,7 +6,6 @@ const json = (body: unknown): RequestInit => ({
   body: JSON.stringify(body),
 });
 
-// ---- Tipe entitas ----
 export interface BillingPackage {
   id: number;
   workspace_id: number;
@@ -83,10 +78,21 @@ export interface BillingSettings {
   isolir_profile: string;
 }
 
-// Input paket: is_active boleh boolean (backend menanganinya).
 export type PackageInput = Partial<Omit<BillingPackage, 'is_active'>> & { is_active?: boolean };
 
-// Client monitoring yang bisa diimpor jadi billing_customer.
+export interface PageMeta { total: number; page: number; limit: number }
+export type ListParams = { page?: number; limit?: number; q?: string };
+export type InvoiceListParams = ListParams & { status?: string; year?: number; month?: number };
+
+function qs(params: Record<string, unknown>): string {
+  const sp = new URLSearchParams();
+  Object.entries(params).forEach(([k, v]) => {
+    if (v !== undefined && v !== null && v !== '') sp.append(k, String(v));
+  });
+  const s = sp.toString();
+  return s ? `?${s}` : '';
+}
+
 export interface ImportableClient {
   id: number;
   client_name: string | null;
@@ -102,12 +108,6 @@ export interface ImportSummary {
   skipped: number;
 }
 
-/**
- * Klien billing yang TER-SCOPE ke satu workspace.
- * `workspaceId` di-append sebagai query (?workspaceId=) ke SEMUA request —
- * backend resolveWorkspaceId membacanya (override untuk admin/noc/superadmin).
- * Tanpa workspaceId, backend memakai workspace milik user (req.user.workspace_id).
- */
 export function billingClient(workspaceId?: number | null) {
   async function req<T = any>(path: string, options?: RequestInit): Promise<T> {
     let p = path;
@@ -121,29 +121,24 @@ export function billingClient(workspaceId?: number | null) {
   }
 
   return {
-    // Paket
     listPackages: () => req<{ packages: BillingPackage[] }>('/packages'),
     createPackage: (b: PackageInput) => req('/packages', { method: 'POST', ...json(b) }),
     updatePackage: (id: number, b: PackageInput) => req(`/packages/${id}`, { method: 'PUT', ...json(b) }),
     deletePackage: (id: number) => req(`/packages/${id}`, { method: 'DELETE' }),
 
-    // Pelanggan
-    listCustomers: () => req<{ customers: BillingCustomer[] }>('/customers'),
+    listCustomers: (params: ListParams = {}) => req<{ customers: BillingCustomer[] } & PageMeta>(`/customers${qs(params)}`),
     createCustomer: (b: Partial<BillingCustomer>) => req('/customers', { method: 'POST', ...json(b) }),
     updateCustomer: (id: number, b: Partial<BillingCustomer>) => req(`/customers/${id}`, { method: 'PUT', ...json(b) }),
     listImportableClients: () => req<{ clients: ImportableClient[] }>('/importable-clients'),
     importClients: (b: { client_ids?: number[]; all?: boolean }) => req<{ summary: ImportSummary }>('/import-clients', { method: 'POST', ...json(b) }),
 
-    // Langganan
-    listSubscriptions: () => req<{ subscriptions: BillingSubscription[] }>('/subscriptions'),
+    listSubscriptions: (params: ListParams = {}) => req<{ subscriptions: BillingSubscription[] } & PageMeta>(`/subscriptions${qs(params)}`),
     createSubscription: (b: Partial<BillingSubscription>) => req('/subscriptions', { method: 'POST', ...json(b) }),
     updateSubscription: (id: number, b: Partial<BillingSubscription>) => req(`/subscriptions/${id}`, { method: 'PUT', ...json(b) }),
 
-    // Invoice
-    listInvoices: (query = '') => req<{ invoices: BillingInvoice[] }>(`/invoices${query}`),
+    listInvoices: (params: InvoiceListParams = {}) => req<{ invoices: BillingInvoice[] } & PageMeta>(`/invoices${qs(params)}`),
     generateInvoices: (b: { year?: number; month?: number } = {}) => req('/invoices/generate', { method: 'POST', ...json(b) }),
 
-    // Pengaturan
     getSettings: () => req<{ settings: BillingSettings | null }>('/settings'),
     updateSettings: (b: Partial<BillingSettings>) => req('/settings', { method: 'PUT', ...json(b) }),
   };
@@ -151,7 +146,6 @@ export function billingClient(workspaceId?: number | null) {
 
 export type BillingClient = ReturnType<typeof billingClient>;
 
-// ---- Util format ----
 export const formatRupiah = (n: number | string | null | undefined) => {
   const v = Number(n || 0);
   return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(v);

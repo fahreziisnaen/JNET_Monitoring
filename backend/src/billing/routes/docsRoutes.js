@@ -1,15 +1,3 @@
-/**
- * docsRoutes.js — dokumentasi API billing via Scalar.
- * Mount: /api/billing/docs   (opt-in lewat BILLING_DOCS_ENABLED di index.js)
- *
- * Sumber kebenaran = openapi.yaml (ditulis tangan). Scalar hanya MERENDER spec
- * itu — embed via CDN standalone agar tanpa dependency npm & tanpa friksi
- * ESM/CommonJS. Untuk mode offline/bundled, ganti src <script> ke berkas lokal.
- *
- * Catatan: backend memakai helmet() dgn CSP default `script-src 'self'` yang
- * memblokir CDN. Halaman ini meng-OVERRIDE CSP-nya (hanya untuk route ini)
- * agar bundle Scalar dari jsdelivr boleh dimuat.
- */
 const express = require('express');
 const path = require('path');
 const router = express.Router();
@@ -17,7 +5,6 @@ const router = express.Router();
 const SPEC_PATH = path.join(__dirname, '..', 'openapi.yaml');
 const SCALAR_CDN = 'https://cdn.jsdelivr.net/npm/@scalar/api-reference';
 
-// CSP khusus halaman docs: izinkan script/style/font Scalar dari jsdelivr.
 const DOCS_CSP = [
     "default-src 'self'",
     "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net",
@@ -28,12 +15,10 @@ const DOCS_CSP = [
     "worker-src 'self' blob:",
 ].join('; ');
 
-// Spec mentah (Scalar mengambil dari sini)
 router.get('/openapi.yaml', (req, res) => {
     res.type('text/yaml').sendFile(SPEC_PATH);
 });
 
-// Halaman dokumentasi
 router.get('/', (req, res) => {
     res.setHeader('Content-Security-Policy', DOCS_CSP);
     res.type('html').send(`<!doctype html>

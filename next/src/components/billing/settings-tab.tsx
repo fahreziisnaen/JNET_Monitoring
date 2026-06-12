@@ -15,7 +15,6 @@ export default function BillingSettingsTab({ workspaceId }: { workspaceId?: numb
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [s, setS] = useState<Partial<BillingSettings>>({});
-  // Kunci diisi hanya jika admin mengetik baru (current value di-mask oleh backend).
   const [apiKey, setApiKey] = useState('');
   const [privKey, setPrivKey] = useState('');
   const [maskedApi, setMaskedApi] = useState<string | null>(null);
@@ -53,7 +52,6 @@ export default function BillingSettingsTab({ workspaceId }: { workspaceId?: numb
         auto_isolir_enabled: s.auto_isolir_enabled ? 1 : 0,
         isolir_profile: s.isolir_profile || 'Isolir',
       };
-      // Kirim kunci hanya jika diisi baru (hindari menimpa dengan nilai mask).
       if (apiKey.trim()) body.tripay_api_key = apiKey.trim();
       if (privKey.trim()) body.tripay_private_key = privKey.trim();
 

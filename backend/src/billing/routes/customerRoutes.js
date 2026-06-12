@@ -1,22 +1,15 @@
-/**
- * Route client-facing aplikasi billing (React Native).
- * Mount: /api/billing/customer
- */
 const express = require('express');
 const router = express.Router();
 const auth = require('../controllers/customerAuthController');
 const portal = require('../controllers/customerPortalController');
 const { protectCustomer } = require('../middleware/customerAuthMiddleware');
 
-// Auth (publik)
 router.post('/auth/request-otp', auth.requestOtp);
 router.post('/auth/verify-otp', auth.verifyOtp);
 
-// Auth (butuh sesi)
 router.post('/auth/logout', protectCustomer, auth.logout);
 router.get('/me', protectCustomer, auth.me);
 
-// Portal pelanggan (semua dibatasi ke req.customer)
 router.get('/subscription', protectCustomer, portal.getMySubscription);
 router.get('/invoices', protectCustomer, portal.getMyInvoices);
 router.get('/invoices/:id', protectCustomer, portal.getMyInvoice);

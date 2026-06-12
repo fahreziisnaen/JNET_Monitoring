@@ -1,19 +1,7 @@
-/**
- * paymentController.js
- * Webhook callback dari payment gateway (Tripay). Saat pembayaran sukses:
- *   1. tandai billing_payments -> paid
- *   2. tandai billing_invoices -> paid
- *   3. (semi-otomatis) buka isolir pelanggan jika sebelumnya ter-isolir
- *
- * Endpoint ini TANPA auth pelanggan/admin — keamanannya dari verifikasi
- * signature HMAC. Body mentah diambil dari `req.rawBody` (ditangkap parser
- * JSON global di server.js) agar signature cocok byte-per-byte.
- */
 const pool = require('../../config/database');
 const tripayService = require('../services/tripayService');
 const isolirService = require('../services/isolirService');
 
-// POST /api/billing/webhook/tripay
 exports.tripayCallback = async (req, res) => {
     try {
         const rawBody = req.rawBody
@@ -21,7 +9,7 @@ exports.tripayCallback = async (req, res) => {
         let payload;
         try {
             payload = typeof req.body === 'object' && !Buffer.isBuffer(req.body) && req.rawBody
-                ? req.body              // sudah di-parse parser global; rawBody tetap utk signature
+                ? req.body
                 : JSON.parse(rawBody);
         } catch {
             return res.status(400).json({ success: false, message: 'Body tidak valid.' });
@@ -32,7 +20,6 @@ exports.tripayCallback = async (req, res) => {
             return res.status(400).json({ success: false, message: 'merchant_ref tidak ada.' });
         }
 
-        // Temukan pembayaran + workspace untuk ambil private key verifikasi signature.
         const [payments] = await pool.query(
             'SELECT * FROM billing_payments WHERE merchant_ref = ? LIMIT 1',
             [merchantRef]
@@ -46,7 +33,6 @@ exports.tripayCallback = async (req, res) => {
         const settings = settingsRows[0];
         const signatureHeader = req.headers['x-callback-signature'];
 
-        // Verifikasi signature (lewati hanya untuk pembayaran simulasi tanpa kredensial).
         const isSimulated = !settings || !settings.tripay_private_key;
         if (!isSimulated) {
             const valid = tripayService.verifyCallbackSignature(settings.tripay_private_key, rawBody, signatureHeader);
@@ -76,7 +62,6 @@ exports.tripayCallback = async (req, res) => {
     }
 };
 
-/** Tandai invoice lunas & buka isolir pelanggan terkait (semi-otomatis). */
 async function handleInvoicePaid(invoiceId) {
     const [invRows] = await pool.query('SELECT * FROM billing_invoices WHERE id = ?', [invoiceId]);
     if (invRows.length === 0) return;
@@ -87,7 +72,6 @@ async function handleInvoicePaid(invoiceId) {
         [new Date(), invoiceId]
     );
 
-    // Buka isolir bila pelanggan punya secret PPPoE.
     const [custRows] = await pool.query(
         'SELECT bc.*, p.pppoe_profile FROM billing_customers bc ' +
         'LEFT JOIN billing_subscriptions s ON s.id = ? ' +

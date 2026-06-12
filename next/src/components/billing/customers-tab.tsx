@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card } from '@/components/ui/card';
 import { billingClient, BillingCustomer, ImportableClient } from '@/utils/billing';
+import { Pagination, SearchBox, useDebouncedValue } from './list-controls';
 
 type FormState = {
   id?: number;
@@ -29,8 +30,11 @@ export default function CustomersTab({ workspaceId }: { workspaceId?: number | n
   const [form, setForm] = useState<FormState | null>(null);
   const [saving, setSaving] = useState(false);
   const [q, setQ] = useState('');
+  const debouncedQ = useDebouncedValue(q);
+  const [page, setPage] = useState(1);
+  const [total, setTotal] = useState(0);
+  const limit = 20;
 
-  // Import dari Client monitoring
   const [importOpen, setImportOpen] = useState(false);
   const [importable, setImportable] = useState<ImportableClient[]>([]);
   const [importLoading, setImportLoading] = useState(false);
@@ -41,16 +45,19 @@ export default function CustomersTab({ workspaceId }: { workspaceId?: number | n
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const { customers } = await billingApi.listCustomers();
+      const { customers, total } = await billingApi.listCustomers({ page, limit, q: debouncedQ });
       setItems(customers || []);
+      setTotal(total || 0);
     } catch (e: any) {
       toast.error('Gagal memuat pelanggan', { description: e.message });
     } finally {
       setLoading(false);
     }
-  }, [billingApi]);
+  }, [billingApi, page, debouncedQ]);
 
   useEffect(() => { load(); }, [load]);
+
+  useEffect(() => { setPage(1); }, [workspaceId]);
 
   const openImport = async () => {
     setImportOpen(true);
@@ -146,21 +153,10 @@ export default function CustomersTab({ workspaceId }: { workspaceId?: number | n
     }
   };
 
-  const filtered = items.filter((c) => {
-    if (!q) return true;
-    const s = q.toLowerCase();
-    return (c.name || '').toLowerCase().includes(s)
-      || (c.whatsapp_number || '').includes(s)
-      || (c.pppoe_secret_name || '').toLowerCase().includes(s);
-  });
-
   return (
     <div>
       <div className="flex flex-col sm:flex-row justify-between gap-3 mb-4">
-        <div className="relative flex-1 max-w-sm">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input className="pl-9" placeholder="Cari nama / nomor / secret..." value={q} onChange={(e) => setQ(e.target.value)} />
-        </div>
+        <SearchBox value={q} onChange={(v) => { setQ(v); setPage(1); }} placeholder="Cari nama / nomor / secret..." />
         <div className="flex gap-2">
           <Button variant="outline" onClick={openImport}><Download size={18} /> Import dari Monitoring</Button>
           <Button onClick={() => setForm({ ...emptyForm })}><Plus size={18} /> Tambah Pelanggan</Button>
@@ -282,8 +278,8 @@ export default function CustomersTab({ workspaceId }: { workspaceId?: number | n
 
       {loading ? (
         <div className="flex justify-center py-12"><Loader2 className="animate-spin text-muted-foreground" /></div>
-      ) : filtered.length === 0 ? (
-        <p className="text-center text-muted-foreground py-12">Belum ada pelanggan.</p>
+      ) : items.length === 0 ? (
+        <p className="text-center text-muted-foreground py-12">{debouncedQ ? 'Tidak ada pelanggan yang cocok.' : 'Belum ada pelanggan.'}</p>
       ) : (
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
@@ -297,7 +293,7 @@ export default function CustomersTab({ workspaceId }: { workspaceId?: number | n
               </tr>
             </thead>
             <tbody>
-              {filtered.map((c) => (
+              {items.map((c) => (
                 <tr key={c.id} className="border-b hover:bg-accent/40">
                   <td className="py-2 pr-3 font-medium">{c.name || <span className="text-muted-foreground">—</span>}</td>
                   <td className="py-2 pr-3 font-mono">{c.whatsapp_number}</td>
@@ -313,6 +309,10 @@ export default function CustomersTab({ workspaceId }: { workspaceId?: number | n
             </tbody>
           </table>
         </div>
+      )}
+
+      {!loading && total > 0 && (
+        <Pagination page={page} limit={limit} total={total} onPage={setPage} loading={loading} />
       )}
     </div>
   );

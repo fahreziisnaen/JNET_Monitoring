@@ -5,6 +5,7 @@ import { Loader2, RefreshCw } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { billingClient, formatRupiah, MONTHS_ID, BillingInvoice } from '@/utils/billing';
+import { Pagination, SearchBox, useDebouncedValue } from './list-controls';
 
 const STATUS = ['', 'unpaid', 'paid', 'overdue', 'void'];
 const statusCls: Record<string, string> = {
@@ -20,21 +21,28 @@ export default function InvoicesTab({ workspaceId }: { workspaceId?: number | nu
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
   const [filter, setFilter] = useState('');
+  const [q, setQ] = useState('');
+  const debouncedQ = useDebouncedValue(q);
+  const [page, setPage] = useState(1);
+  const [total, setTotal] = useState(0);
+  const limit = 20;
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const q = filter ? `?status=${filter}` : '';
-      const { invoices } = await billingApi.listInvoices(q);
+      const { invoices, total } = await billingApi.listInvoices({ status: filter || undefined, q: debouncedQ, page, limit });
       setItems(invoices || []);
+      setTotal(total || 0);
     } catch (e: any) {
       toast.error('Gagal memuat invoice', { description: e.message });
     } finally {
       setLoading(false);
     }
-  }, [filter, billingApi]);
+  }, [filter, debouncedQ, page, billingApi]);
 
   useEffect(() => { load(); }, [load]);
+
+  useEffect(() => { setPage(1); }, [workspaceId]);
 
   const generate = async () => {
     if (!confirm('Generate invoice bulan ini untuk semua langganan aktif? (aman diulang, tidak akan dobel)')) return;
@@ -52,13 +60,16 @@ export default function InvoicesTab({ workspaceId }: { workspaceId?: number | nu
 
   return (
     <div>
-      <div className="flex flex-col sm:flex-row justify-between gap-3 mb-4">
-        <div className="flex items-center gap-2">
-          <span className="text-sm text-muted-foreground">Status:</span>
-          <select className="rounded-md border border-input bg-background px-3 py-2 text-sm" value={filter} onChange={(e) => setFilter(e.target.value)}>
-            {STATUS.map((s) => <option key={s} value={s}>{s || 'Semua'}</option>)}
-          </select>
-          <Button variant="ghost" size="icon" onClick={load} title="Muat ulang"><RefreshCw size={16} /></Button>
+      <div className="flex flex-col lg:flex-row justify-between gap-3 mb-4">
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 flex-1">
+          <SearchBox value={q} onChange={(v) => { setQ(v); setPage(1); }} placeholder="Cari no. invoice / nama / nomor..." />
+          <div className="flex items-center gap-2">
+            <span className="text-sm text-muted-foreground">Status:</span>
+            <select className="rounded-md border border-input bg-background px-3 py-2 text-sm" value={filter} onChange={(e) => { setFilter(e.target.value); setPage(1); }}>
+              {STATUS.map((s) => <option key={s} value={s}>{s || 'Semua'}</option>)}
+            </select>
+            <Button variant="ghost" size="icon" onClick={load} title="Muat ulang"><RefreshCw size={16} /></Button>
+          </div>
         </div>
         <Button onClick={generate} disabled={generating}>
           {generating ? <Loader2 className="animate-spin" size={18} /> : <RefreshCw size={18} />} Generate Invoice Bulan Ini
@@ -68,7 +79,7 @@ export default function InvoicesTab({ workspaceId }: { workspaceId?: number | nu
       {loading ? (
         <div className="flex justify-center py-12"><Loader2 className="animate-spin text-muted-foreground" /></div>
       ) : items.length === 0 ? (
-        <p className="text-center text-muted-foreground py-12">Belum ada invoice. Klik "Generate Invoice Bulan Ini".</p>
+        <p className="text-center text-muted-foreground py-12">{debouncedQ || filter ? 'Tidak ada invoice yang cocok.' : 'Belum ada invoice. Klik "Generate Invoice Bulan Ini".'}</p>
       ) : (
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
@@ -98,6 +109,10 @@ export default function InvoicesTab({ workspaceId }: { workspaceId?: number | nu
             </tbody>
           </table>
         </div>
+      )}
+
+      {!loading && total > 0 && (
+        <Pagination page={page} limit={limit} total={total} onPage={setPage} loading={loading} />
       )}
     </div>
   );

@@ -6,39 +6,56 @@ import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card } from '@/components/ui/card';
-import { billingClient, formatRupiah, BillingSubscription, BillingCustomer, BillingPackage } from '@/utils/billing';
+import { billingClient, formatRupiah, BillingSubscription, BillingPackage } from '@/utils/billing';
+import { Pagination, SearchBox, useDebouncedValue } from './list-controls';
+import CustomerPicker from './customer-picker';
 
 const selectCls = 'flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm';
 
 export default function SubscriptionsTab({ workspaceId }: { workspaceId?: number | null }) {
   const billingApi = useMemo(() => billingClient(workspaceId), [workspaceId]);
   const [items, setItems] = useState<BillingSubscription[]>([]);
-  const [customers, setCustomers] = useState<BillingCustomer[]>([]);
   const [packages, setPackages] = useState<BillingPackage[]>([]);
+  const [customerCount, setCustomerCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [open, setOpen] = useState(false);
-  const [form, setForm] = useState({ customer_id: '', package_id: '', start_date: '', due_day_of_month: '1' });
+  const [form, setForm] = useState({ customer_id: '', customer_label: '', package_id: '', start_date: '', due_day_of_month: '1' });
+  const [q, setQ] = useState('');
+  const debouncedQ = useDebouncedValue(q);
+  const [page, setPage] = useState(1);
+  const [total, setTotal] = useState(0);
+  const limit = 20;
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [subs, custs, pkgs] = await Promise.all([
-        billingApi.listSubscriptions(),
-        billingApi.listCustomers(),
-        billingApi.listPackages(),
-      ]);
-      setItems(subs.subscriptions || []);
-      setCustomers(custs.customers || []);
-      setPackages(pkgs.packages || []);
+      const { subscriptions, total } = await billingApi.listSubscriptions({ page, limit, q: debouncedQ });
+      setItems(subscriptions || []);
+      setTotal(total || 0);
     } catch (e: any) {
       toast.error('Gagal memuat langganan', { description: e.message });
     } finally {
       setLoading(false);
     }
-  }, [billingApi]);
+  }, [billingApi, page, debouncedQ]);
 
   useEffect(() => { load(); }, [load]);
+
+  const loadMeta = useCallback(async () => {
+    try {
+      const [pkgs, custs] = await Promise.all([
+        billingApi.listPackages(),
+        billingApi.listCustomers({ limit: 1 }),
+      ]);
+      setPackages(pkgs.packages || []);
+      setCustomerCount(custs.total || 0);
+    } catch {}
+  }, [billingApi]);
+
+  useEffect(() => { loadMeta(); }, [loadMeta]);
+
+  useEffect(() => { setPage(1); }, [workspaceId]);
 
   const create = async () => {
     if (!form.customer_id || !form.package_id) return toast.error('Pelanggan dan paket wajib dipilih');
@@ -52,7 +69,7 @@ export default function SubscriptionsTab({ workspaceId }: { workspaceId?: number
       } as any);
       toast.success('Langganan dibuat');
       setOpen(false);
-      setForm({ customer_id: '', package_id: '', start_date: '', due_day_of_month: '1' });
+      setForm({ customer_id: '', customer_label: '', package_id: '', start_date: '', due_day_of_month: '1' });
       load();
     } catch (e: any) {
       toast.error('Gagal membuat langganan', { description: e.message });
@@ -73,14 +90,14 @@ export default function SubscriptionsTab({ workspaceId }: { workspaceId?: number
 
   return (
     <div>
-      <div className="flex justify-between items-center mb-4">
-        <p className="text-sm text-muted-foreground">Langganan menghubungkan pelanggan dengan paket + tanggal jatuh tempo.</p>
-        <Button onClick={() => setOpen(true)} disabled={customers.length === 0 || packages.length === 0}>
+      <div className="flex flex-col sm:flex-row justify-between gap-3 mb-4">
+        <SearchBox value={q} onChange={(v) => { setQ(v); setPage(1); }} placeholder="Cari pelanggan / paket..." />
+        <Button onClick={() => setOpen(true)} disabled={customerCount === 0 || packages.length === 0}>
           <Plus size={18} /> Tambah Langganan
         </Button>
       </div>
 
-      {customers.length === 0 || packages.length === 0 ? (
+      {customerCount === 0 || packages.length === 0 ? (
         <p className="text-xs text-amber-600 mb-4">Buat minimal 1 paket dan 1 pelanggan dulu sebelum membuat langganan.</p>
       ) : null}
 
@@ -93,10 +110,12 @@ export default function SubscriptionsTab({ workspaceId }: { workspaceId?: number
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label className="text-xs text-muted-foreground">Pelanggan *</label>
-              <select className={selectCls} value={form.customer_id} onChange={(e) => setForm({ ...form, customer_id: e.target.value })}>
-                <option value="">— pilih —</option>
-                {customers.map((c) => <option key={c.id} value={c.id}>{c.name || c.whatsapp_number}</option>)}
-              </select>
+              <CustomerPicker
+                workspaceId={workspaceId}
+                value={form.customer_id}
+                label={form.customer_label}
+                onSelect={(c) => setForm({ ...form, customer_id: c ? String(c.id) : '', customer_label: c ? c.label : '' })}
+              />
             </div>
             <div>
               <label className="text-xs text-muted-foreground">Paket *</label>
@@ -124,7 +143,7 @@ export default function SubscriptionsTab({ workspaceId }: { workspaceId?: number
       {loading ? (
         <div className="flex justify-center py-12"><Loader2 className="animate-spin text-muted-foreground" /></div>
       ) : items.length === 0 ? (
-        <p className="text-center text-muted-foreground py-12">Belum ada langganan.</p>
+        <p className="text-center text-muted-foreground py-12">{debouncedQ ? 'Tidak ada langganan yang cocok.' : 'Belum ada langganan.'}</p>
       ) : (
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
@@ -160,6 +179,10 @@ export default function SubscriptionsTab({ workspaceId }: { workspaceId?: number
             </tbody>
           </table>
         </div>
+      )}
+
+      {!loading && total > 0 && (
+        <Pagination page={page} limit={limit} total={total} onPage={setPage} loading={loading} />
       )}
     </div>
   );

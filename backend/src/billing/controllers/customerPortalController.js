@@ -1,13 +1,6 @@
-/**
- * customerPortalController.js
- * Endpoint client-facing untuk aplikasi billing (React Native).
- * Semua aksi DIBATASI ke `req.customer` (hasil protectCustomer) — pelanggan
- * hanya bisa melihat data miliknya sendiri. TIDAK menyentuh API monitoring mentah.
- */
 const pool = require('../../config/database');
 const tripayService = require('../services/tripayService');
 
-// GET /api/billing/customer/subscription
 exports.getMySubscription = async (req, res) => {
     try {
         const [rows] = await pool.query(
@@ -26,7 +19,6 @@ exports.getMySubscription = async (req, res) => {
     }
 };
 
-// GET /api/billing/customer/invoices
 exports.getMyInvoices = async (req, res) => {
     try {
         const [rows] = await pool.query(
@@ -43,7 +35,6 @@ exports.getMyInvoices = async (req, res) => {
     }
 };
 
-// GET /api/billing/customer/invoices/:id
 exports.getMyInvoice = async (req, res) => {
     try {
         const [rows] = await pool.query(
@@ -64,8 +55,6 @@ exports.getMyInvoice = async (req, res) => {
     }
 };
 
-// POST /api/billing/customer/invoices/:id/pay   { method? }
-// Membuat transaksi pembayaran di gateway untuk invoice milik pelanggan.
 exports.payInvoice = async (req, res) => {
     try {
         const [rows] = await pool.query(
@@ -78,7 +67,6 @@ exports.payInvoice = async (req, res) => {
             return res.status(400).json({ message: 'Invoice sudah lunas.' });
         }
 
-        // Reuse pembayaran pending yg masih ada (hindari duplikat transaksi gateway).
         const [pending] = await pool.query(
             "SELECT * FROM billing_payments WHERE invoice_id = ? AND status = 'pending' ORDER BY id DESC LIMIT 1",
             [invoice.id]

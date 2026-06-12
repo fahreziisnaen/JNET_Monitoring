@@ -11,8 +11,6 @@ import { billingClient, formatRupiah, BillingPackage } from '@/utils/billing';
 
 const selectCls = 'flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm';
 
-// Nama profil MikroTik kerap memuat info, mis. "50M (210rb)" atau "Mayangan-15MB".
-// Tangkap kecepatan dari "...15M", "15MB", "15Mbps"; harga dari "...210rb".
 function parseProfileMeta(profileName: string): { speed: number | null; price: number | null } {
   const sp = profileName.match(/(\d+)\s*M(?:B|bps|bit)?\b/i);
   const pr = profileName.match(/(\d+)\s*rb/i);
@@ -59,7 +57,6 @@ export default function PackagesTab({ workspaceId }: { workspaceId?: number | nu
 
   useEffect(() => { load(); }, [load]);
 
-  // Tarik daftar profil PPPoE (live dari router, fallback DB) untuk dropdown form.
   useEffect(() => {
     if (workspaceId == null) { setProfiles([]); return; }
     const apiUrl = process.env.NEXT_PUBLIC_API_BASE_URL;
@@ -121,7 +118,6 @@ export default function PackagesTab({ workspaceId }: { workspaceId?: number | nu
     }
   };
 
-  // Buat paket otomatis dari profil PPPoE yang namanya memuat harga (mis. "50M (210rb)").
   const generateFromProfiles = async () => {
     const existing = new Set(items.map((p) => (p.pppoe_profile || '').toLowerCase()));
     const candidates = profiles
@@ -189,7 +185,6 @@ export default function PackagesTab({ workspaceId }: { workspaceId?: number | nu
                   value={form.pppoe_profile}
                   onChange={(e) => {
                     const profile = e.target.value;
-                    // Auto-isi harga/speed/nama dari nama profil bila field masih kosong.
                     const { speed, price } = parseProfileMeta(profile);
                     setForm((f) => f && ({
                       ...f,
@@ -201,7 +196,6 @@ export default function PackagesTab({ workspaceId }: { workspaceId?: number | nu
                   }}
                 >
                   <option value="">— pilih profil —</option>
-                  {/* Tetap tampilkan nilai tersimpan walau tak ada di daftar router */}
                   {form.pppoe_profile && !profiles.includes(form.pppoe_profile) && (
                     <option value={form.pppoe_profile}>{form.pppoe_profile} (tersimpan)</option>
                   )}

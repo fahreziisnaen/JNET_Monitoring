@@ -1,18 +1,3 @@
-/**
- * billingScheduler.js
- * Engine billing berjadwal: generate invoice bulanan, reminder WA, dan
- * auto-isolir setelah masa tenggang (grace) habis.
- *
- * STATUS: SCAFFOLD. Engine ini MATI secara default. Aktifkan dengan env
- * `BILLING_SCHEDULER_ENABLED=true` HANYA setelah:
- *   - migrasi billing_module.sql dijalankan,
- *   - paket/pelanggan/langganan terisi,
- *   - billing_settings (grace, reminder, auto_isolir) dikonfigurasi.
- *
- * Logika inti generate-invoice & isolir SUDAH nyata (reuse service). Bagian
- * reminder WA & seleksi kandidat auto-isolir ditandai sebagai titik lanjutan
- * agar tidak mengirim pesan/aksi tak disengaja sebelum diverifikasi.
- */
 const cron = require('node-cron');
 const pool = require('../config/database');
 const { generateInvoicesForWorkspace } = require('./services/billingService');
@@ -21,7 +6,6 @@ const { sendWhatsAppMessage, isWhatsAppConnected } = require('../services/whatsa
 
 const TZ = process.env.BILLING_TZ || 'Asia/Jakarta';
 
-/** Generate invoice untuk semua workspace yg hari ini = invoice_gen_day. */
 async function runDailyInvoiceGeneration() {
     const today = new Date().getDate();
     const [wsRows] = await pool.query(
@@ -38,17 +22,11 @@ async function runDailyInvoiceGeneration() {
     }
 }
 
-/**
- * Tandai invoice lewat jatuh tempo jadi 'overdue', kirim reminder, dan
- * auto-isolir setelah grace habis (jika diaktifkan per workspace).
- */
 async function runOverdueAndIsolir() {
-    // 1. Tandai overdue
     await pool.query(
         "UPDATE billing_invoices SET status = 'overdue' WHERE status = 'unpaid' AND due_date < CURDATE()"
     );
 
-    // 2. Ambil kandidat isolir: overdue melewati grace, workspace dgn auto_isolir aktif.
     const [candidates] = await pool.query(
         `SELECT i.id AS invoice_id, i.workspace_id, i.due_date,
                 c.id AS customer_id, c.pppoe_secret_name, c.device_id, c.whatsapp_number, c.name,
@@ -72,7 +50,6 @@ async function runOverdueAndIsolir() {
             });
             console.log(`[Billing][Scheduler] Auto-isolir ${cand.pppoe_secret_name}: ${r.message}`);
 
-            // TODO(lanjutan): kirim WA pemberitahuan isolir & catat status agar tidak spam.
             if (cand.whatsapp_number && isWhatsAppConnected()) {
                 await sendWhatsAppMessage(
                     cand.whatsapp_number,
@@ -85,13 +62,7 @@ async function runOverdueAndIsolir() {
     }
 }
 
-/**
- * TODO(lanjutan): reminder H- sebelum jatuh tempo (reminder_days_before).
- * Dibiarkan stub agar tidak mengirim WA massal sebelum diverifikasi & ada
- * pelacakan "sudah dikirim" untuk menghindari duplikasi.
- */
 async function runReminders() {
-    // Placeholder — implementasikan saat siap, dengan tabel/kolom penanda terkirim.
 }
 
 function startBillingScheduler() {
@@ -100,12 +71,10 @@ function startBillingScheduler() {
         return;
     }
 
-    // Generate invoice tiap hari 01:00
     cron.schedule('0 1 * * *', () => {
         runDailyInvoiceGeneration().catch((e) => console.error('[Billing][Scheduler] invoice:', e.message));
     }, { timezone: TZ });
 
-    // Overdue + auto-isolir tiap hari 09:00
     cron.schedule('0 9 * * *', () => {
         runOverdueAndIsolir().catch((e) => console.error('[Billing][Scheduler] overdue:', e.message));
         runReminders().catch((e) => console.error('[Billing][Scheduler] reminder:', e.message));

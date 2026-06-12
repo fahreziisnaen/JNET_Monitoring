@@ -1,21 +1,11 @@
-/**
- * billingService.js
- * Helper murni untuk logika tagihan: nomor invoice, perhitungan jatuh tempo,
- * dan generate invoice untuk satu langganan / seluruh workspace.
- *
- * Dipanggil oleh: invoiceController (manual generate) dan billingScheduler (cron).
- */
 const pool = require('../../config/database');
 
-/** Bentuk nomor invoice unik: INV-<ws>-<YYYYMM>-<subId>. */
 function buildInvoiceNumber(workspaceId, year, month, subscriptionId) {
     const mm = String(month).padStart(2, '0');
     return `INV-${workspaceId}-${year}${mm}-${subscriptionId}`;
 }
 
-/** Hitung tanggal jatuh tempo (YYYY-MM-DD) dari tahun, bulan, dan tanggal jatuh tempo. */
 function computeDueDate(year, month, dueDay) {
-    // Clamp dueDay ke jumlah hari di bulan tsb (mis. 31 -> 28/30)
     const lastDay = new Date(year, month, 0).getDate();
     const day = Math.min(Math.max(parseInt(dueDay) || 1, 1), lastDay);
     const mm = String(month).padStart(2, '0');
@@ -23,10 +13,6 @@ function computeDueDate(year, month, dueDay) {
     return `${year}-${mm}-${dd}`;
 }
 
-/**
- * Generate invoice untuk SATU langganan pada periode tertentu (idempotent).
- * Mengembalikan { created: boolean, invoiceId, reason }.
- */
 async function generateInvoiceForSubscription(subscription, year, month, conn = pool) {
     const {
         id: subscriptionId,
@@ -41,7 +27,6 @@ async function generateInvoiceForSubscription(subscription, year, month, conn = 
         return { created: false, reason: 'subscription_not_active' };
     }
 
-    // Idempotensi via UNIQUE(subscription_id, period_year, period_month)
     const [existing] = await conn.query(
         'SELECT id FROM billing_invoices WHERE subscription_id = ? AND period_year = ? AND period_month = ?',
         [subscriptionId, year, month]
@@ -69,10 +54,6 @@ async function generateInvoiceForSubscription(subscription, year, month, conn = 
     return { created: true, invoiceId: result.insertId, reason: 'created' };
 }
 
-/**
- * Generate invoice untuk SEMUA langganan aktif sebuah workspace pada periode tertentu.
- * Default periode = bulan berjalan. Mengembalikan ringkasan jumlah dibuat / dilewati.
- */
 async function generateInvoicesForWorkspace(workspaceId, year, month) {
     const now = new Date();
     const y = year || now.getFullYear();

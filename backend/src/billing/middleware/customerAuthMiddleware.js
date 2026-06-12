@@ -1,14 +1,3 @@
-/**
- * customerAuthMiddleware.js
- * Auth pelanggan billing — TERPISAH dari auth admin (authMiddleware.js).
- *
- * Token pelanggan adalah JWT dengan klaim `aud: 'billing-customer'` sehingga
- * token admin TIDAK bisa dipakai di route pelanggan dan sebaliknya. Sesi
- * dicatat di `billing_customer_sessions` agar bisa di-revoke (logout).
- *
- * React Native mengirim `Authorization: Bearer <token>`. Cookie `billing_token`
- * didukung sebagai fallback (mis. web preview).
- */
 const jwt = require('jsonwebtoken');
 const pool = require('../../config/database');
 
@@ -40,7 +29,6 @@ const protectCustomer = async (req, res, next) => {
             audience: BILLING_AUDIENCE,
         });
 
-        // Pastikan sesi masih ada (belum logout / di-revoke)
         const [sessions] = await pool.query(
             'SELECT id FROM billing_customer_sessions WHERE token_id = ? AND customer_id = ?',
             [decoded.jti, decoded.id]

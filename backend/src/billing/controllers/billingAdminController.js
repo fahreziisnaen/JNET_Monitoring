@@ -1,15 +1,8 @@
-/**
- * billingAdminController.js
- * Endpoint admin (di belakang protect + authorizeAdmin) untuk mengelola
- * paket, pelanggan, langganan, invoice, dan pengaturan billing.
- * Workspace-scoped: memakai req.user.workspace_id dengan override superadmin/NOC.
- */
 const pool = require('../../config/database');
 const { generateInvoicesForWorkspace } = require('../services/billingService');
 const { normalizeWa } = require('../utils/phone');
 const { upsertFromClient } = require('../services/customerSyncService');
 
-/** Tentukan workspace target (dukung override admin/noc/superadmin via query/body). */
 function resolveWorkspaceId(req) {
     let workspaceId = req.user.workspace_id;
     const isSuper = req.user.is_super_admin === 1 || req.user.is_super_admin === true;
@@ -20,9 +13,14 @@ function resolveWorkspaceId(req) {
     return workspaceId;
 }
 
-// ============================ PAKET ============================
+function paginationParams(req) {
+    const page = Math.max(parseInt(req.query.page) || 1, 1);
+    const limit = Math.min(Math.max(parseInt(req.query.limit) || 20, 1), 100);
+    const offset = (page - 1) * limit;
+    const q = (req.query.q || '').trim();
+    return { page, limit, offset, q };
+}
 
-// GET /api/billing/admin/packages
 exports.listPackages = async (req, res) => {
     try {
         const ws = resolveWorkspaceId(req);
@@ -37,7 +35,6 @@ exports.listPackages = async (req, res) => {
     }
 };
 
-// POST /api/billing/admin/packages
 exports.createPackage = async (req, res) => {
     try {
         const ws = resolveWorkspaceId(req);
@@ -59,7 +56,6 @@ exports.createPackage = async (req, res) => {
     }
 };
 
-// PUT /api/billing/admin/packages/:id
 exports.updatePackage = async (req, res) => {
     try {
         const ws = resolveWorkspaceId(req);
@@ -84,7 +80,6 @@ exports.updatePackage = async (req, res) => {
     }
 };
 
-// DELETE /api/billing/admin/packages/:id
 exports.deletePackage = async (req, res) => {
     try {
         const ws = resolveWorkspaceId(req);
@@ -95,7 +90,6 @@ exports.deletePackage = async (req, res) => {
         if (result.affectedRows === 0) return res.status(404).json({ message: 'Paket tidak ditemukan.' });
         return res.status(200).json({ message: 'Paket dihapus.' });
     } catch (e) {
-        // FK RESTRICT: paket masih dipakai langganan
         if (e.code === 'ER_ROW_IS_REFERENCED_2') {
             return res.status(409).json({ message: 'Paket masih dipakai langganan, tidak bisa dihapus.' });
         }
@@ -104,28 +98,35 @@ exports.deletePackage = async (req, res) => {
     }
 };
 
-// ========================== PELANGGAN ==========================
-
-// GET /api/billing/admin/customers
 exports.listCustomers = async (req, res) => {
     try {
         const ws = resolveWorkspaceId(req);
+        const { page, limit, offset, q } = paginationParams(req);
+        const filters = ['c.workspace_id = ?'];
+        const params = [ws];
+        if (q) {
+            filters.push('(c.name LIKE ? OR c.whatsapp_number LIKE ? OR c.pppoe_secret_name LIKE ?)');
+            const like = `%${q}%`;
+            params.push(like, like, like);
+        }
+        const where = filters.join(' AND ');
+        const [[{ total }]] = await pool.query(
+            `SELECT COUNT(*) total FROM billing_customers c WHERE ${where}`, params
+        );
         const [rows] = await pool.query(
             `SELECT c.*, cl.client_name AS linked_client_name
              FROM billing_customers c
              LEFT JOIN clients cl ON cl.id = c.client_id
-             WHERE c.workspace_id = ? ORDER BY c.created_at DESC`,
-            [ws]
+             WHERE ${where} ORDER BY c.created_at DESC LIMIT ? OFFSET ?`,
+            [...params, limit, offset]
         );
-        return res.status(200).json({ customers: rows });
+        return res.status(200).json({ customers: rows, total, page, limit });
     } catch (e) {
         console.error('[Billing][Admin] listCustomers:', e.message);
         return res.status(500).json({ message: 'Gagal mengambil pelanggan.' });
     }
 };
 
-// GET /api/billing/admin/importable-clients
-// Client monitoring yang punya nomor WA & belum jadi billing_customer.
 exports.listImportableClients = async (req, res) => {
     try {
         const ws = resolveWorkspaceId(req);
@@ -148,14 +149,11 @@ exports.listImportableClients = async (req, res) => {
     }
 };
 
-// POST /api/billing/admin/import-clients
-// Body: { client_ids?: number[], all?: boolean }
 exports.importClients = async (req, res) => {
     try {
         const ws = resolveWorkspaceId(req);
         const { client_ids, all } = req.body;
 
-        // Ambil kandidat (sama filter dgn importable), dibatasi ke client_ids bila ada.
         let sql = `SELECT c.id, c.client_name, c.whatsapp_number, c.pppoe_secret_name, c.device_id
                    FROM clients c
                    WHERE c.workspace_id = ?
@@ -199,8 +197,6 @@ exports.importClients = async (req, res) => {
     }
 };
 
-// POST /api/billing/admin/customers
-// Bisa otomatis menautkan ke `clients` existing berdasarkan client_id atau pppoe_secret_name.
 exports.createCustomer = async (req, res) => {
     try {
         const ws = resolveWorkspaceId(req);
@@ -209,7 +205,6 @@ exports.createCustomer = async (req, res) => {
             return res.status(400).json({ message: 'Nomor WhatsApp wajib diisi.' });
         }
 
-        // Jika ditautkan ke client existing, ambil data turunan dari tabel clients.
         if (client_id) {
             const [cl] = await pool.query('SELECT * FROM clients WHERE id = ? AND workspace_id = ?', [client_id, ws]);
             if (cl.length === 0) return res.status(404).json({ message: 'Client (lokasi) tidak ditemukan di workspace ini.' });
@@ -235,7 +230,6 @@ exports.createCustomer = async (req, res) => {
     }
 };
 
-// PUT /api/billing/admin/customers/:id
 exports.updateCustomer = async (req, res) => {
     try {
         const ws = resolveWorkspaceId(req);
@@ -261,28 +255,41 @@ exports.updateCustomer = async (req, res) => {
     }
 };
 
-// ========================== LANGGANAN ==========================
-
-// GET /api/billing/admin/subscriptions
 exports.listSubscriptions = async (req, res) => {
     try {
         const ws = resolveWorkspaceId(req);
+        const { page, limit, offset, q } = paginationParams(req);
+        const filters = ['s.workspace_id = ?'];
+        const params = [ws];
+        if (q) {
+            filters.push('(c.name LIKE ? OR c.whatsapp_number LIKE ? OR p.name LIKE ?)');
+            const like = `%${q}%`;
+            params.push(like, like, like);
+        }
+        const where = filters.join(' AND ');
+        const [[{ total }]] = await pool.query(
+            `SELECT COUNT(*) total
+             FROM billing_subscriptions s
+             JOIN billing_customers c ON c.id = s.customer_id
+             JOIN billing_packages p ON p.id = s.package_id
+             WHERE ${where}`,
+            params
+        );
         const [rows] = await pool.query(
             `SELECT s.*, c.name AS customer_name, c.whatsapp_number, p.name AS package_name, p.price
              FROM billing_subscriptions s
              JOIN billing_customers c ON c.id = s.customer_id
              JOIN billing_packages p ON p.id = s.package_id
-             WHERE s.workspace_id = ? ORDER BY s.created_at DESC`,
-            [ws]
+             WHERE ${where} ORDER BY s.created_at DESC LIMIT ? OFFSET ?`,
+            [...params, limit, offset]
         );
-        return res.status(200).json({ subscriptions: rows });
+        return res.status(200).json({ subscriptions: rows, total, page, limit });
     } catch (e) {
         console.error('[Billing][Admin] listSubscriptions:', e.message);
         return res.status(500).json({ message: 'Gagal mengambil langganan.' });
     }
 };
 
-// POST /api/billing/admin/subscriptions
 exports.createSubscription = async (req, res) => {
     try {
         const ws = resolveWorkspaceId(req);
@@ -290,7 +297,6 @@ exports.createSubscription = async (req, res) => {
         if (!customer_id || !package_id) {
             return res.status(400).json({ message: 'customer_id dan package_id wajib diisi.' });
         }
-        // Validasi keduanya milik workspace ini.
         const [c] = await pool.query('SELECT id FROM billing_customers WHERE id = ? AND workspace_id = ?', [customer_id, ws]);
         const [p] = await pool.query('SELECT id FROM billing_packages WHERE id = ? AND workspace_id = ?', [package_id, ws]);
         if (c.length === 0) return res.status(404).json({ message: 'Pelanggan tidak ditemukan.' });
@@ -311,7 +317,6 @@ exports.createSubscription = async (req, res) => {
     }
 };
 
-// PUT /api/billing/admin/subscriptions/:id
 exports.updateSubscription = async (req, res) => {
     try {
         const ws = resolveWorkspaceId(req);
@@ -332,36 +337,44 @@ exports.updateSubscription = async (req, res) => {
     }
 };
 
-// ========================== INVOICE ==========================
-
-// GET /api/billing/admin/invoices?status=&year=&month=
 exports.listInvoices = async (req, res) => {
     try {
         const ws = resolveWorkspaceId(req);
+        const { page, limit, offset, q } = paginationParams(req);
         const filters = ['i.workspace_id = ?'];
         const params = [ws];
         if (req.query.status) { filters.push('i.status = ?'); params.push(req.query.status); }
         if (req.query.year) { filters.push('i.period_year = ?'); params.push(parseInt(req.query.year)); }
         if (req.query.month) { filters.push('i.period_month = ?'); params.push(parseInt(req.query.month)); }
-
+        if (q) {
+            filters.push('(i.invoice_number LIKE ? OR c.name LIKE ? OR c.whatsapp_number LIKE ?)');
+            const like = `%${q}%`;
+            params.push(like, like, like);
+        }
+        const where = filters.join(' AND ');
+        const [[{ total }]] = await pool.query(
+            `SELECT COUNT(*) total
+             FROM billing_invoices i
+             JOIN billing_customers c ON c.id = i.customer_id
+             WHERE ${where}`,
+            params
+        );
         const [rows] = await pool.query(
             `SELECT i.*, c.name AS customer_name, c.whatsapp_number
              FROM billing_invoices i
              JOIN billing_customers c ON c.id = i.customer_id
-             WHERE ${filters.join(' AND ')}
+             WHERE ${where}
              ORDER BY i.period_year DESC, i.period_month DESC, i.id DESC
-             LIMIT 1000`,
-            params
+             LIMIT ? OFFSET ?`,
+            [...params, limit, offset]
         );
-        return res.status(200).json({ invoices: rows });
+        return res.status(200).json({ invoices: rows, total, page, limit });
     } catch (e) {
         console.error('[Billing][Admin] listInvoices:', e.message);
         return res.status(500).json({ message: 'Gagal mengambil invoice.' });
     }
 };
 
-// POST /api/billing/admin/invoices/generate   { year?, month? }
-// Generate manual invoice untuk seluruh langganan aktif (idempotent).
 exports.generateInvoices = async (req, res) => {
     try {
         const ws = resolveWorkspaceId(req);
@@ -374,15 +387,11 @@ exports.generateInvoices = async (req, res) => {
     }
 };
 
-// ========================== SETTINGS ==========================
-
-// GET /api/billing/admin/settings
 exports.getSettings = async (req, res) => {
     try {
         const ws = resolveWorkspaceId(req);
         const [rows] = await pool.query('SELECT * FROM billing_settings WHERE workspace_id = ?', [ws]);
         const s = rows[0] || null;
-        // Jangan kembalikan kunci rahasia secara utuh.
         if (s) {
             s.tripay_api_key = s.tripay_api_key ? '****' + String(s.tripay_api_key).slice(-4) : null;
             s.tripay_private_key = s.tripay_private_key ? '********' : null;
@@ -394,7 +403,6 @@ exports.getSettings = async (req, res) => {
     }
 };
 
-// PUT /api/billing/admin/settings   (upsert)
 exports.updateSettings = async (req, res) => {
     try {
         const ws = resolveWorkspaceId(req);

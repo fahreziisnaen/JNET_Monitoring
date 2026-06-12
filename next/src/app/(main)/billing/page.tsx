@@ -30,15 +30,12 @@ export default function BillingPage() {
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [wsId, setWsId] = useState<number | null>(null);
 
-  // Billing: owner + admin + noc + super_admin
   const canAccess = user?.role === 'admin' || user?.role === 'noc' || user?.is_owner || user?.is_super_admin;
 
-  // Default scope = workspace milik user; di-update setelah daftar workspace dimuat.
   useEffect(() => {
     if (user?.workspace_id && wsId == null) setWsId(user.workspace_id);
   }, [user?.workspace_id, wsId]);
 
-  // Muat daftar workspace untuk pemilih (superadmin: semua; noc/admin: yang diizinkan).
   useEffect(() => {
     if (!user || !canAccess) return;
     const apiUrl = process.env.NEXT_PUBLIC_API_BASE_URL;
@@ -48,12 +45,11 @@ export default function BillingPage() {
       .then((data: Workspace[]) => {
         const list = Array.isArray(data) ? data : [];
         setWorkspaces(list);
-        // Jika workspace user tak ada di daftar, pakai yang pertama.
         if (list.length > 0 && !list.some((w) => w.id === user.workspace_id)) {
           setWsId(list[0].id);
         }
       })
-      .catch(() => { /* abaikan; fallback ke workspace user */ });
+      .catch(() => {});
   }, [user, canAccess]);
 
   if (user && !canAccess) {
@@ -90,7 +86,6 @@ export default function BillingPage() {
         )}
       </div>
 
-      {/* Tab navigation */}
       <div className="flex gap-1 sm:gap-2 mb-6 border-b overflow-x-auto">
         {TABS.map(({ key, label, icon: Icon }) => (
           <button
