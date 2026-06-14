@@ -21,6 +21,7 @@ export default function BillingSettingsTab({ workspaceId }: { workspaceId?: numb
   const [maskedPriv, setMaskedPriv] = useState<string | null>(null);
 
   const load = useCallback(async () => {
+    if (workspaceId == null) { setLoading(false); return; }
     setLoading(true);
     try {
       const { settings } = await billingApi.getSettings();
@@ -36,7 +37,7 @@ export default function BillingSettingsTab({ workspaceId }: { workspaceId?: numb
     } finally {
       setLoading(false);
     }
-  }, [billingApi]);
+  }, [billingApi, workspaceId]);
 
   useEffect(() => { load(); }, [load]);
 

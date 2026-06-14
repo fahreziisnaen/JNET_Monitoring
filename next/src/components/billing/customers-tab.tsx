@@ -42,6 +42,7 @@ export default function CustomersTab({ workspaceId }: { workspaceId?: number | n
   const [impQ, setImpQ] = useState('');
 
   const load = useCallback(async () => {
+    if (workspaceId == null) { setItems([]); setTotal(0); setLoading(false); return; }
     setLoading(true);
     try {
       const { customers, total } = await billingApi.listCustomers({ page, limit, q: debouncedQ });
@@ -52,7 +53,7 @@ export default function CustomersTab({ workspaceId }: { workspaceId?: number | n
     } finally {
       setLoading(false);
     }
-  }, [billingApi, page, debouncedQ]);
+  }, [billingApi, workspaceId, page, debouncedQ]);
 
   useEffect(() => { load(); }, [load]);
 

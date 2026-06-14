@@ -3,10 +3,11 @@
 import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import { Plus, Loader2, X } from 'lucide-react';
 import { toast } from 'sonner';
+import { motion, AnimatePresence } from '@/components/motion';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Card } from '@/components/ui/card';
 import { billingClient, formatRupiah, BillingSubscription, BillingPackage } from '@/utils/billing';
+import { useEscKey } from '@/hooks/useEscKey';
 import { Pagination, SearchBox, useDebouncedValue } from './list-controls';
 import CustomerPicker from './customer-picker';
 
@@ -28,6 +29,7 @@ export default function SubscriptionsTab({ workspaceId }: { workspaceId?: number
   const limit = 20;
 
   const load = useCallback(async () => {
+    if (workspaceId == null) { setItems([]); setTotal(0); setLoading(false); return; }
     setLoading(true);
     try {
       const { subscriptions, total } = await billingApi.listSubscriptions({ page, limit, q: debouncedQ });
@@ -38,11 +40,12 @@ export default function SubscriptionsTab({ workspaceId }: { workspaceId?: number
     } finally {
       setLoading(false);
     }
-  }, [billingApi, page, debouncedQ]);
+  }, [billingApi, workspaceId, page, debouncedQ]);
 
   useEffect(() => { load(); }, [load]);
 
   const loadMeta = useCallback(async () => {
+    if (workspaceId == null) { setPackages([]); setCustomerCount(0); return; }
     try {
       const [pkgs, custs] = await Promise.all([
         billingApi.listPackages(),
@@ -51,11 +54,13 @@ export default function SubscriptionsTab({ workspaceId }: { workspaceId?: number
       setPackages(pkgs.packages || []);
       setCustomerCount(custs.total || 0);
     } catch {}
-  }, [billingApi]);
+  }, [billingApi, workspaceId]);
 
   useEffect(() => { loadMeta(); }, [loadMeta]);
 
   useEffect(() => { setPage(1); }, [workspaceId]);
+
+  useEscKey(open, () => setOpen(false));
 
   const create = async () => {
     if (!form.customer_id || !form.package_id) return toast.error('Pelanggan dan paket wajib dipilih');
@@ -101,44 +106,57 @@ export default function SubscriptionsTab({ workspaceId }: { workspaceId?: number
         <p className="text-xs text-amber-600 mb-4">Buat minimal 1 paket dan 1 pelanggan dulu sebelum membuat langganan.</p>
       ) : null}
 
-      {open && (
-        <Card className="p-4 mb-6">
-          <div className="flex justify-between items-center mb-3">
-            <h3 className="font-semibold">Langganan Baru</h3>
-            <button onClick={() => setOpen(false)} className="text-muted-foreground hover:text-foreground"><X size={18} /></button>
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div>
-              <label className="text-xs text-muted-foreground">Pelanggan *</label>
-              <CustomerPicker
-                workspaceId={workspaceId}
-                value={form.customer_id}
-                label={form.customer_label}
-                onSelect={(c) => setForm({ ...form, customer_id: c ? String(c.id) : '', customer_label: c ? c.label : '' })}
-              />
-            </div>
-            <div>
-              <label className="text-xs text-muted-foreground">Paket *</label>
-              <select className={selectCls} value={form.package_id} onChange={(e) => setForm({ ...form, package_id: e.target.value })}>
-                <option value="">— pilih —</option>
-                {packages.map((p) => <option key={p.id} value={p.id}>{p.name} ({formatRupiah(p.price)})</option>)}
-              </select>
-            </div>
-            <div>
-              <label className="text-xs text-muted-foreground">Tanggal Mulai</label>
-              <Input type="date" value={form.start_date} onChange={(e) => setForm({ ...form, start_date: e.target.value })} />
-            </div>
-            <div>
-              <label className="text-xs text-muted-foreground">Jatuh Tempo (tanggal 1–28)</label>
-              <Input type="number" min={1} max={28} value={form.due_day_of_month} onChange={(e) => setForm({ ...form, due_day_of_month: e.target.value })} />
-            </div>
-          </div>
-          <div className="flex justify-end gap-2 mt-4">
-            <Button variant="outline" onClick={() => setOpen(false)}>Batal</Button>
-            <Button onClick={create} disabled={saving}>{saving ? <Loader2 className="animate-spin" size={18} /> : 'Simpan'}</Button>
-          </div>
-        </Card>
-      )}
+      <AnimatePresence>
+        {open && (
+          <motion.div
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black/70 flex items-center justify-center z-[1002] p-4"
+            onClick={() => setOpen(false)}
+          >
+            <motion.div
+              initial={{ y: 40, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: 40, opacity: 0 }}
+              transition={{ type: 'spring', damping: 22, stiffness: 320 }}
+              className="bg-card rounded-2xl shadow-2xl w-full max-w-lg border"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <header className="flex justify-between items-center px-6 py-4 border-b">
+                <h2 className="text-lg font-bold">Langganan Baru</h2>
+                <button onClick={() => setOpen(false)} className="text-muted-foreground hover:text-foreground"><X size={18} /></button>
+              </header>
+              <div className="px-6 py-5 grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="sm:col-span-2">
+                  <label className="text-xs text-muted-foreground">Pelanggan *</label>
+                  <CustomerPicker
+                    workspaceId={workspaceId}
+                    value={form.customer_id}
+                    label={form.customer_label}
+                    onSelect={(c) => setForm({ ...form, customer_id: c ? String(c.id) : '', customer_label: c ? c.label : '' })}
+                  />
+                </div>
+                <div className="sm:col-span-2">
+                  <label className="text-xs text-muted-foreground">Paket *</label>
+                  <select className={selectCls} value={form.package_id} onChange={(e) => setForm({ ...form, package_id: e.target.value })}>
+                    <option value="">— pilih —</option>
+                    {packages.map((p) => <option key={p.id} value={p.id}>{p.name} ({formatRupiah(p.price)})</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="text-xs text-muted-foreground">Tanggal Mulai</label>
+                  <Input type="date" value={form.start_date} onChange={(e) => setForm({ ...form, start_date: e.target.value })} />
+                </div>
+                <div>
+                  <label className="text-xs text-muted-foreground">Jatuh Tempo (tanggal 1–28)</label>
+                  <Input type="number" min={1} max={28} value={form.due_day_of_month} onChange={(e) => setForm({ ...form, due_day_of_month: e.target.value })} />
+                </div>
+              </div>
+              <footer className="flex justify-end gap-2 px-6 py-4 bg-secondary/50 rounded-b-2xl">
+                <Button variant="outline" onClick={() => setOpen(false)} disabled={saving}>Batal</Button>
+                <Button onClick={create} disabled={saving}>{saving ? <Loader2 className="animate-spin" size={18} /> : 'Simpan'}</Button>
+              </footer>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {loading ? (
         <div className="flex justify-center py-12"><Loader2 className="animate-spin text-muted-foreground" /></div>

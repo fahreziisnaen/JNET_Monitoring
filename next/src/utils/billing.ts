@@ -74,7 +74,10 @@ export async function fetchOdpAssets(workspaceId?: number | null): Promise<OdpAs
   return (Array.isArray(d) ? d : []).filter((a: any) => a.type === 'ODP');
 }
 
-export async function createFullCustomer(workspaceId: number | null | undefined, data: FullCustomerInput): Promise<void> {
+export async function createFullCustomer(
+  workspaceId: number | null | undefined,
+  data: FullCustomerInput,
+): Promise<{ clientId: number; billingCustomerId: number | null }> {
   const fd = new FormData();
   fd.append('pppoe_secret_name', data.pppoe_secret_name);
   fd.append('client_name', data.client_name);
@@ -90,6 +93,8 @@ export async function createFullCustomer(workspaceId: number | null | undefined,
     try { const e = await r.json(); msg = e.message || msg; } catch {}
     throw new Error(msg);
   }
+  const d = await r.json();
+  return { clientId: d.clientId, billingCustomerId: d.billingCustomerId ?? null };
 }
 
 export interface BillingSubscription {

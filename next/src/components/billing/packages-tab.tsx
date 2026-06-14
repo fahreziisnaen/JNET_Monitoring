@@ -44,6 +44,7 @@ export default function PackagesTab({ workspaceId }: { workspaceId?: number | nu
   const [profiles, setProfiles] = useState<string[]>([]);
 
   const load = useCallback(async () => {
+    if (workspaceId == null) { setItems([]); setLoading(false); return; }
     setLoading(true);
     try {
       const { packages } = await billingApi.listPackages();
@@ -53,7 +54,7 @@ export default function PackagesTab({ workspaceId }: { workspaceId?: number | nu
     } finally {
       setLoading(false);
     }
-  }, [billingApi]);
+  }, [billingApi, workspaceId]);
 
   useEffect(() => { load(); }, [load]);
 

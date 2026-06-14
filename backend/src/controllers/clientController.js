@@ -334,6 +334,7 @@ exports.createClient = async (req, res) => {
         }
 
         // Auto-sync ke billing (best-effort; jangan ganggu pembuatan client jika billing gagal/absen).
+        let billingCustomerId = null;
         try {
             const { upsertFromClient } = require('../billing/services/customerSyncService');
             await upsertFromClient({
@@ -345,11 +346,16 @@ exports.createClient = async (req, res) => {
                 deviceId,
                 ktp: ktp_number,
             });
+            const [bc] = await pool.query(
+                'SELECT id FROM billing_customers WHERE workspace_id = ? AND client_id = ? LIMIT 1',
+                [workspace_id, result.insertId]
+            );
+            billingCustomerId = bc[0]?.id ?? null;
         } catch (syncErr) {
             console.warn('[CREATE CLIENT] auto-sync billing dilewati:', syncErr.message);
         }
 
-        res.status(201).json({ message: 'Client berhasil dibuat', clientId: result.insertId });
+        res.status(201).json({ message: 'Client berhasil dibuat', clientId: result.insertId, billingCustomerId });
     } catch (error) {
         console.error("[CREATE CLIENT ERROR]:", error);
         res.status(500).json({ message: 'Gagal membuat client.' });

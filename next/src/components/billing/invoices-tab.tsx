@@ -28,6 +28,7 @@ export default function InvoicesTab({ workspaceId }: { workspaceId?: number | nu
   const limit = 20;
 
   const load = useCallback(async () => {
+    if (workspaceId == null) { setItems([]); setTotal(0); setLoading(false); return; }
     setLoading(true);
     try {
       const { invoices, total } = await billingApi.listInvoices({ status: filter || undefined, q: debouncedQ, page, limit });
@@ -38,7 +39,7 @@ export default function InvoicesTab({ workspaceId }: { workspaceId?: number | nu
     } finally {
       setLoading(false);
     }
-  }, [filter, debouncedQ, page, billingApi]);
+  }, [filter, debouncedQ, page, billingApi, workspaceId]);
 
   useEffect(() => { load(); }, [load]);
 

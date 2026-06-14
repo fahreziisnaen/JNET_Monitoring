@@ -8,9 +8,10 @@ function resolveWorkspaceId(req) {
     const isSuper = req.user.is_super_admin === 1 || req.user.is_super_admin === true;
     const override = req.query.workspaceId || req.body.workspace_id;
     if (override && (req.user.role === 'admin' || req.user.role === 'noc' || isSuper)) {
-        workspaceId = parseInt(override);
+        const parsed = parseInt(override);
+        if (!Number.isNaN(parsed)) workspaceId = parsed;
     }
-    return workspaceId;
+    return (workspaceId == null || Number.isNaN(workspaceId)) ? null : workspaceId;
 }
 
 function paginationParams(req) {
