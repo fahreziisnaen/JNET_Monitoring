@@ -105,9 +105,9 @@ exports.listCustomers = async (req, res) => {
         const filters = ['c.workspace_id = ?'];
         const params = [ws];
         if (q) {
-            filters.push('(c.name LIKE ? OR c.whatsapp_number LIKE ? OR c.pppoe_secret_name LIKE ?)');
+            filters.push('(c.name LIKE ? OR c.whatsapp_number LIKE ? OR c.pppoe_secret_name LIKE ? OR c.ktp_number LIKE ?)');
             const like = `%${q}%`;
-            params.push(like, like, like);
+            params.push(like, like, like, like);
         }
         const where = filters.join(' AND ');
         const [[{ total }]] = await pool.query(
@@ -233,18 +233,19 @@ exports.createCustomer = async (req, res) => {
 exports.updateCustomer = async (req, res) => {
     try {
         const ws = resolveWorkspaceId(req);
-        const { name, whatsapp_number, email, address, status, pppoe_secret_name, device_id, client_id } = req.body;
+        const { name, whatsapp_number, email, address, status, pppoe_secret_name, device_id, client_id, ktp_number } = req.body;
         const [result] = await pool.query(
             `UPDATE billing_customers SET
                 name = COALESCE(?, name),
                 whatsapp_number = COALESCE(?, whatsapp_number),
                 email = ?, address = ?,
+                ktp_number = COALESCE(?, ktp_number),
                 status = COALESCE(?, status),
                 pppoe_secret_name = COALESCE(?, pppoe_secret_name),
                 device_id = COALESCE(?, device_id),
                 client_id = COALESCE(?, client_id)
              WHERE id = ? AND workspace_id = ?`,
-            [name ?? null, whatsapp_number ? normalizeWa(whatsapp_number) : null, email ?? null, address ?? null, status ?? null,
+            [name ?? null, whatsapp_number ? normalizeWa(whatsapp_number) : null, email ?? null, address ?? null, ktp_number ?? null, status ?? null,
              pppoe_secret_name ?? null, device_id ?? null, client_id ?? null, req.params.id, ws]
         );
         if (result.affectedRows === 0) return res.status(404).json({ message: 'Pelanggan tidak ditemukan.' });

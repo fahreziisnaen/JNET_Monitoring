@@ -252,7 +252,7 @@ exports.createClient = async (req, res) => {
         workspace_id = parseInt(req.query.workspaceId);
     }
 
-    const { pppoe_secret_name, client_name, whatsapp_number, latitude, longitude, odp_asset_id, connection_path, device_id } = req.body;
+    const { pppoe_secret_name, client_name, whatsapp_number, latitude, longitude, odp_asset_id, connection_path, device_id, ktp_number } = req.body;
     const photo_url = req.file ? `/public/uploads/clients/${req.file.filename}` : null;
     const deviceId = device_id ? parseInt(device_id) : null;
 
@@ -343,6 +343,7 @@ exports.createClient = async (req, res) => {
                 whatsapp: whatsapp_number,
                 secret: pppoe_secret_name,
                 deviceId,
+                ktp: ktp_number,
             });
         } catch (syncErr) {
             console.warn('[CREATE CLIENT] auto-sync billing dilewati:', syncErr.message);

@@ -8,19 +8,17 @@ import { Input } from '@/components/ui/input';
 import { Card } from '@/components/ui/card';
 import { billingClient, BillingCustomer, ImportableClient } from '@/utils/billing';
 import { Pagination, SearchBox, useDebouncedValue } from './list-controls';
+import FullCustomerForm from './full-customer-form';
 
 type FormState = {
   id?: number;
   name: string;
   whatsapp_number: string;
   pppoe_secret_name: string;
+  ktp_number: string;
   email: string;
   address: string;
   status: 'active' | 'inactive' | 'suspended';
-};
-
-const emptyForm: FormState = {
-  name: '', whatsapp_number: '', pppoe_secret_name: '', email: '', address: '', status: 'active',
 };
 
 export default function CustomersTab({ workspaceId }: { workspaceId?: number | null }) {
@@ -28,6 +26,7 @@ export default function CustomersTab({ workspaceId }: { workspaceId?: number | n
   const [items, setItems] = useState<BillingCustomer[]>([]);
   const [loading, setLoading] = useState(true);
   const [form, setForm] = useState<FormState | null>(null);
+  const [addOpen, setAddOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [q, setQ] = useState('');
   const debouncedQ = useDebouncedValue(q);
@@ -119,6 +118,7 @@ export default function CustomersTab({ workspaceId }: { workspaceId?: number | n
     name: c.name ?? '',
     whatsapp_number: c.whatsapp_number ?? '',
     pppoe_secret_name: c.pppoe_secret_name ?? '',
+    ktp_number: c.ktp_number ?? '',
     email: c.email ?? '',
     address: c.address ?? '',
     status: c.status,
@@ -133,17 +133,13 @@ export default function CustomersTab({ workspaceId }: { workspaceId?: number | n
         name: form.name.trim() || null,
         whatsapp_number: form.whatsapp_number.trim(),
         pppoe_secret_name: form.pppoe_secret_name.trim() || null,
+        ktp_number: form.ktp_number.trim() || null,
         email: form.email.trim() || null,
         address: form.address.trim() || null,
         status: form.status,
       };
-      if (form.id) {
-        await billingApi.updateCustomer(form.id, body);
-        toast.success('Pelanggan diperbarui');
-      } else {
-        await billingApi.createCustomer(body);
-        toast.success('Pelanggan dibuat');
-      }
+      await billingApi.updateCustomer(form.id!, body);
+      toast.success('Pelanggan diperbarui');
       setForm(null);
       load();
     } catch (e: any) {
@@ -159,9 +155,17 @@ export default function CustomersTab({ workspaceId }: { workspaceId?: number | n
         <SearchBox value={q} onChange={(v) => { setQ(v); setPage(1); }} placeholder="Cari nama / nomor / secret..." />
         <div className="flex gap-2">
           <Button variant="outline" onClick={openImport}><Download size={18} /> Import dari Monitoring</Button>
-          <Button onClick={() => setForm({ ...emptyForm })}><Plus size={18} /> Tambah Pelanggan</Button>
+          <Button onClick={() => setAddOpen(true)}><Plus size={18} /> Tambah Pelanggan</Button>
         </div>
       </div>
+
+      {addOpen && (
+        <FullCustomerForm
+          workspaceId={workspaceId}
+          onClose={() => setAddOpen(false)}
+          onCreated={() => { setAddOpen(false); setPage(1); load(); }}
+        />
+      )}
 
       {importOpen && (
         <Card className="p-4 mb-6">
@@ -245,6 +249,10 @@ export default function CustomersTab({ workspaceId }: { workspaceId?: number | n
               <Input value={form.whatsapp_number} onChange={(e) => setForm({ ...form, whatsapp_number: e.target.value })} placeholder="0823..." />
             </div>
             <div>
+              <label className="text-xs text-muted-foreground">No. KTP</label>
+              <Input value={form.ktp_number} onChange={(e) => setForm({ ...form, ktp_number: e.target.value })} inputMode="numeric" />
+            </div>
+            <div>
               <label className="text-xs text-muted-foreground">Nama Secret PPPoE</label>
               <Input value={form.pppoe_secret_name} onChange={(e) => setForm({ ...form, pppoe_secret_name: e.target.value })} placeholder="untuk isolir/unisolir" />
             </div>
@@ -287,6 +295,7 @@ export default function CustomersTab({ workspaceId }: { workspaceId?: number | n
               <tr className="text-left text-muted-foreground border-b">
                 <th className="py-2 pr-3">Nama</th>
                 <th className="py-2 pr-3">WhatsApp</th>
+                <th className="py-2 pr-3">No. KTP</th>
                 <th className="py-2 pr-3">Secret PPPoE</th>
                 <th className="py-2 pr-3">Status</th>
                 <th className="py-2 pr-3"></th>
@@ -297,6 +306,7 @@ export default function CustomersTab({ workspaceId }: { workspaceId?: number | n
                 <tr key={c.id} className="border-b hover:bg-accent/40">
                   <td className="py-2 pr-3 font-medium">{c.name || <span className="text-muted-foreground">—</span>}</td>
                   <td className="py-2 pr-3 font-mono">{c.whatsapp_number}</td>
+                  <td className="py-2 pr-3 font-mono text-xs">{c.ktp_number || <span className="text-muted-foreground">—</span>}</td>
                   <td className="py-2 pr-3 font-mono text-xs">{c.pppoe_secret_name || <span className="text-muted-foreground">—</span>}</td>
                   <td className="py-2 pr-3">
                     <span className={`text-xs px-2 py-0.5 rounded ${c.status === 'active' ? 'bg-green-500/15 text-green-600' : 'bg-muted text-muted-foreground'}`}>{c.status}</span>

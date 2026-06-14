@@ -1,6 +1,8 @@
 import { apiFetch } from './api';
 
 const base = () => `${process.env.NEXT_PUBLIC_API_BASE_URL}/api/billing/admin`;
+const apiBase = () => process.env.NEXT_PUBLIC_API_BASE_URL;
+const wsq = (workspaceId?: number | null) => (workspaceId != null ? `?workspaceId=${workspaceId}` : '');
 
 const json = (body: unknown): RequestInit => ({
   body: JSON.stringify(body),
@@ -28,9 +30,66 @@ export interface BillingCustomer {
   whatsapp_number: string;
   email: string | null;
   address: string | null;
+  ktp_number?: string | null;
   status: 'active' | 'inactive' | 'suspended';
   linked_client_name?: string | null;
   created_at?: string;
+}
+
+export interface UnlinkedSecret {
+  name: string;
+  profile?: string;
+  'remote-address'?: string | null;
+  connected_odp_id?: number | null;
+}
+
+export interface OdpAsset {
+  id: number;
+  name: string;
+  type: string;
+}
+
+export interface FullCustomerInput {
+  pppoe_secret_name: string;
+  client_name: string;
+  whatsapp_number: string;
+  latitude: string;
+  longitude: string;
+  odp_asset_id?: string;
+  ktp_number?: string;
+  photo?: File | null;
+}
+
+export async function fetchUnlinkedSecrets(workspaceId?: number | null): Promise<UnlinkedSecret[]> {
+  const r = await apiFetch(`${apiBase()}/api/clients/unlinked-pppoe-secrets${wsq(workspaceId)}`);
+  if (!r.ok) throw new Error('Gagal memuat secret PPPoE');
+  const d = await r.json();
+  return Array.isArray(d) ? d : [];
+}
+
+export async function fetchOdpAssets(workspaceId?: number | null): Promise<OdpAsset[]> {
+  const r = await apiFetch(`${apiBase()}/api/assets${wsq(workspaceId)}`);
+  if (!r.ok) throw new Error('Gagal memuat ODP');
+  const d = await r.json();
+  return (Array.isArray(d) ? d : []).filter((a: any) => a.type === 'ODP');
+}
+
+export async function createFullCustomer(workspaceId: number | null | undefined, data: FullCustomerInput): Promise<void> {
+  const fd = new FormData();
+  fd.append('pppoe_secret_name', data.pppoe_secret_name);
+  fd.append('client_name', data.client_name);
+  fd.append('whatsapp_number', data.whatsapp_number);
+  fd.append('latitude', data.latitude);
+  fd.append('longitude', data.longitude);
+  if (data.odp_asset_id) fd.append('odp_asset_id', data.odp_asset_id);
+  if (data.ktp_number) fd.append('ktp_number', data.ktp_number);
+  if (data.photo) fd.append('photo', data.photo);
+  const r = await apiFetch(`${apiBase()}/api/clients${wsq(workspaceId)}`, { method: 'POST', body: fd });
+  if (!r.ok) {
+    let msg = 'Gagal membuat pelanggan';
+    try { const e = await r.json(); msg = e.message || msg; } catch {}
+    throw new Error(msg);
+  }
 }
 
 export interface BillingSubscription {
