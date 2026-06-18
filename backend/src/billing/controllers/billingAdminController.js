@@ -257,6 +257,21 @@ exports.updateCustomer = async (req, res) => {
     }
 };
 
+exports.deleteCustomer = async (req, res) => {
+    try {
+        const ws = resolveWorkspaceId(req);
+        const [result] = await pool.query(
+            'DELETE FROM billing_customers WHERE id = ? AND workspace_id = ?',
+            [req.params.id, ws]
+        );
+        if (result.affectedRows === 0) return res.status(404).json({ message: 'Pelanggan tidak ditemukan.' });
+        return res.status(200).json({ message: 'Pelanggan dihapus.' });
+    } catch (e) {
+        console.error('[Billing][Admin] deleteCustomer:', e.message);
+        return res.status(500).json({ message: 'Gagal menghapus pelanggan.' });
+    }
+};
+
 exports.listSubscriptions = async (req, res) => {
     try {
         const ws = resolveWorkspaceId(req);

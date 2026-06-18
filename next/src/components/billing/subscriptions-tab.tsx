@@ -13,6 +13,13 @@ import CustomerPicker from './customer-picker';
 
 const selectCls = 'flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm';
 
+function todayStr() {
+  const d = new Date();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${d.getFullYear()}-${m}-${day}`;
+}
+
 export default function SubscriptionsTab({ workspaceId }: { workspaceId?: number | null }) {
   const billingApi = useMemo(() => billingClient(workspaceId), [workspaceId]);
   const [items, setItems] = useState<BillingSubscription[]>([]);
@@ -21,7 +28,7 @@ export default function SubscriptionsTab({ workspaceId }: { workspaceId?: number
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [open, setOpen] = useState(false);
-  const [form, setForm] = useState({ customer_id: '', customer_label: '', package_id: '', start_date: '', due_day_of_month: '1' });
+  const [form, setForm] = useState({ customer_id: '', customer_label: '', package_id: '', start_date: todayStr() });
   const [q, setQ] = useState('');
   const debouncedQ = useDebouncedValue(q);
   const [page, setPage] = useState(1);
@@ -66,15 +73,17 @@ export default function SubscriptionsTab({ workspaceId }: { workspaceId?: number
     if (!form.customer_id || !form.package_id) return toast.error('Pelanggan dan paket wajib dipilih');
     setSaving(true);
     try {
+      const start = form.start_date || todayStr();
+      const dueDay = Math.min(Math.max(Number(start.slice(8, 10)) || 1, 1), 28);
       await billingApi.createSubscription({
         customer_id: Number(form.customer_id),
         package_id: Number(form.package_id),
-        start_date: form.start_date || undefined,
-        due_day_of_month: Number(form.due_day_of_month) || 1,
+        start_date: start,
+        due_day_of_month: dueDay,
       } as any);
       toast.success('Langganan dibuat');
       setOpen(false);
-      setForm({ customer_id: '', customer_label: '', package_id: '', start_date: '', due_day_of_month: '1' });
+      setForm({ customer_id: '', customer_label: '', package_id: '', start_date: todayStr() });
       load();
     } catch (e: any) {
       toast.error('Gagal membuat langganan', { description: e.message });
@@ -140,13 +149,10 @@ export default function SubscriptionsTab({ workspaceId }: { workspaceId?: number
                     {packages.map((p) => <option key={p.id} value={p.id}>{p.name} ({formatRupiah(p.price)})</option>)}
                   </select>
                 </div>
-                <div>
+                <div className="sm:col-span-2">
                   <label className="text-xs text-muted-foreground">Tanggal Mulai</label>
                   <Input type="date" value={form.start_date} onChange={(e) => setForm({ ...form, start_date: e.target.value })} />
-                </div>
-                <div>
-                  <label className="text-xs text-muted-foreground">Jatuh Tempo (tanggal 1–28)</label>
-                  <Input type="number" min={1} max={28} value={form.due_day_of_month} onChange={(e) => setForm({ ...form, due_day_of_month: e.target.value })} />
+                  <p className="text-[11px] text-muted-foreground mt-1">Tanggal jatuh tempo tagihan tiap bulan mengikuti tanggal ini.</p>
                 </div>
               </div>
               <footer className="flex justify-end gap-2 px-6 py-4 bg-secondary/50 rounded-b-2xl">

@@ -14,6 +14,7 @@ router.delete('/packages/:id', admin.deletePackage);
 router.get('/customers', admin.listCustomers);
 router.post('/customers', admin.createCustomer);
 router.put('/customers/:id', admin.updateCustomer);
+router.delete('/customers/:id', admin.deleteCustomer);
 router.get('/importable-clients', admin.listImportableClients);
 router.post('/import-clients', admin.importClients);
 

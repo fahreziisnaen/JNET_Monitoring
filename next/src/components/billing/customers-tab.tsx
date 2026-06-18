@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useState, useCallback, useMemo } from 'react';
-import { Plus, Pencil, Loader2, X, Search, Download } from 'lucide-react';
+import { Plus, Pencil, Trash2, Loader2, X, Search, Download } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -124,6 +124,17 @@ export default function CustomersTab({ workspaceId }: { workspaceId?: number | n
     address: c.address ?? '',
     status: c.status,
   });
+
+  const remove = async (c: BillingCustomer) => {
+    if (!confirm(`Hapus pelanggan "${c.name || c.whatsapp_number}"?\n\nLangganan & seluruh invoice pelanggan ini ikut terhapus permanen.`)) return;
+    try {
+      await billingApi.deleteCustomer(c.id);
+      toast.success('Pelanggan dihapus');
+      load();
+    } catch (e: any) {
+      toast.error('Gagal menghapus pelanggan', { description: e.message });
+    }
+  };
 
   const save = async () => {
     if (!form) return;
@@ -314,6 +325,7 @@ export default function CustomersTab({ workspaceId }: { workspaceId?: number | n
                   </td>
                   <td className="py-2 pr-3 text-right">
                     <button onClick={() => openEdit(c)} className="p-1.5 rounded hover:bg-accent text-muted-foreground"><Pencil size={16} /></button>
+                    <button onClick={() => remove(c)} className="p-1.5 rounded hover:bg-accent text-destructive"><Trash2 size={16} /></button>
                   </td>
                 </tr>
               ))}

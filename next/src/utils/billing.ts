@@ -193,6 +193,7 @@ export function billingClient(workspaceId?: number | null) {
     listCustomers: (params: ListParams = {}) => req<{ customers: BillingCustomer[] } & PageMeta>(`/customers${qs(params)}`),
     createCustomer: (b: Partial<BillingCustomer>) => req('/customers', { method: 'POST', ...json(b) }),
     updateCustomer: (id: number, b: Partial<BillingCustomer>) => req(`/customers/${id}`, { method: 'PUT', ...json(b) }),
+    deleteCustomer: (id: number) => req(`/customers/${id}`, { method: 'DELETE' }),
     listImportableClients: () => req<{ clients: ImportableClient[] }>('/importable-clients'),
     importClients: (b: { client_ids?: number[]; all?: boolean }) => req<{ summary: ImportSummary }>('/import-clients', { method: 'POST', ...json(b) }),
 

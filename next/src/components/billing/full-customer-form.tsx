@@ -10,6 +10,14 @@ import { Input } from '@/components/ui/input';
 import { useEscKey } from '@/hooks/useEscKey';
 import { billingClient, createFullCustomer, fetchOdpAssets, formatRupiah, BillingPackage, OdpAsset, UnlinkedSecret } from '@/utils/billing';
 import PppoeSecretPicker from './pppoe-secret-picker';
+import OdpPicker from './odp-picker';
+
+function todayStr() {
+  const d = new Date();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${d.getFullYear()}-${m}-${day}`;
+}
 
 const MapPicker = dynamic(() => import('./map-picker'), {
   ssr: false,
@@ -41,13 +49,13 @@ export default function FullCustomerForm({
   const [coordText, setCoordText] = useState('');
   const [odp, setOdp] = useState('');
   const [photo, setPhoto] = useState<File | null>(null);
+  const [photoUrl, setPhotoUrl] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const [odps, setOdps] = useState<OdpAsset[]>([]);
   const [packages, setPackages] = useState<BillingPackage[]>([]);
   const [packageId, setPackageId] = useState('');
-  const [startDate, setStartDate] = useState('');
-  const [dueDay, setDueDay] = useState('1');
+  const [startDate, setStartDate] = useState(todayStr);
   const [saving, setSaving] = useState(false);
 
   useEscKey(true, onClose);
@@ -85,6 +93,13 @@ export default function FullCustomerForm({
     if (f && !f.type.startsWith('image/')) return toast.error('File harus berupa gambar');
     setPhoto(f);
   };
+
+  useEffect(() => {
+    if (!photo) { setPhotoUrl(null); return; }
+    const url = URL.createObjectURL(photo);
+    setPhotoUrl(url);
+    return () => URL.revokeObjectURL(url);
+  }, [photo]);
 
   useEffect(() => {
     const onPaste = (e: ClipboardEvent) => {
@@ -128,11 +143,13 @@ export default function FullCustomerForm({
         return;
       }
 
+      const start = startDate || todayStr();
+      const dueDay = Math.min(Math.max(Number(start.slice(8, 10)) || 1, 1), 28);
       await billingApi.createSubscription({
         customer_id: billingCustomerId,
         package_id: Number(packageId),
-        start_date: startDate || undefined,
-        due_day_of_month: Number(dueDay) || 1,
+        start_date: start,
+        due_day_of_month: dueDay,
       } as any);
 
       toast.success('Pelanggan & langganan berhasil dibuat');
@@ -179,10 +196,7 @@ export default function FullCustomerForm({
         </div>
         <div>
           <label className="text-xs text-muted-foreground">ODP</label>
-          <select className={selectCls} value={odp} onChange={(e) => setOdp(e.target.value)}>
-            <option value="">— tidak terhubung —</option>
-            {odps.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
-          </select>
+          <OdpPicker odps={odps} value={odp} onSelect={setOdp} />
         </div>
         <div className="sm:col-span-2 border-t pt-3 mt-1">
           <p className="text-sm font-medium mb-2">Langganan</p>
@@ -195,13 +209,10 @@ export default function FullCustomerForm({
               </select>
               {packages.length === 0 && <p className="text-xs text-amber-600 mt-1">Belum ada paket. Buat paket dulu di tab Paket.</p>}
             </div>
-            <div>
+            <div className="sm:col-span-2">
               <label className="text-xs text-muted-foreground">Tanggal Mulai</label>
               <Input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
-            </div>
-            <div>
-              <label className="text-xs text-muted-foreground">Jatuh Tempo (tanggal 1–28)</label>
-              <Input type="number" min={1} max={28} value={dueDay} onChange={(e) => setDueDay(e.target.value)} />
+              <p className="text-[11px] text-muted-foreground mt-1">Tanggal jatuh tempo tagihan tiap bulan mengikuti tanggal ini.</p>
             </div>
           </div>
         </div>
@@ -223,22 +234,26 @@ export default function FullCustomerForm({
               onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
               onDragLeave={() => setDragOver(false)}
               onDrop={(e) => { e.preventDefault(); setDragOver(false); pickFile(e.dataTransfer.files?.[0] || null); }}
-              className={`mt-1 flex flex-col items-center justify-center gap-1 rounded-md border-2 border-dashed px-4 py-6 text-center cursor-pointer transition-colors ${dragOver ? 'border-primary bg-primary/5' : 'border-input hover:bg-accent/40'}`}
+              className={`mt-1 flex flex-col items-center justify-center gap-2 rounded-md border-2 border-dashed px-4 py-6 text-center cursor-pointer transition-colors ${dragOver ? 'border-primary bg-primary/5' : 'border-input hover:bg-accent/40'}`}
             >
-              <ImagePlus size={22} className="text-muted-foreground" />
-              {photo ? (
-                <span className="text-sm font-medium">{photo.name}</span>
+              {photoUrl ? (
+                <>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={photoUrl} alt="Pratinjau foto rumah" className="max-h-48 w-auto rounded-md object-contain" />
+                  <span className="text-xs text-muted-foreground">{photo?.name}</span>
+                  <button
+                    type="button"
+                    onClick={(e) => { e.stopPropagation(); pickFile(null); }}
+                    className="text-xs text-destructive hover:underline"
+                  >
+                    Hapus foto
+                  </button>
+                </>
               ) : (
-                <span className="text-sm text-muted-foreground">Seret & lepas, tempel (Ctrl+V), atau klik untuk pilih</span>
-              )}
-              {photo && (
-                <button
-                  type="button"
-                  onClick={(e) => { e.stopPropagation(); pickFile(null); }}
-                  className="text-xs text-destructive hover:underline"
-                >
-                  Hapus foto
-                </button>
+                <>
+                  <ImagePlus size={22} className="text-muted-foreground" />
+                  <span className="text-sm text-muted-foreground">Seret & lepas, tempel (Ctrl+V), atau klik untuk pilih</span>
+                </>
               )}
               <input
                 ref={fileRef}
