@@ -20,6 +20,27 @@ function todayStr() {
   return `${d.getFullYear()}-${m}-${day}`;
 }
 
+function tenureMonths(startDate?: string | null): number | null {
+  if (!startDate) return null;
+  const start = new Date(`${String(startDate).slice(0, 10)}T00:00:00`);
+  if (isNaN(start.getTime())) return null;
+  const now = new Date();
+  let months = (now.getFullYear() - start.getFullYear()) * 12 + (now.getMonth() - start.getMonth());
+  if (now.getDate() < start.getDate()) months -= 1;
+  return months < 0 ? 0 : months;
+}
+
+function tenureLabel(startDate?: string | null): string {
+  const m = tenureMonths(startDate);
+  if (m == null) return '—';
+  if (m === 0) return '< 1 bulan';
+  const years = Math.floor(m / 12);
+  const rem = m % 12;
+  if (years > 0 && rem > 0) return `${years} thn ${rem} bln`;
+  if (years > 0) return `${years} tahun`;
+  return `${m} bulan`;
+}
+
 export default function SubscriptionsTab({ workspaceId }: { workspaceId?: number | null }) {
   const billingApi = useMemo(() => billingClient(workspaceId), [workspaceId]);
   const [items, setItems] = useState<BillingSubscription[]>([]);
@@ -176,6 +197,7 @@ export default function SubscriptionsTab({ workspaceId }: { workspaceId?: number
                 <th className="py-2 pr-3">Pelanggan</th>
                 <th className="py-2 pr-3">Paket</th>
                 <th className="py-2 pr-3">Harga</th>
+                <th className="py-2 pr-3">Lama Langganan</th>
                 <th className="py-2 pr-3">Jatuh Tempo</th>
                 <th className="py-2 pr-3">Status</th>
                 <th className="py-2 pr-3">Aksi</th>
@@ -187,6 +209,10 @@ export default function SubscriptionsTab({ workspaceId }: { workspaceId?: number
                   <td className="py-2 pr-3 font-medium">{s.customer_name || s.whatsapp_number}</td>
                   <td className="py-2 pr-3">{s.package_name}</td>
                   <td className="py-2 pr-3">{formatRupiah(s.price)}</td>
+                  <td className="py-2 pr-3">
+                    <span className="font-medium">{tenureLabel(s.start_date)}</span>
+                    {s.start_date && <span className="block text-xs text-muted-foreground">sejak {String(s.start_date).slice(0, 10)}</span>}
+                  </td>
                   <td className="py-2 pr-3">tgl {s.due_day_of_month}</td>
                   <td className="py-2 pr-3">
                     <span className={`text-xs px-2 py-0.5 rounded ${s.status === 'active' ? 'bg-green-500/15 text-green-600' : s.status === 'suspended' ? 'bg-orange-500/15 text-orange-600' : 'bg-muted text-muted-foreground'}`}>{s.status}</span>
