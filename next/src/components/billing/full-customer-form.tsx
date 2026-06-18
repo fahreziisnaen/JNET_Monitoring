@@ -1,8 +1,8 @@
 'use client';
 
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
-import { Loader2, X, MapPin } from 'lucide-react';
+import { Loader2, X, MapPin, ImagePlus } from 'lucide-react';
 import { toast } from 'sonner';
 import { motion } from '@/components/motion';
 import { Button } from '@/components/ui/button';
@@ -38,8 +38,11 @@ export default function FullCustomerForm({
   const [wa, setWa] = useState('');
   const [lat, setLat] = useState<number | null>(null);
   const [lng, setLng] = useState<number | null>(null);
+  const [coordText, setCoordText] = useState('');
   const [odp, setOdp] = useState('');
   const [photo, setPhoto] = useState<File | null>(null);
+  const [dragOver, setDragOver] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
   const [odps, setOdps] = useState<OdpAsset[]>([]);
   const [packages, setPackages] = useState<BillingPackage[]>([]);
   const [packageId, setPackageId] = useState('');
@@ -59,6 +62,44 @@ export default function FullCustomerForm({
     if (s && !name.trim()) setName(s.name);
     if (s?.connected_odp_id != null) setOdp(String(s.connected_odp_id));
   };
+
+  const applyCoordText = (v: string) => {
+    setCoordText(v);
+    const parts = v.split(/[,\s]+/).map((p) => p.trim()).filter(Boolean);
+    if (parts.length === 2) {
+      const la = Number(parts[0]);
+      const ln = Number(parts[1]);
+      if (!Number.isNaN(la) && !Number.isNaN(ln)) { setLat(la); setLng(ln); return; }
+    }
+    setLat(null);
+    setLng(null);
+  };
+
+  const onMapPick = (la: number, ln: number) => {
+    setLat(la);
+    setLng(ln);
+    setCoordText(`${la.toFixed(6)}, ${ln.toFixed(6)}`);
+  };
+
+  const pickFile = (f: File | null) => {
+    if (f && !f.type.startsWith('image/')) return toast.error('File harus berupa gambar');
+    setPhoto(f);
+  };
+
+  useEffect(() => {
+    const onPaste = (e: ClipboardEvent) => {
+      const item = Array.from(e.clipboardData?.items || []).find((it) => it.type.startsWith('image/'));
+      if (!item) return;
+      const f = item.getAsFile();
+      if (f) {
+        e.preventDefault();
+        setPhoto(f);
+        toast.success('Foto ditempel dari clipboard');
+      }
+    };
+    window.addEventListener('paste', onPaste);
+    return () => window.removeEventListener('paste', onPaste);
+  }, []);
 
   const submit = async () => {
     if (!secret) return toast.error('Pilih PPPoE secret dulu');
@@ -166,15 +207,47 @@ export default function FullCustomerForm({
         </div>
         <div className="sm:col-span-2">
           <label className="text-xs text-muted-foreground flex items-center gap-1"><MapPin size={14} /> Lokasi rumah * — klik / geser pin di peta</label>
-          <MapPicker lat={lat} lng={lng} onPick={(la, ln) => { setLat(la); setLng(ln); }} />
-          <div className="flex gap-2 mt-2">
-            <Input value={lat ?? ''} onChange={(e) => setLat(e.target.value === '' ? null : Number(e.target.value))} placeholder="Latitude" />
-            <Input value={lng ?? ''} onChange={(e) => setLng(e.target.value === '' ? null : Number(e.target.value))} placeholder="Longitude" />
-          </div>
+          <MapPicker lat={lat} lng={lng} onPick={onMapPick} />
+          <Input
+            className="mt-2"
+            value={coordText}
+            onChange={(e) => applyCoordText(e.target.value)}
+            placeholder="Latitude, Longitude — mis. -7.746600, 113.211900"
+          />
+          <p className="text-[11px] text-muted-foreground mt-1">Tempel koordinat dari Google Maps (format: lintang, bujur).</p>
         </div>
           <div className="sm:col-span-2">
             <label className="text-xs text-muted-foreground">Foto depan rumah (opsional)</label>
-            <Input type="file" accept="image/*" onChange={(e) => setPhoto(e.target.files?.[0] || null)} />
+            <div
+              onClick={() => fileRef.current?.click()}
+              onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+              onDragLeave={() => setDragOver(false)}
+              onDrop={(e) => { e.preventDefault(); setDragOver(false); pickFile(e.dataTransfer.files?.[0] || null); }}
+              className={`mt-1 flex flex-col items-center justify-center gap-1 rounded-md border-2 border-dashed px-4 py-6 text-center cursor-pointer transition-colors ${dragOver ? 'border-primary bg-primary/5' : 'border-input hover:bg-accent/40'}`}
+            >
+              <ImagePlus size={22} className="text-muted-foreground" />
+              {photo ? (
+                <span className="text-sm font-medium">{photo.name}</span>
+              ) : (
+                <span className="text-sm text-muted-foreground">Seret & lepas, tempel (Ctrl+V), atau klik untuk pilih</span>
+              )}
+              {photo && (
+                <button
+                  type="button"
+                  onClick={(e) => { e.stopPropagation(); pickFile(null); }}
+                  className="text-xs text-destructive hover:underline"
+                >
+                  Hapus foto
+                </button>
+              )}
+              <input
+                ref={fileRef}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={(e) => pickFile(e.target.files?.[0] || null)}
+              />
+            </div>
           </div>
         </div>
         <footer className="flex justify-end gap-2 px-6 py-4 bg-secondary/50 rounded-b-2xl shrink-0">
