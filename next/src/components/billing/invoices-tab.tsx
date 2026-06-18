@@ -4,7 +4,7 @@ import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import { Loader2, RefreshCw } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
-import { billingClient, formatRupiah, MONTHS_ID, BillingInvoice } from '@/utils/billing';
+import { billingClient, formatRupiah, formatDateID, MONTHS_ID, BillingInvoice } from '@/utils/billing';
 import { Pagination, SearchBox, useDebouncedValue } from './list-controls';
 
 const STATUS = ['', 'unpaid', 'paid', 'overdue', 'void'];
@@ -101,7 +101,7 @@ export default function InvoicesTab({ workspaceId }: { workspaceId?: number | nu
                   <td className="py-2 pr-3 font-medium">{iv.customer_name || iv.whatsapp_number}</td>
                   <td className="py-2 pr-3">{MONTHS_ID[iv.period_month]} {iv.period_year}</td>
                   <td className="py-2 pr-3">{formatRupiah(iv.amount)}</td>
-                  <td className="py-2 pr-3">{iv.due_date}</td>
+                  <td className="py-2 pr-3">{formatDateID(iv.due_date)}</td>
                   <td className="py-2 pr-3">
                     <span className={`text-xs px-2 py-0.5 rounded ${statusCls[iv.status] || ''}`}>{iv.status}</span>
                   </td>

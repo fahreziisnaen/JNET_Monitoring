@@ -179,26 +179,26 @@ export default function FullCustomerForm({
         </header>
         <div className="px-6 py-5 overflow-y-auto grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div className="sm:col-span-2">
-            <label className="text-xs text-muted-foreground">1. PPPoE Secret * — dari MikroTik (hanya yang belum terpakai)</label>
-          <PppoeSecretPicker workspaceId={workspaceId} value={secret} onSelect={onPickSecret} />
-        </div>
-        <div>
-          <label className="text-xs text-muted-foreground">No. KTP</label>
-          <Input value={ktp} onChange={(e) => setKtp(e.target.value)} placeholder="opsional" inputMode="numeric" />
-        </div>
-        <div>
-          <label className="text-xs text-muted-foreground">Nama *</label>
-          <Input value={name} onChange={(e) => setName(e.target.value)} />
-        </div>
-        <div>
-          <label className="text-xs text-muted-foreground">No. WhatsApp *</label>
-          <Input value={wa} onChange={(e) => setWa(e.target.value)} placeholder="0823..." />
-        </div>
-        <div>
-          <label className="text-xs text-muted-foreground">ODP</label>
-          <OdpPicker odps={odps} value={odp} onSelect={setOdp} />
-        </div>
-        <div className="sm:col-span-2 border-t pt-3 mt-1">
+            <label className="text-xs text-muted-foreground">PPPoE Secret * — dari MikroTik (hanya yang belum terpakai)</label>
+            <PppoeSecretPicker workspaceId={workspaceId} value={secret} onSelect={onPickSecret} />
+          </div>
+          <div className="sm:col-span-2">
+            <label className="text-xs text-muted-foreground">Nama *</label>
+            <Input value={name} onChange={(e) => setName(e.target.value)} />
+          </div>
+          <div>
+            <label className="text-xs text-muted-foreground">No. WhatsApp *</label>
+            <Input value={wa} onChange={(e) => setWa(e.target.value)} placeholder="0823..." />
+          </div>
+          <div>
+            <label className="text-xs text-muted-foreground">No. KTP</label>
+            <Input value={ktp} onChange={(e) => setKtp(e.target.value)} placeholder="opsional" inputMode="numeric" />
+          </div>
+          <div className="sm:col-span-2">
+            <label className="text-xs text-muted-foreground">ODP</label>
+            <OdpPicker odps={odps} value={odp} onSelect={setOdp} />
+          </div>
+          <div className="sm:col-span-2 border-t pt-3 mt-1">
           <p className="text-sm font-medium mb-2">Langganan</p>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div className="sm:col-span-2">

@@ -6,7 +6,7 @@ import { toast } from 'sonner';
 import { motion, AnimatePresence } from '@/components/motion';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { billingClient, formatRupiah, BillingSubscription, BillingPackage } from '@/utils/billing';
+import { billingClient, formatRupiah, formatDateID, BillingSubscription, BillingPackage } from '@/utils/billing';
 import { useEscKey } from '@/hooks/useEscKey';
 import { Pagination, SearchBox, useDebouncedValue } from './list-controls';
 import CustomerPicker from './customer-picker';
@@ -211,7 +211,7 @@ export default function SubscriptionsTab({ workspaceId }: { workspaceId?: number
                   <td className="py-2 pr-3">{formatRupiah(s.price)}</td>
                   <td className="py-2 pr-3">
                     <span className="font-medium">{tenureLabel(s.start_date)}</span>
-                    {s.start_date && <span className="block text-xs text-muted-foreground">sejak {String(s.start_date).slice(0, 10)}</span>}
+                    {s.start_date && <span className="block text-xs text-muted-foreground">sejak {formatDateID(s.start_date)}</span>}
                   </td>
                   <td className="py-2 pr-3">tgl {s.due_day_of_month}</td>
                   <td className="py-2 pr-3">

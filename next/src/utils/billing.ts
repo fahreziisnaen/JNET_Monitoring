@@ -229,3 +229,20 @@ export const MONTHS_ID = [
   '', 'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
   'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember',
 ];
+
+export const formatDateID = (d?: string | null): string => {
+  if (!d) return '—';
+  const s = String(d).slice(0, 10);
+  const [y, m, day] = s.split('-').map(Number);
+  if (!y || !m || !day || !MONTHS_ID[m]) return '—';
+  return `${day} ${MONTHS_ID[m]} ${y}`;
+};
+
+export const formatDateTimeID = (d?: string | null): string => {
+  if (!d) return '—';
+  const dt = new Date(d);
+  if (isNaN(dt.getTime())) return '—';
+  const tgl = `${dt.getDate()} ${MONTHS_ID[dt.getMonth() + 1]} ${dt.getFullYear()}`;
+  const jam = `${String(dt.getHours()).padStart(2, '0')}.${String(dt.getMinutes()).padStart(2, '0')}`;
+  return `${tgl}, ${jam}`;
+};
