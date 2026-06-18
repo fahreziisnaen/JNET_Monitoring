@@ -34,6 +34,13 @@ export interface BillingCustomer {
   status: 'active' | 'inactive' | 'suspended';
   linked_client_name?: string | null;
   created_at?: string;
+  subscription_id?: number | null;
+  subscription_status?: 'active' | 'suspended' | 'cancelled' | null;
+  package_id?: number | null;
+  package_name?: string | null;
+  package_price?: number | null;
+  subscription_start_date?: string | null;
+  due_day_of_month?: number | null;
 }
 
 export interface UnlinkedSecret {
@@ -72,6 +79,40 @@ export async function fetchOdpAssets(workspaceId?: number | null): Promise<OdpAs
   if (!r.ok) throw new Error('Gagal memuat ODP');
   const d = await r.json();
   return (Array.isArray(d) ? d : []).filter((a: any) => a.type === 'ODP');
+}
+
+export interface CustomerDetail {
+  customer: BillingCustomer & {
+    latitude?: number | string | null;
+    longitude?: number | string | null;
+    odp_asset_id?: number | null;
+    photo_url?: string | null;
+  };
+  subscription: {
+    id: number;
+    package_id: number;
+    start_date: string | null;
+    due_day_of_month: number;
+    status: 'active' | 'suspended' | 'cancelled';
+  } | null;
+}
+
+export async function updateClientGeo(
+  workspaceId: number | null | undefined,
+  clientId: number,
+  data: { latitude?: string; longitude?: string; odp_asset_id?: string | null; photo?: File | null },
+): Promise<void> {
+  const fd = new FormData();
+  if (data.latitude !== undefined) fd.append('latitude', data.latitude);
+  if (data.longitude !== undefined) fd.append('longitude', data.longitude);
+  if (data.odp_asset_id !== undefined) fd.append('odp_asset_id', data.odp_asset_id ?? '');
+  if (data.photo) fd.append('photo', data.photo);
+  const r = await apiFetch(`${apiBase()}/api/clients/${clientId}${wsq(workspaceId)}`, { method: 'PUT', body: fd });
+  if (!r.ok) {
+    let msg = 'Gagal memperbarui lokasi/foto client';
+    try { const e = await r.json(); msg = e.message || msg; } catch {}
+    throw new Error(msg);
+  }
 }
 
 export async function createFullCustomer(
@@ -200,6 +241,7 @@ export function billingClient(workspaceId?: number | null) {
     deletePackage: (id: number) => req(`/packages/${id}`, { method: 'DELETE' }),
 
     listCustomers: (params: ListParams = {}) => req<{ customers: BillingCustomer[] } & PageMeta>(`/customers${qs(params)}`),
+    getCustomerDetail: (id: number) => req<CustomerDetail>(`/customers/${id}`),
     createCustomer: (b: Partial<BillingCustomer>) => req('/customers', { method: 'POST', ...json(b) }),
     updateCustomer: (id: number, b: Partial<BillingCustomer>) => req(`/customers/${id}`, { method: 'PUT', ...json(b) }),
     deleteCustomer: (id: number) => req(`/customers/${id}`, { method: 'DELETE' }),
@@ -229,6 +271,27 @@ export const MONTHS_ID = [
   '', 'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
   'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember',
 ];
+
+export const tenureMonths = (startDate?: string | null): number | null => {
+  if (!startDate) return null;
+  const start = new Date(`${String(startDate).slice(0, 10)}T00:00:00`);
+  if (isNaN(start.getTime())) return null;
+  const now = new Date();
+  let months = (now.getFullYear() - start.getFullYear()) * 12 + (now.getMonth() - start.getMonth());
+  if (now.getDate() < start.getDate()) months -= 1;
+  return months < 0 ? 0 : months;
+};
+
+export const tenureLabel = (startDate?: string | null): string => {
+  const m = tenureMonths(startDate);
+  if (m == null) return '—';
+  if (m === 0) return '< 1 bulan';
+  const years = Math.floor(m / 12);
+  const rem = m % 12;
+  if (years > 0 && rem > 0) return `${years} thn ${rem} bln`;
+  if (years > 0) return `${years} tahun`;
+  return `${m} bulan`;
+};
 
 export const formatDateID = (d?: string | null): string => {
   if (!d) return '—';

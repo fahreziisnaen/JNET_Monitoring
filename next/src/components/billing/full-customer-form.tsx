@@ -137,7 +137,7 @@ export default function FullCustomerForm({
 
       if (!billingCustomerId) {
         toast.warning('Pelanggan dibuat, tapi langganan dilewati', {
-          description: 'Nomor WhatsApp ini sudah terdaftar sebagai pelanggan lain. Buat langganannya manual di tab Langganan.',
+          description: 'Nomor WhatsApp ini sudah terdaftar sebagai pelanggan lain. Atur paketnya lewat tombol Edit pada pelanggan tersebut.',
         });
         onCreated();
         return;

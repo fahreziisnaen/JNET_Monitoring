@@ -115,9 +115,19 @@ exports.listCustomers = async (req, res) => {
             `SELECT COUNT(*) total FROM billing_customers c WHERE ${where}`, params
         );
         const [rows] = await pool.query(
-            `SELECT c.*, cl.client_name AS linked_client_name
+            `SELECT c.*, cl.client_name AS linked_client_name,
+                    s.id AS subscription_id, s.status AS subscription_status,
+                    s.package_id, DATE_FORMAT(s.start_date, '%Y-%m-%d') AS subscription_start_date,
+                    s.due_day_of_month,
+                    p.name AS package_name, p.price AS package_price
              FROM billing_customers c
              LEFT JOIN clients cl ON cl.id = c.client_id
+             LEFT JOIN billing_subscriptions s ON s.id = (
+                 SELECT s2.id FROM billing_subscriptions s2
+                 WHERE s2.customer_id = c.id
+                 ORDER BY (s2.status = 'active') DESC, s2.created_at DESC LIMIT 1
+             )
+             LEFT JOIN billing_packages p ON p.id = s.package_id
              WHERE ${where} ORDER BY c.created_at DESC LIMIT ? OFFSET ?`,
             [...params, limit, offset]
         );
@@ -260,6 +270,33 @@ exports.updateCustomer = async (req, res) => {
     } catch (e) {
         console.error('[Billing][Admin] updateCustomer:', e.message);
         return res.status(500).json({ message: 'Gagal memperbarui pelanggan.' });
+    }
+};
+
+exports.getCustomerDetail = async (req, res) => {
+    try {
+        const ws = resolveWorkspaceId(req);
+        const [rows] = await pool.query(
+            `SELECT c.*,
+                    cl.latitude, cl.longitude, cl.odp_asset_id, cl.photo_url, cl.client_name AS linked_client_name
+             FROM billing_customers c
+             LEFT JOIN clients cl ON cl.id = c.client_id
+             WHERE c.id = ? AND c.workspace_id = ?`,
+            [req.params.id, ws]
+        );
+        if (rows.length === 0) return res.status(404).json({ message: 'Pelanggan tidak ditemukan.' });
+
+        const [subs] = await pool.query(
+            `SELECT id, package_id, DATE_FORMAT(start_date, '%Y-%m-%d') AS start_date, due_day_of_month, status
+             FROM billing_subscriptions
+             WHERE customer_id = ? AND workspace_id = ?
+             ORDER BY (status = 'active') DESC, created_at DESC LIMIT 1`,
+            [req.params.id, ws]
+        );
+        return res.status(200).json({ customer: rows[0], subscription: subs[0] || null });
+    } catch (e) {
+        console.error('[Billing][Admin] getCustomerDetail:', e.message);
+        return res.status(500).json({ message: 'Gagal mengambil detail pelanggan.' });
     }
 };
 

@@ -3,17 +3,14 @@
 import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import { Plus, Pencil, Trash2, Loader2, X, Search, Download } from 'lucide-react';
 import { toast } from 'sonner';
-import { motion, AnimatePresence } from '@/components/motion';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card } from '@/components/ui/card';
 import ConfirmModal from '@/components/ui/confirm-modal';
-import { useEscKey } from '@/hooks/useEscKey';
-import { billingClient, BillingCustomer, ImportableClient, ImportSummary, SkippedClient } from '@/utils/billing';
+import { billingClient, formatRupiah, tenureLabel, formatDateID, BillingCustomer, ImportableClient, ImportSummary, SkippedClient } from '@/utils/billing';
 import { Pagination, SearchBox, useDebouncedValue } from './list-controls';
 import FullCustomerForm from './full-customer-form';
-
-const selectCls = 'flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm';
+import EditCustomerForm from './edit-customer-form';
 
 const REASON_LABEL: Record<SkippedClient['reason'], string> = {
   no_wa: 'Nomor WA tidak valid',
@@ -22,24 +19,12 @@ const REASON_LABEL: Record<SkippedClient['reason'], string> = {
   error: 'Gagal diproses',
 };
 
-type FormState = {
-  id?: number;
-  name: string;
-  whatsapp_number: string;
-  pppoe_secret_name: string;
-  ktp_number: string;
-  email: string;
-  address: string;
-  status: 'active' | 'inactive' | 'suspended';
-};
-
 export default function CustomersTab({ workspaceId }: { workspaceId?: number | null }) {
   const billingApi = useMemo(() => billingClient(workspaceId), [workspaceId]);
   const [items, setItems] = useState<BillingCustomer[]>([]);
   const [loading, setLoading] = useState(true);
-  const [form, setForm] = useState<FormState | null>(null);
+  const [editId, setEditId] = useState<number | null>(null);
   const [addOpen, setAddOpen] = useState(false);
-  const [saving, setSaving] = useState(false);
   const [toDelete, setToDelete] = useState<BillingCustomer | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [q, setQ] = useState('');
@@ -73,8 +58,6 @@ export default function CustomersTab({ workspaceId }: { workspaceId?: number | n
   useEffect(() => { load(); }, [load]);
 
   useEffect(() => { setPage(1); }, [workspaceId]);
-
-  useEscKey(!!form, () => setForm(null));
 
   const openImport = async () => {
     setImportOpen(true);
@@ -132,16 +115,16 @@ export default function CustomersTab({ workspaceId }: { workspaceId?: number | n
     }
   };
 
-  const openEdit = (c: BillingCustomer) => setForm({
-    id: c.id,
-    name: c.name ?? '',
-    whatsapp_number: c.whatsapp_number ?? '',
-    pppoe_secret_name: c.pppoe_secret_name ?? '',
-    ktp_number: c.ktp_number ?? '',
-    email: c.email ?? '',
-    address: c.address ?? '',
-    status: c.status,
-  });
+  const changeSubStatus = async (c: BillingCustomer, status: 'active' | 'suspended' | 'cancelled') => {
+    if (!c.subscription_id) return;
+    try {
+      await billingApi.updateSubscription(c.subscription_id, { status } as any);
+      toast.success(`Status langganan: ${status}`);
+      load();
+    } catch (e: any) {
+      toast.error('Gagal ubah status langganan', { description: e.message });
+    }
+  };
 
   const confirmDelete = async () => {
     if (!toDelete) return;
@@ -155,31 +138,6 @@ export default function CustomersTab({ workspaceId }: { workspaceId?: number | n
       toast.error('Gagal menghapus pelanggan', { description: e.message });
     } finally {
       setDeleting(false);
-    }
-  };
-
-  const save = async () => {
-    if (!form) return;
-    if (!form.whatsapp_number.trim()) return toast.error('Nomor WhatsApp wajib diisi');
-    setSaving(true);
-    try {
-      const body = {
-        name: form.name.trim() || null,
-        whatsapp_number: form.whatsapp_number.trim(),
-        pppoe_secret_name: form.pppoe_secret_name.trim() || null,
-        ktp_number: form.ktp_number.trim() || null,
-        email: form.email.trim() || null,
-        address: form.address.trim() || null,
-        status: form.status,
-      };
-      await billingApi.updateCustomer(form.id!, body);
-      toast.success('Pelanggan diperbarui');
-      setForm(null);
-      load();
-    } catch (e: any) {
-      toast.error('Gagal menyimpan pelanggan', { description: e.message });
-    } finally {
-      setSaving(false);
     }
   };
 
@@ -312,69 +270,14 @@ export default function CustomersTab({ workspaceId }: { workspaceId?: number | n
         </Card>
       )}
 
-      <AnimatePresence>
-        {form && (
-          <motion.div
-            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-            className="fixed inset-0 bg-black/70 flex items-center justify-center z-[1002] p-4"
-            onClick={() => setForm(null)}
-          >
-            <motion.div
-              initial={{ y: 40, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: 40, opacity: 0 }}
-              transition={{ type: 'spring', damping: 22, stiffness: 320 }}
-              className="bg-card rounded-2xl shadow-2xl w-full max-w-2xl border flex flex-col max-h-[90vh]"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <header className="flex justify-between items-center px-6 py-4 border-b shrink-0">
-                <h2 className="text-lg font-bold">Edit Pelanggan</h2>
-                <button onClick={() => setForm(null)} className="text-muted-foreground hover:text-foreground"><X size={18} /></button>
-              </header>
-              <div className="px-6 py-5 overflow-y-auto grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div className="sm:col-span-2">
-                  <label className="text-xs text-muted-foreground">Nama</label>
-                  <Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
-                </div>
-                <div>
-                  <label className="text-xs text-muted-foreground">No. WhatsApp *</label>
-                  <Input value={form.whatsapp_number} onChange={(e) => setForm({ ...form, whatsapp_number: e.target.value })} placeholder="0823..." />
-                </div>
-                <div>
-                  <label className="text-xs text-muted-foreground">No. KTP</label>
-                  <Input value={form.ktp_number} onChange={(e) => setForm({ ...form, ktp_number: e.target.value })} inputMode="numeric" />
-                </div>
-                <div>
-                  <label className="text-xs text-muted-foreground">Nama Secret PPPoE</label>
-                  <Input value={form.pppoe_secret_name} onChange={(e) => setForm({ ...form, pppoe_secret_name: e.target.value })} placeholder="untuk isolir/unisolir" />
-                </div>
-                <div>
-                  <label className="text-xs text-muted-foreground">Status</label>
-                  <select
-                    className={selectCls}
-                    value={form.status}
-                    onChange={(e) => setForm({ ...form, status: e.target.value as FormState['status'] })}
-                  >
-                    <option value="active">active</option>
-                    <option value="inactive">inactive</option>
-                    <option value="suspended">suspended</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="text-xs text-muted-foreground">Email</label>
-                  <Input value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
-                </div>
-                <div>
-                  <label className="text-xs text-muted-foreground">Alamat</label>
-                  <Input value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} />
-                </div>
-              </div>
-              <footer className="flex justify-end gap-2 px-6 py-4 bg-secondary/50 rounded-b-2xl shrink-0">
-                <Button variant="outline" onClick={() => setForm(null)} disabled={saving}>Batal</Button>
-                <Button onClick={save} disabled={saving}>{saving ? <Loader2 className="animate-spin" size={18} /> : 'Simpan'}</Button>
-              </footer>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+      {editId != null && (
+        <EditCustomerForm
+          workspaceId={workspaceId}
+          customerId={editId}
+          onClose={() => setEditId(null)}
+          onSaved={() => { setEditId(null); load(); }}
+        />
+      )}
 
       <ConfirmModal
         isOpen={!!toDelete}
@@ -398,8 +301,9 @@ export default function CustomersTab({ workspaceId }: { workspaceId?: number | n
                 <th className="py-2 pr-3">Nama</th>
                 <th className="py-2 pr-3">WhatsApp</th>
                 <th className="py-2 pr-3">No. KTP</th>
-                <th className="py-2 pr-3">Secret PPPoE</th>
-                <th className="py-2 pr-3">Status</th>
+                <th className="py-2 pr-3">Paket</th>
+                <th className="py-2 pr-3">Lama Langganan</th>
+                <th className="py-2 pr-3">Status Langganan</th>
                 <th className="py-2 pr-3"></th>
               </tr>
             </thead>
@@ -409,12 +313,37 @@ export default function CustomersTab({ workspaceId }: { workspaceId?: number | n
                   <td className="py-2 pr-3 font-medium">{c.name || <span className="text-muted-foreground">—</span>}</td>
                   <td className="py-2 pr-3 font-mono">{c.whatsapp_number}</td>
                   <td className="py-2 pr-3 font-mono text-xs">{c.ktp_number || <span className="text-muted-foreground">—</span>}</td>
-                  <td className="py-2 pr-3 font-mono text-xs">{c.pppoe_secret_name || <span className="text-muted-foreground">—</span>}</td>
                   <td className="py-2 pr-3">
-                    <span className={`text-xs px-2 py-0.5 rounded ${c.status === 'active' ? 'bg-green-500/15 text-green-600' : 'bg-muted text-muted-foreground'}`}>{c.status}</span>
+                    {c.package_name ? (
+                      <>
+                        <span className="font-medium">{c.package_name}</span>
+                        {c.package_price != null && <span className="block text-xs text-muted-foreground">{formatRupiah(c.package_price)}/bln</span>}
+                      </>
+                    ) : <span className="text-muted-foreground">Belum ada paket</span>}
+                  </td>
+                  <td className="py-2 pr-3">
+                    {c.subscription_id ? (
+                      <>
+                        <span>{tenureLabel(c.subscription_start_date)}</span>
+                        {c.subscription_start_date && <span className="block text-xs text-muted-foreground">sejak {formatDateID(c.subscription_start_date)}</span>}
+                      </>
+                    ) : <span className="text-muted-foreground">—</span>}
+                  </td>
+                  <td className="py-2 pr-3">
+                    {c.subscription_id ? (
+                      <select
+                        className={`text-xs rounded border border-input bg-background px-2 py-1 ${c.subscription_status === 'active' ? 'text-green-600' : c.subscription_status === 'suspended' ? 'text-orange-600' : 'text-muted-foreground'}`}
+                        value={c.subscription_status || 'active'}
+                        onChange={(e) => changeSubStatus(c, e.target.value as 'active' | 'suspended' | 'cancelled')}
+                      >
+                        <option value="active">active</option>
+                        <option value="suspended">suspended</option>
+                        <option value="cancelled">cancelled</option>
+                      </select>
+                    ) : <span className="text-xs text-muted-foreground">—</span>}
                   </td>
                   <td className="py-2 pr-3 text-right">
-                    <button onClick={() => openEdit(c)} className="p-1.5 rounded hover:bg-accent text-muted-foreground"><Pencil size={16} /></button>
+                    <button onClick={() => setEditId(c.id)} className="p-1.5 rounded hover:bg-accent text-muted-foreground"><Pencil size={16} /></button>
                     <button onClick={() => setToDelete(c)} className="p-1.5 rounded hover:bg-accent text-destructive"><Trash2 size={16} /></button>
                   </td>
                 </tr>

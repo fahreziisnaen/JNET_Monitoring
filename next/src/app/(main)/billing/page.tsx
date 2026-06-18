@@ -1,22 +1,20 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { Package, Users, Repeat, ReceiptText, Settings as SettingsIcon, ShieldAlert } from 'lucide-react';
+import { Package, Users, ReceiptText, Settings as SettingsIcon, ShieldAlert } from 'lucide-react';
 import { useAuth } from '@/components/providers/auth-provider';
 import { usePageTitle } from '@/hooks/usePageTitle';
 import { apiFetch } from '@/utils/api';
 import PackagesTab from '@/components/billing/packages-tab';
 import CustomersTab from '@/components/billing/customers-tab';
-import SubscriptionsTab from '@/components/billing/subscriptions-tab';
 import InvoicesTab from '@/components/billing/invoices-tab';
 import BillingSettingsTab from '@/components/billing/settings-tab';
 
-type TabKey = 'packages' | 'customers' | 'subscriptions' | 'invoices' | 'settings';
+type TabKey = 'packages' | 'customers' | 'invoices' | 'settings';
 
 const TABS: { key: TabKey; label: string; icon: React.ElementType }[] = [
   { key: 'packages', label: 'Paket', icon: Package },
   { key: 'customers', label: 'Pelanggan', icon: Users },
-  { key: 'subscriptions', label: 'Langganan', icon: Repeat },
   { key: 'invoices', label: 'Invoice', icon: ReceiptText },
   { key: 'settings', label: 'Pengaturan', icon: SettingsIcon },
 ];
@@ -106,7 +104,6 @@ export default function BillingPage() {
       <div>
         {tab === 'packages' && <PackagesTab workspaceId={wsId} />}
         {tab === 'customers' && <CustomersTab workspaceId={wsId} />}
-        {tab === 'subscriptions' && <SubscriptionsTab workspaceId={wsId} />}
         {tab === 'invoices' && <InvoicesTab workspaceId={wsId} />}
         {tab === 'settings' && <BillingSettingsTab workspaceId={wsId} />}
       </div>
