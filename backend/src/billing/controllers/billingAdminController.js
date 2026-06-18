@@ -299,7 +299,10 @@ exports.listSubscriptions = async (req, res) => {
             params
         );
         const [rows] = await pool.query(
-            `SELECT s.*, c.name AS customer_name, c.whatsapp_number, p.name AS package_name, p.price
+            `SELECT s.*,
+                    DATE_FORMAT(s.start_date, '%Y-%m-%d') AS start_date,
+                    DATE_FORMAT(s.next_due_date, '%Y-%m-%d') AS next_due_date,
+                    c.name AS customer_name, c.whatsapp_number, p.name AS package_name, p.price
              FROM billing_subscriptions s
              JOIN billing_customers c ON c.id = s.customer_id
              JOIN billing_packages p ON p.id = s.package_id
@@ -383,7 +386,9 @@ exports.listInvoices = async (req, res) => {
             params
         );
         const [rows] = await pool.query(
-            `SELECT i.*, c.name AS customer_name, c.whatsapp_number
+            `SELECT i.*,
+                    DATE_FORMAT(i.due_date, '%Y-%m-%d') AS due_date,
+                    c.name AS customer_name, c.whatsapp_number
              FROM billing_invoices i
              JOIN billing_customers c ON c.id = i.customer_id
              WHERE ${where}
