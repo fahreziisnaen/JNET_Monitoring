@@ -5,14 +5,14 @@ import {
   MapContainer,
   TileLayer,
   Marker,
-  Popup,
+  // Popup,
   Tooltip,
   Polyline,
   useMap,
   useMapEvents,
   ZoomControl,
 } from "react-leaflet";
-import "leaflet/dist/leaflet.css";
+// import "leaflet/dist/leaflet.css";
 import L from "leaflet";
 import { Asset } from "./asset-list";
 import { Client } from "./client-list";

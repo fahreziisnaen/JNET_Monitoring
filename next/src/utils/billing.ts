@@ -170,6 +170,15 @@ export interface ImportSummary {
   created: number;
   relinked: number;
   skipped: number;
+  skipped_no_wa?: number;
+  skipped_dup_wa?: number;
+  skipped_error?: number;
+}
+
+export interface SkippedClient {
+  client_name: string | null;
+  whatsapp_number: string | null;
+  reason: 'no_wa' | 'dup_wa' | 'exists' | 'error';
 }
 
 export function billingClient(workspaceId?: number | null) {
@@ -195,7 +204,7 @@ export function billingClient(workspaceId?: number | null) {
     updateCustomer: (id: number, b: Partial<BillingCustomer>) => req(`/customers/${id}`, { method: 'PUT', ...json(b) }),
     deleteCustomer: (id: number) => req(`/customers/${id}`, { method: 'DELETE' }),
     listImportableClients: () => req<{ clients: ImportableClient[] }>('/importable-clients'),
-    importClients: (b: { client_ids?: number[]; all?: boolean }) => req<{ summary: ImportSummary }>('/import-clients', { method: 'POST', ...json(b) }),
+    importClients: (b: { client_ids?: number[]; all?: boolean }) => req<{ summary: ImportSummary; skipped: SkippedClient[] }>('/import-clients', { method: 'POST', ...json(b) }),
 
     listSubscriptions: (params: ListParams = {}) => req<{ subscriptions: BillingSubscription[] } & PageMeta>(`/subscriptions${qs(params)}`),
     createSubscription: (b: Partial<BillingSubscription>) => req('/subscriptions', { method: 'POST', ...json(b) }),

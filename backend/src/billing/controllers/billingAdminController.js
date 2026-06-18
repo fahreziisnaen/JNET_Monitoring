@@ -172,8 +172,10 @@ exports.importClients = async (req, res) => {
         }
         const [clients] = await pool.query(sql, params);
 
-        const summary = { total: clients.length, created: 0, relinked: 0, skipped: 0 };
+        const summary = { total: clients.length, created: 0, relinked: 0, skipped: 0, skipped_no_wa: 0, skipped_dup_wa: 0, skipped_error: 0 };
+        const skippedList = [];
         for (const c of clients) {
+            const label = { client_name: c.client_name, whatsapp_number: c.whatsapp_number };
             try {
                 const r = await upsertFromClient({
                     workspaceId: ws,
@@ -185,13 +187,17 @@ exports.importClients = async (req, res) => {
                 });
                 if (r === 'created') summary.created++;
                 else if (r === 'relinked') summary.relinked++;
-                else summary.skipped++;
+                else if (r === 'skipped_no_wa') { summary.skipped++; summary.skipped_no_wa++; skippedList.push({ ...label, reason: 'no_wa' }); }
+                else if (r === 'skipped_dup_wa') { summary.skipped++; summary.skipped_dup_wa++; skippedList.push({ ...label, reason: 'dup_wa' }); }
+                else { summary.skipped++; skippedList.push({ ...label, reason: 'exists' }); }
             } catch (rowErr) {
                 console.error('[Billing][Admin] importClients row:', rowErr.message);
                 summary.skipped++;
+                summary.skipped_error++;
+                skippedList.push({ ...label, reason: 'error' });
             }
         }
-        return res.status(200).json({ message: 'Import selesai.', summary });
+        return res.status(200).json({ message: 'Import selesai.', summary, skipped: skippedList });
     } catch (e) {
         console.error('[Billing][Admin] importClients:', e.message);
         return res.status(500).json({ message: 'Gagal mengimpor client.' });

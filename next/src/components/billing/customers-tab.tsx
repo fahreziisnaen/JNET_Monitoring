@@ -6,9 +6,16 @@ import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card } from '@/components/ui/card';
-import { billingClient, BillingCustomer, ImportableClient } from '@/utils/billing';
+import { billingClient, BillingCustomer, ImportableClient, ImportSummary, SkippedClient } from '@/utils/billing';
 import { Pagination, SearchBox, useDebouncedValue } from './list-controls';
 import FullCustomerForm from './full-customer-form';
+
+const REASON_LABEL: Record<SkippedClient['reason'], string> = {
+  no_wa: 'Nomor WA tidak valid',
+  dup_wa: 'Nomor WA duplikat (sudah dipakai pelanggan lain)',
+  exists: 'Sudah terdaftar',
+  error: 'Gagal diproses',
+};
 
 type FormState = {
   id?: number;
@@ -40,6 +47,7 @@ export default function CustomersTab({ workspaceId }: { workspaceId?: number | n
   const [importing, setImporting] = useState(false);
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [impQ, setImpQ] = useState('');
+  const [importResult, setImportResult] = useState<{ summary: ImportSummary; skipped: SkippedClient[] } | null>(null);
 
   const load = useCallback(async () => {
     if (workspaceId == null) { setItems([]); setTotal(0); setLoading(false); return; }
@@ -63,6 +71,7 @@ export default function CustomersTab({ workspaceId }: { workspaceId?: number | n
     setImportOpen(true);
     setSelected(new Set());
     setImpQ('');
+    setImportResult(null);
     setImportLoading(true);
     try {
       const { clients } = await billingApi.listImportableClients();
@@ -101,11 +110,11 @@ export default function CustomersTab({ workspaceId }: { workspaceId?: number | n
     setImporting(true);
     try {
       const body = all ? { all: true } : { client_ids: Array.from(selected) };
-      const { summary } = await billingApi.importClients(body);
+      const { summary, skipped } = await billingApi.importClients(body);
       toast.success('Import selesai', {
         description: `Dibuat ${summary.created}, ditautkan ${summary.relinked}, dilewati ${summary.skipped} dari ${summary.total}.`,
       });
-      setImportOpen(false);
+      setImportResult({ summary, skipped: skipped || [] });
       load();
     } catch (e: any) {
       toast.error('Gagal mengimpor', { description: e.message });
@@ -189,7 +198,52 @@ export default function CustomersTab({ workspaceId }: { workspaceId?: number | n
             Hanya client yang punya nomor WhatsApp & belum terdaftar di billing yang ditampilkan. Nama, nomor, dan secret PPPoE akan tersalin otomatis.
           </p>
 
-          {importLoading ? (
+          {importResult ? (
+            <div>
+              <div className="flex flex-wrap gap-2 mb-3 text-sm">
+                <span className="px-2 py-1 rounded bg-green-500/15 text-green-600">Dibuat {importResult.summary.created}</span>
+                <span className="px-2 py-1 rounded bg-blue-500/15 text-blue-600">Ditautkan {importResult.summary.relinked}</span>
+                <span className="px-2 py-1 rounded bg-muted text-muted-foreground">Dilewati {importResult.summary.skipped}</span>
+                <span className="px-2 py-1 rounded bg-secondary text-muted-foreground">Total {importResult.summary.total}</span>
+              </div>
+
+              {importResult.skipped.length === 0 ? (
+                <p className="text-sm text-muted-foreground py-4">Semua client berhasil diproses, tidak ada yang dilewati.</p>
+              ) : (
+                <>
+                  <p className="text-sm font-medium mb-2">Client yang dilewati ({importResult.skipped.length})</p>
+                  <div className="max-h-72 overflow-y-auto border rounded-md mb-3">
+                    <table className="w-full text-sm">
+                      <thead className="sticky top-0 bg-card">
+                        <tr className="text-left text-muted-foreground border-b">
+                          <th className="py-2 px-3">Nama</th>
+                          <th className="py-2 pr-3">WhatsApp</th>
+                          <th className="py-2 pr-3">Alasan</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {importResult.skipped.map((s, i) => (
+                          <tr key={i} className="border-b">
+                            <td className="py-2 px-3 font-medium">{s.client_name || <span className="text-muted-foreground">—</span>}</td>
+                            <td className="py-2 pr-3 font-mono">{s.whatsapp_number || <span className="text-muted-foreground">—</span>}</td>
+                            <td className="py-2 pr-3 text-amber-600">{REASON_LABEL[s.reason] || s.reason}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  <p className="text-xs text-muted-foreground mb-3">
+                    Nomor WA duplikat: nomor itu sudah dipakai pelanggan billing lain (cek juga format seperti 0812… vs 62812…). Edit dulu nomornya di Monitoring, lalu impor ulang.
+                  </p>
+                </>
+              )}
+
+              <div className="flex justify-end gap-2">
+                <Button variant="outline" onClick={openImport} disabled={importing}>Impor Lagi</Button>
+                <Button onClick={() => setImportOpen(false)}>Selesai</Button>
+              </div>
+            </div>
+          ) : importLoading ? (
             <div className="flex justify-center py-8"><Loader2 className="animate-spin text-muted-foreground" /></div>
           ) : importable.length === 0 ? (
             <p className="text-center text-muted-foreground py-8">Tidak ada client yang bisa diimpor (semua sudah terdaftar atau tanpa nomor WA).</p>
