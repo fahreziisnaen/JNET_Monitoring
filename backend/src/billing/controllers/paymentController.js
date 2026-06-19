@@ -1,4 +1,5 @@
 const pool = require('../../config/database');
+const withTransaction = require('../../utils/withTransaction');
 const tripayService = require('../services/tripayService');
 const isolirService = require('../services/isolirService');
 
@@ -46,14 +47,18 @@ exports.tripayCallback = async (req, res) => {
         const statusMap = { PAID: 'paid', EXPIRED: 'expired', FAILED: 'failed', REFUND: 'refunded' };
         const newStatus = statusMap[gwStatus] || 'pending';
 
-        await pool.query(
-            'UPDATE billing_payments SET status = ?, provider_ref = COALESCE(?, provider_ref), paid_at = ?, raw_response = ? WHERE id = ?',
-            [newStatus, payload.reference || null, newStatus === 'paid' ? new Date() : null, JSON.stringify(payload), payment.id]
-        );
+        const restoreArgs = await withTransaction(async (conn) => {
+            await conn.query(
+                'UPDATE billing_payments SET status = ?, provider_ref = COALESCE(?, provider_ref), paid_at = ?, raw_response = ? WHERE id = ?',
+                [newStatus, payload.reference || null, newStatus === 'paid' ? new Date() : null, JSON.stringify(payload), payment.id]
+            );
+            if (newStatus === 'paid') {
+                return await markInvoicePaid(payment.invoice_id, conn);
+            }
+            return null;
+        });
 
-        if (newStatus === 'paid') {
-            await handleInvoicePaid(payment.invoice_id);
-        }
+        if (restoreArgs) await tryRestoreCustomer(restoreArgs);
 
         return res.status(200).json({ success: true });
     } catch (error) {
@@ -62,17 +67,17 @@ exports.tripayCallback = async (req, res) => {
     }
 };
 
-async function handleInvoicePaid(invoiceId) {
-    const [invRows] = await pool.query('SELECT * FROM billing_invoices WHERE id = ?', [invoiceId]);
-    if (invRows.length === 0) return;
+async function markInvoicePaid(invoiceId, conn) {
+    const [invRows] = await conn.query('SELECT * FROM billing_invoices WHERE id = ?', [invoiceId]);
+    if (invRows.length === 0) return null;
     const invoice = invRows[0];
 
-    await pool.query(
+    await conn.query(
         "UPDATE billing_invoices SET status = 'paid', paid_at = ? WHERE id = ?",
         [new Date(), invoiceId]
     );
 
-    const [custRows] = await pool.query(
+    const [custRows] = await conn.query(
         'SELECT bc.*, p.pppoe_profile FROM billing_customers bc ' +
         'LEFT JOIN billing_subscriptions s ON s.id = ? ' +
         'LEFT JOIN billing_packages p ON p.id = s.package_id ' +
@@ -81,17 +86,27 @@ async function handleInvoicePaid(invoiceId) {
     );
     const customer = custRows[0];
     if (customer && customer.pppoe_secret_name) {
-        try {
-            await isolirService.restoreCustomer({
-                workspaceId: invoice.workspace_id,
-                deviceId: customer.device_id,
-                secretName: customer.pppoe_secret_name,
-                targetProfile: customer.pppoe_profile || null,
-            });
-        } catch (e) {
-            console.error('[Billing][Webhook] restoreCustomer gagal:', e.message);
-        }
+        return {
+            workspaceId: invoice.workspace_id,
+            deviceId: customer.device_id,
+            secretName: customer.pppoe_secret_name,
+            targetProfile: customer.pppoe_profile || null,
+        };
     }
+    return null;
+}
+
+async function tryRestoreCustomer(args) {
+    try {
+        await isolirService.restoreCustomer(args);
+    } catch (e) {
+        console.error('[Billing][Webhook] restoreCustomer gagal:', e.message);
+    }
+}
+
+async function handleInvoicePaid(invoiceId) {
+    const restoreArgs = await withTransaction((conn) => markInvoicePaid(invoiceId, conn));
+    if (restoreArgs) await tryRestoreCustomer(restoreArgs);
 }
 
 module.exports.handleInvoicePaid = handleInvoicePaid;
