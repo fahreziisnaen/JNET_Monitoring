@@ -1,7 +1,8 @@
 const pool = require('../../config/database');
-const { generateInvoicesForWorkspace } = require('../services/billingService');
+const { generateInvoicesForWorkspace, generateInvoiceForSubscription } = require('../services/billingService');
 const { normalizeWa } = require('../utils/phone');
 const { upsertFromClient } = require('../services/customerSyncService');
+const withTransaction = require('../../utils/withTransaction');
 
 function resolveWorkspaceId(req) {
     let workspaceId = req.user.workspace_id;
@@ -367,13 +368,38 @@ exports.createSubscription = async (req, res) => {
 
         const dueDay = Math.min(Math.max(parseInt(due_day_of_month) || 1, 1), 28);
         const start = start_date || new Date().toISOString().slice(0, 10);
+        const startYear = parseInt(start.slice(0, 4), 10);
+        const startMonth = parseInt(start.slice(5, 7), 10);
 
-        const [result] = await pool.query(
-            `INSERT INTO billing_subscriptions (workspace_id, customer_id, package_id, status, start_date, due_day_of_month)
-             VALUES (?, ?, ?, 'active', ?, ?)`,
-            [ws, customer_id, package_id, start, dueDay]
-        );
-        return res.status(201).json({ message: 'Langganan dibuat.', id: result.insertId });
+        const subscriptionId = await withTransaction(async (conn) => {
+            const [result] = await conn.query(
+                `INSERT INTO billing_subscriptions (workspace_id, customer_id, package_id, status, start_date, due_day_of_month)
+                 VALUES (?, ?, ?, 'active', ?, ?)`,
+                [ws, customer_id, package_id, start, dueDay]
+            );
+            const subId = result.insertId;
+
+            const inv = await generateInvoiceForSubscription(
+                { id: subId, workspace_id: ws, customer_id, package_id, due_day_of_month: dueDay, status: 'active' },
+                startYear, startMonth, conn
+            );
+            if (inv.created) {
+                await conn.query(
+                    "UPDATE billing_invoices SET status = 'paid', paid_at = ? WHERE id = ?",
+                    [start, inv.invoiceId]
+                );
+                const [amtRows] = await conn.query('SELECT amount FROM billing_invoices WHERE id = ?', [inv.invoiceId]);
+                const amount = amtRows[0] ? amtRows[0].amount : 0;
+                await conn.query(
+                    `INSERT INTO billing_payments (workspace_id, invoice_id, provider, merchant_ref, payment_method, amount, status, paid_at)
+                     VALUES (?, ?, 'manual', ?, 'cash', ?, 'paid', ?)`,
+                    [ws, inv.invoiceId, `CASH-INV${inv.invoiceId}`, amount, start]
+                );
+            }
+            return subId;
+        });
+
+        return res.status(201).json({ message: 'Langganan dibuat.', id: subscriptionId });
     } catch (e) {
         console.error('[Billing][Admin] createSubscription:', e.message);
         return res.status(500).json({ message: 'Gagal membuat langganan.' });
