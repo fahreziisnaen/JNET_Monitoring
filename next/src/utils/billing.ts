@@ -1,4 +1,6 @@
 import { apiFetch } from './api';
+import { format, parseISO, isValid, differenceInMonths } from 'date-fns';
+import { id } from 'date-fns/locale';
 
 const base = () => `${process.env.NEXT_PUBLIC_API_BASE_URL}/api/billing/admin`;
 const apiBase = () => process.env.NEXT_PUBLIC_API_BASE_URL;
@@ -298,12 +300,10 @@ export const MONTHS_ID = [
 
 export const tenureMonths = (startDate?: string | null): number | null => {
   if (!startDate) return null;
-  const start = new Date(`${String(startDate).slice(0, 10)}T00:00:00`);
-  if (isNaN(start.getTime())) return null;
-  const now = new Date();
-  let months = (now.getFullYear() - start.getFullYear()) * 12 + (now.getMonth() - start.getMonth());
-  if (now.getDate() < start.getDate()) months -= 1;
-  return months < 0 ? 0 : months;
+  const start = parseISO(String(startDate).slice(0, 10));
+  if (!isValid(start)) return null;
+  const m = differenceInMonths(new Date(), start);
+  return m < 0 ? 0 : m;
 };
 
 export const tenureLabel = (startDate?: string | null): string => {
@@ -319,17 +319,12 @@ export const tenureLabel = (startDate?: string | null): string => {
 
 export const formatDateID = (d?: string | null): string => {
   if (!d) return '—';
-  const s = String(d).slice(0, 10);
-  const [y, m, day] = s.split('-').map(Number);
-  if (!y || !m || !day || !MONTHS_ID[m]) return '—';
-  return `${day} ${MONTHS_ID[m]} ${y}`;
+  const dt = parseISO(String(d).slice(0, 10));
+  return isValid(dt) ? format(dt, 'd MMMM yyyy', { locale: id }) : '—';
 };
 
 export const formatDateTimeID = (d?: string | null): string => {
   if (!d) return '—';
-  const dt = new Date(d);
-  if (isNaN(dt.getTime())) return '—';
-  const tgl = `${dt.getDate()} ${MONTHS_ID[dt.getMonth() + 1]} ${dt.getFullYear()}`;
-  const jam = `${String(dt.getHours()).padStart(2, '0')}.${String(dt.getMinutes()).padStart(2, '0')}`;
-  return `${tgl}, ${jam}`;
+  const dt = parseISO(String(d));
+  return isValid(dt) ? format(dt, 'd MMMM yyyy, HH.mm', { locale: id }) : '—';
 };

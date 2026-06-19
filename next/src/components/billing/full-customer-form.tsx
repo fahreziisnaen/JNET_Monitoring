@@ -11,6 +11,7 @@ import { useEscKey } from '@/hooks/useEscKey';
 import { billingClient, createFullCustomer, fetchOdpAssets, formatRupiah, BillingPackage, OdpAsset, UnlinkedSecret } from '@/utils/billing';
 import PppoeSecretPicker from './pppoe-secret-picker';
 import OdpPicker from './odp-picker';
+import DateField from './date-field';
 
 function todayStr() {
   const d = new Date();
@@ -215,7 +216,7 @@ export default function FullCustomerForm({
               </div>
               <div>
                 <label className={labelCls}>Tanggal Mulai</label>
-                <Input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
+                <DateField value={startDate} onChange={setStartDate} />
                 <p className="text-[11px] text-muted-foreground mt-1.5">Jatuh tempo tagihan bulanan mengikuti tanggal ini.</p>
               </div>
             </div>

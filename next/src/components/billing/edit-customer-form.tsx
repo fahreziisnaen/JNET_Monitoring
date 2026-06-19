@@ -10,6 +10,7 @@ import { Input } from '@/components/ui/input';
 import { useEscKey } from '@/hooks/useEscKey';
 import { billingClient, updateClientGeo, fetchOdpAssets, formatRupiah, BillingPackage, OdpAsset, CustomerDetail } from '@/utils/billing';
 import OdpPicker from './odp-picker';
+import DateField from './date-field';
 
 const MapPicker = dynamic(() => import('./map-picker'), {
   ssr: false,
@@ -272,7 +273,7 @@ export default function EditCustomerForm({
                 </div>
                 <div>
                   <label className={labelCls}>Tanggal Pasang / Mulai Langganan</label>
-                  <Input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
+                  <DateField value={startDate} onChange={setStartDate} />
                   <p className="text-[11px] text-muted-foreground mt-1.5">
                     Jatuh tempo tagihan bulanan mengikuti tanggal ini{hasSub && detail?.subscription?.due_day_of_month ? ` (saat ini tiap tanggal ${detail.subscription.due_day_of_month})` : ''}.
                   </p>
