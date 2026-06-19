@@ -72,7 +72,7 @@ exports.payInvoice = async (req, res) => {
             result = await createPaymentForInvoice(invoice, { method: req.body.method });
         } catch (gwErr) {
             console.error('[Billing][Portal] gateway error:', gwErr.message);
-            return res.status(502).json({ message: 'Gagal membuat transaksi pembayaran. Hubungi admin.' });
+            return res.status(422).json({ message: 'Gagal membuat transaksi pembayaran. Hubungi admin.' });
         }
 
         if (result.reused) {

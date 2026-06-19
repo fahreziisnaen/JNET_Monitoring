@@ -546,12 +546,12 @@ exports.sendInvoiceWa = async (req, res) => {
             result = await createPaymentForInvoice(invoice, { method: req.body.method });
         } catch (gwErr) {
             console.error('[Billing][Admin] sendInvoiceWa gateway:', gwErr.message);
-            return res.status(502).json({ message: `Gagal membuat link pembayaran: ${gwErr.message}` });
+            return res.status(422).json({ message: `Gagal membuat link pembayaran: ${gwErr.message}` });
         }
 
         const checkoutUrl = result.payment.checkout_url;
         if (!checkoutUrl) {
-            return res.status(502).json({ message: 'Gateway tidak mengembalikan link pembayaran.' });
+            return res.status(422).json({ message: 'Gateway tidak mengembalikan link pembayaran.' });
         }
 
         const periode = `${MONTHS_ID[invoice.period_month]} ${invoice.period_year}`;
