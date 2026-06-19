@@ -21,6 +21,7 @@ const MapPicker = dynamic(() => import('./map-picker'), {
 });
 
 const selectCls = 'flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm';
+const labelCls = 'block text-xs font-medium text-muted-foreground mb-1.5';
 
 function todayStr() {
   const d = new Date();
@@ -219,23 +220,23 @@ export default function EditCustomerForm({
         ) : (
           <div className="px-6 py-5 overflow-y-auto grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="sm:col-span-2">
-              <label className="text-xs text-muted-foreground">Nama Secret PPPoE (billing — untuk isolir/unisolir)</label>
+              <label className={labelCls}>Nama Secret PPPoE (billing — untuk isolir/unisolir)</label>
               <Input value={secret} onChange={(e) => setSecret(e.target.value)} placeholder="nama secret" />
             </div>
             <div className="sm:col-span-2">
-              <label className="text-xs text-muted-foreground">Nama</label>
+              <label className={labelCls}>Nama</label>
               <Input value={name} onChange={(e) => setName(e.target.value)} />
             </div>
             <div>
-              <label className="text-xs text-muted-foreground">No. WhatsApp *</label>
+              <label className={labelCls}>No. WhatsApp *</label>
               <Input value={wa} onChange={(e) => setWa(e.target.value)} placeholder="0823..." />
             </div>
             <div>
-              <label className="text-xs text-muted-foreground">No. KTP</label>
+              <label className={labelCls}>No. KTP</label>
               <Input value={ktp} onChange={(e) => setKtp(e.target.value)} inputMode="numeric" />
             </div>
             <div>
-              <label className="text-xs text-muted-foreground">Status</label>
+              <label className={labelCls}>Status</label>
               <select className={selectCls} value={status} onChange={(e) => setStatus(e.target.value as typeof status)}>
                 <option value="active">Aktif</option>
                 <option value="inactive">Nonaktif</option>
@@ -243,7 +244,7 @@ export default function EditCustomerForm({
               </select>
             </div>
             <div>
-              <label className="text-xs text-muted-foreground">ODP</label>
+              <label className={labelCls}>ODP</label>
               {clientId ? (
                 <OdpPicker odps={odps} value={odp} onSelect={setOdp} />
               ) : (
@@ -251,29 +252,29 @@ export default function EditCustomerForm({
               )}
             </div>
             <div>
-              <label className="text-xs text-muted-foreground">Email</label>
+              <label className={labelCls}>Email</label>
               <Input value={email} onChange={(e) => setEmail(e.target.value)} />
             </div>
             <div className="sm:col-span-2">
-              <label className="text-xs text-muted-foreground">Alamat</label>
+              <label className={labelCls}>Alamat</label>
               <Input value={address} onChange={(e) => setAddress(e.target.value)} />
             </div>
 
-            <div className="sm:col-span-2 border-t pt-3 mt-1">
-              <p className="text-sm font-medium mb-2">Langganan</p>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div className="sm:col-span-2">
-                  <label className="text-xs text-muted-foreground">Paket {hasSub ? '(ubah untuk upgrade/downgrade)' : '(buat langganan)'}</label>
+            <div className="sm:col-span-2 border-t pt-4 mt-1">
+              <p className="text-sm font-semibold mb-3">Langganan</p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-4">
+                <div>
+                  <label className={labelCls}>Paket <span className="font-normal text-muted-foreground/70">{hasSub ? '(ubah untuk upgrade/downgrade)' : '(buat langganan)'}</span></label>
                   <select className={selectCls} value={packageId} onChange={(e) => setPackageId(e.target.value)}>
                     <option value="">— pilih paket —</option>
                     {packages.map((p) => <option key={p.id} value={p.id}>{p.name} ({formatRupiah(p.price)})</option>)}
                   </select>
                 </div>
-                <div className="sm:col-span-2">
-                  <label className="text-xs text-muted-foreground">Tanggal Pasang / Mulai Langganan</label>
+                <div>
+                  <label className={labelCls}>Tanggal Pasang / Mulai Langganan</label>
                   <Input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
-                  <p className="text-[11px] text-muted-foreground mt-1">
-                    Jatuh tempo tagihan tiap bulan mengikuti tanggal ini{hasSub && detail?.subscription?.due_day_of_month ? ` (saat ini tiap tanggal ${detail.subscription.due_day_of_month})` : ''}.
+                  <p className="text-[11px] text-muted-foreground mt-1.5">
+                    Jatuh tempo tagihan bulanan mengikuti tanggal ini{hasSub && detail?.subscription?.due_day_of_month ? ` (saat ini tiap tanggal ${detail.subscription.due_day_of_month})` : ''}.
                   </p>
                 </div>
               </div>
@@ -282,7 +283,7 @@ export default function EditCustomerForm({
             {clientId && (
               <>
                 <div className="sm:col-span-2">
-                  <label className="text-xs text-muted-foreground flex items-center gap-1"><MapPin size={14} /> Lokasi rumah — klik / geser pin di peta</label>
+                  <label className={`${labelCls} flex items-center gap-1`}><MapPin size={14} /> Lokasi rumah <span className="font-normal text-muted-foreground/70">— klik / geser pin di peta</span></label>
                   <MapPicker lat={lat} lng={lng} onPick={onMapPick} />
                   <Input
                     className="mt-2"
@@ -293,7 +294,7 @@ export default function EditCustomerForm({
                   <p className="text-[11px] text-muted-foreground mt-1">Tempel koordinat dari Google Maps (format: lintang, bujur).</p>
                 </div>
                 <div className="sm:col-span-2">
-                  <label className="text-xs text-muted-foreground">Foto depan rumah</label>
+                  <label className={labelCls}>Foto depan rumah</label>
                   <div
                     onClick={() => fileRef.current?.click()}
                     onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
