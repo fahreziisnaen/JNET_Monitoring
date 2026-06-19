@@ -232,9 +232,9 @@ export default function EditCustomerForm({
             <div>
               <label className="text-xs text-muted-foreground">Status</label>
               <select className={selectCls} value={status} onChange={(e) => setStatus(e.target.value as typeof status)}>
-                <option value="active">active</option>
-                <option value="inactive">inactive</option>
-                <option value="suspended">suspended</option>
+                <option value="active">Aktif</option>
+                <option value="inactive">Nonaktif</option>
+                <option value="suspended">Isolir</option>
               </select>
             </div>
             <div>

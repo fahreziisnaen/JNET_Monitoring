@@ -336,9 +336,9 @@ export default function CustomersTab({ workspaceId }: { workspaceId?: number | n
                         value={c.subscription_status || 'active'}
                         onChange={(e) => changeSubStatus(c, e.target.value as 'active' | 'suspended' | 'cancelled')}
                       >
-                        <option value="active">active</option>
-                        <option value="suspended">suspended</option>
-                        <option value="cancelled">cancelled</option>
+                        <option value="active">Aktif</option>
+                        <option value="suspended">Isolir</option>
+                        <option value="cancelled">Berhenti</option>
                       </select>
                     ) : <span className="text-xs text-muted-foreground">—</span>}
                   </td>
