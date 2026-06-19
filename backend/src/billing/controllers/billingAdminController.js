@@ -425,14 +425,15 @@ exports.createSubscription = async (req, res) => {
 exports.updateSubscription = async (req, res) => {
     try {
         const ws = resolveWorkspaceId(req);
-        const { package_id, status, due_day_of_month } = req.body;
+        const { package_id, status, due_day_of_month, start_date } = req.body;
         const [result] = await pool.query(
             `UPDATE billing_subscriptions SET
                 package_id = COALESCE(?, package_id),
                 status = COALESCE(?, status),
-                due_day_of_month = COALESCE(?, due_day_of_month)
+                due_day_of_month = COALESCE(?, due_day_of_month),
+                start_date = COALESCE(?, start_date)
              WHERE id = ? AND workspace_id = ?`,
-            [package_id ?? null, status ?? null, due_day_of_month ?? null, req.params.id, ws]
+            [package_id ?? null, status ?? null, due_day_of_month ?? null, start_date ?? null, req.params.id, ws]
         );
         if (result.affectedRows === 0) return res.status(404).json({ message: 'Langganan tidak ditemukan.' });
         return res.status(200).json({ message: 'Langganan diperbarui.' });

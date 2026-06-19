@@ -8,7 +8,7 @@ import { motion } from '@/components/motion';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useEscKey } from '@/hooks/useEscKey';
-import { billingClient, updateClientGeo, fetchOdpAssets, formatRupiah, formatDateID, BillingPackage, OdpAsset, CustomerDetail } from '@/utils/billing';
+import { billingClient, updateClientGeo, fetchOdpAssets, formatRupiah, BillingPackage, OdpAsset, CustomerDetail } from '@/utils/billing';
 import OdpPicker from './odp-picker';
 
 const MapPicker = dynamic(() => import('./map-picker'), {
@@ -173,9 +173,14 @@ export default function EditCustomerForm({
 
       if (packageId) {
         if (hasSub) {
-          if (Number(packageId) !== detail!.subscription!.package_id) {
-            await billingApi.updateSubscription(detail!.subscription!.id, { package_id: Number(packageId) } as any);
+          const sub = detail!.subscription!;
+          const body: Record<string, unknown> = {};
+          if (Number(packageId) !== sub.package_id) body.package_id = Number(packageId);
+          if (startDate && startDate !== String(sub.start_date || '').slice(0, 10)) {
+            body.start_date = startDate;
+            body.due_day_of_month = Math.min(Math.max(Number(startDate.slice(8, 10)) || 1, 1), 28);
           }
+          if (Object.keys(body).length) await billingApi.updateSubscription(sub.id, body as any);
         } else {
           const start = startDate || todayStr();
           const dueDay = Math.min(Math.max(Number(start.slice(8, 10)) || 1, 1), 28);
@@ -264,17 +269,13 @@ export default function EditCustomerForm({
                     {packages.map((p) => <option key={p.id} value={p.id}>{p.name} ({formatRupiah(p.price)})</option>)}
                   </select>
                 </div>
-                {hasSub ? (
-                  <div className="sm:col-span-2 text-xs text-muted-foreground">
-                    Mulai: {formatDateID(detail?.subscription?.start_date)} · Jatuh tempo tiap tanggal {detail?.subscription?.due_day_of_month}
-                  </div>
-                ) : (
-                  <div className="sm:col-span-2">
-                    <label className="text-xs text-muted-foreground">Tanggal Mulai</label>
-                    <Input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
-                    <p className="text-[11px] text-muted-foreground mt-1">Tanggal jatuh tempo tagihan tiap bulan mengikuti tanggal ini.</p>
-                  </div>
-                )}
+                <div className="sm:col-span-2">
+                  <label className="text-xs text-muted-foreground">Tanggal Pasang / Mulai Langganan</label>
+                  <Input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
+                  <p className="text-[11px] text-muted-foreground mt-1">
+                    Jatuh tempo tagihan tiap bulan mengikuti tanggal ini{hasSub && detail?.subscription?.due_day_of_month ? ` (saat ini tiap tanggal ${detail.subscription.due_day_of_month})` : ''}.
+                  </p>
+                </div>
               </div>
             </div>
 
