@@ -3,6 +3,22 @@ const { generateInvoicesForWorkspace, generateInvoiceForSubscription } = require
 const { normalizeWa } = require('../utils/phone');
 const { upsertFromClient } = require('../services/customerSyncService');
 const withTransaction = require('../../utils/withTransaction');
+const { createPaymentForInvoice } = require('../services/paymentService');
+const { sendWhatsAppMessage, isWhatsAppConnected } = require('../../services/whatsappService');
+const tripayService = require('../services/tripayService');
+
+const MONTHS_ID = ['', 'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
+
+function rupiah(n) {
+    return 'Rp ' + Number(n || 0).toLocaleString('id-ID');
+}
+
+function tanggalID(d) {
+    const s = String(d).slice(0, 10);
+    const [y, m, day] = s.split('-').map(Number);
+    if (!y || !m || !day || !MONTHS_ID[m]) return s;
+    return `${day} ${MONTHS_ID[m]} ${y}`;
+}
 
 function resolveWorkspaceId(req) {
     let workspaceId = req.user.workspace_id;
@@ -466,6 +482,109 @@ exports.listInvoices = async (req, res) => {
     }
 };
 
+exports.listPayments = async (req, res) => {
+    try {
+        const ws = resolveWorkspaceId(req);
+        const { page, limit, offset, q } = paginationParams(req);
+        const filters = ['p.workspace_id = ?'];
+        const params = [ws];
+        if (req.query.status) { filters.push('p.status = ?'); params.push(req.query.status); }
+        if (req.query.method) { filters.push('p.payment_method = ?'); params.push(req.query.method); }
+        if (q) {
+            filters.push('(i.invoice_number LIKE ? OR c.name LIKE ? OR c.whatsapp_number LIKE ? OR p.provider_ref LIKE ?)');
+            const like = `%${q}%`;
+            params.push(like, like, like, like);
+        }
+        const where = filters.join(' AND ');
+        const [[{ total }]] = await pool.query(
+            `SELECT COUNT(*) total
+             FROM billing_payments p
+             JOIN billing_invoices i ON i.id = p.invoice_id
+             JOIN billing_customers c ON c.id = i.customer_id
+             WHERE ${where}`,
+            params
+        );
+        const [rows] = await pool.query(
+            `SELECT p.id, p.invoice_id, p.provider, p.payment_method, p.amount, p.fee,
+                    p.status, p.provider_ref, p.paid_at, p.created_at,
+                    i.invoice_number, i.period_year, i.period_month,
+                    c.name AS customer_name, c.whatsapp_number
+             FROM billing_payments p
+             JOIN billing_invoices i ON i.id = p.invoice_id
+             JOIN billing_customers c ON c.id = i.customer_id
+             WHERE ${where}
+             ORDER BY (p.paid_at IS NULL), p.paid_at DESC, p.id DESC
+             LIMIT ? OFFSET ?`,
+            [...params, limit, offset]
+        );
+        return res.status(200).json({ payments: rows, total, page, limit });
+    } catch (e) {
+        console.error('[Billing][Admin] listPayments:', e.message);
+        return res.status(500).json({ message: 'Gagal mengambil pembayaran.' });
+    }
+};
+
+exports.sendInvoiceWa = async (req, res) => {
+    try {
+        const ws = resolveWorkspaceId(req);
+        const [rows] = await pool.query(
+            `SELECT i.*, DATE_FORMAT(i.due_date, '%Y-%m-%d') AS due_date,
+                    c.name AS customer_name, c.whatsapp_number
+             FROM billing_invoices i
+             JOIN billing_customers c ON c.id = i.customer_id
+             WHERE i.id = ? AND i.workspace_id = ?`,
+            [req.params.id, ws]
+        );
+        if (rows.length === 0) return res.status(404).json({ message: 'Invoice tidak ditemukan.' });
+        const invoice = rows[0];
+        if (invoice.status === 'paid') return res.status(400).json({ message: 'Invoice sudah lunas.' });
+        if (!invoice.whatsapp_number) return res.status(400).json({ message: 'Pelanggan tidak punya nomor WhatsApp.' });
+
+        let result;
+        try {
+            result = await createPaymentForInvoice(invoice, { method: req.body.method });
+        } catch (gwErr) {
+            console.error('[Billing][Admin] sendInvoiceWa gateway:', gwErr.message);
+            return res.status(502).json({ message: `Gagal membuat link pembayaran: ${gwErr.message}` });
+        }
+
+        const checkoutUrl = result.payment.checkout_url;
+        if (!checkoutUrl) {
+            return res.status(502).json({ message: 'Gateway tidak mengembalikan link pembayaran.' });
+        }
+
+        const periode = `${MONTHS_ID[invoice.period_month]} ${invoice.period_year}`;
+        const message =
+            `Halo ${invoice.customer_name || ''},\n\n` +
+            `Berikut tagihan internet Anda:\n` +
+            `No. Invoice: ${invoice.invoice_number}\n` +
+            `Periode: ${periode}\n` +
+            `Jumlah: ${rupiah(invoice.amount)}\n` +
+            `Jatuh tempo: ${tanggalID(invoice.due_date)}\n\n` +
+            `Silakan lakukan pembayaran melalui link berikut:\n${checkoutUrl}\n\n` +
+            `Terima kasih.`;
+
+        const target = normalizeWa(invoice.whatsapp_number);
+        let waSent = false;
+        if (isWhatsAppConnected()) {
+            waSent = await sendWhatsAppMessage(target, message);
+        }
+
+        return res.status(200).json({
+            message: waSent
+                ? 'Link pembayaran terkirim via WhatsApp.'
+                : 'Link pembayaran dibuat, tapi WhatsApp belum terhubung. Salin link manual.',
+            wa_sent: waSent,
+            checkout_url: checkoutUrl,
+            reused: result.reused,
+            simulated: result.simulated,
+        });
+    } catch (e) {
+        console.error('[Billing][Admin] sendInvoiceWa:', e.message);
+        return res.status(500).json({ message: 'Gagal mengirim tagihan.' });
+    }
+};
+
 exports.generateInvoices = async (req, res) => {
     try {
         const ws = resolveWorkspaceId(req);
@@ -481,13 +600,15 @@ exports.generateInvoices = async (req, res) => {
 exports.getSettings = async (req, res) => {
     try {
         const ws = resolveWorkspaceId(req);
-        const [rows] = await pool.query('SELECT * FROM billing_settings WHERE workspace_id = ?', [ws]);
-        const s = rows[0] || null;
-        if (s) {
-            s.tripay_api_key = s.tripay_api_key ? '****' + String(s.tripay_api_key).slice(-4) : null;
-            s.tripay_private_key = s.tripay_private_key ? '********' : null;
-        }
-        return res.status(200).json({ settings: s });
+        const [rows] = await pool.query(
+            `SELECT workspace_id, invoice_gen_day, reminder_days_before, grace_days,
+                    auto_isolir_enabled, isolir_profile, created_at, updated_at
+             FROM billing_settings WHERE workspace_id = ?`,
+            [ws]
+        );
+        const cfg = tripayService.getConfig();
+        const gateway = { configured: tripayService.isConfigured(), mode: cfg.mode };
+        return res.status(200).json({ settings: rows[0] || null, gateway });
     } catch (e) {
         console.error('[Billing][Admin] getSettings:', e.message);
         return res.status(500).json({ message: 'Gagal mengambil pengaturan.' });
@@ -498,27 +619,20 @@ exports.updateSettings = async (req, res) => {
     try {
         const ws = resolveWorkspaceId(req);
         const {
-            tripay_merchant_code, tripay_api_key, tripay_private_key, tripay_mode,
             invoice_gen_day, reminder_days_before, grace_days, auto_isolir_enabled, isolir_profile,
         } = req.body;
 
         await pool.query(
             `INSERT INTO billing_settings
-                (workspace_id, tripay_merchant_code, tripay_api_key, tripay_private_key, tripay_mode,
-                 invoice_gen_day, reminder_days_before, grace_days, auto_isolir_enabled, isolir_profile)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                (workspace_id, invoice_gen_day, reminder_days_before, grace_days, auto_isolir_enabled, isolir_profile)
+             VALUES (?, ?, ?, ?, ?, ?)
              ON DUPLICATE KEY UPDATE
-                tripay_merchant_code = COALESCE(VALUES(tripay_merchant_code), tripay_merchant_code),
-                tripay_api_key = COALESCE(VALUES(tripay_api_key), tripay_api_key),
-                tripay_private_key = COALESCE(VALUES(tripay_private_key), tripay_private_key),
-                tripay_mode = COALESCE(VALUES(tripay_mode), tripay_mode),
                 invoice_gen_day = COALESCE(VALUES(invoice_gen_day), invoice_gen_day),
                 reminder_days_before = COALESCE(VALUES(reminder_days_before), reminder_days_before),
                 grace_days = COALESCE(VALUES(grace_days), grace_days),
                 auto_isolir_enabled = COALESCE(VALUES(auto_isolir_enabled), auto_isolir_enabled),
                 isolir_profile = COALESCE(VALUES(isolir_profile), isolir_profile)`,
-            [ws, tripay_merchant_code ?? null, tripay_api_key ?? null, tripay_private_key ?? null,
-             tripay_mode ?? 'sandbox', invoice_gen_day ?? 1, reminder_days_before ?? 3, grace_days ?? 3,
+            [ws, invoice_gen_day ?? 1, reminder_days_before ?? 3, grace_days ?? 3,
              auto_isolir_enabled == null ? 0 : (auto_isolir_enabled ? 1 : 0), isolir_profile ?? 'Isolir']
         );
         return res.status(200).json({ message: 'Pengaturan billing disimpan.' });

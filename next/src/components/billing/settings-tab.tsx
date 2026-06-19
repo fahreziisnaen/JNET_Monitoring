@@ -1,36 +1,30 @@
 'use client';
 
 import React, { useEffect, useState, useCallback, useMemo } from 'react';
-import { Loader2, Save } from 'lucide-react';
+import { Loader2, Save, CheckCircle2, AlertCircle } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card } from '@/components/ui/card';
-import { billingClient, BillingSettings } from '@/utils/billing';
-
-const selectCls = 'flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm';
+import { billingClient, BillingSettings, GatewayStatus } from '@/utils/billing';
 
 export default function BillingSettingsTab({ workspaceId }: { workspaceId?: number | null }) {
   const billingApi = useMemo(() => billingClient(workspaceId), [workspaceId]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [s, setS] = useState<Partial<BillingSettings>>({});
-  const [apiKey, setApiKey] = useState('');
-  const [privKey, setPrivKey] = useState('');
-  const [maskedApi, setMaskedApi] = useState<string | null>(null);
-  const [maskedPriv, setMaskedPriv] = useState<string | null>(null);
+  const [gateway, setGateway] = useState<GatewayStatus | null>(null);
 
   const load = useCallback(async () => {
     if (workspaceId == null) { setLoading(false); return; }
     setLoading(true);
     try {
-      const { settings } = await billingApi.getSettings();
+      const { settings, gateway } = await billingApi.getSettings();
+      setGateway(gateway || null);
       if (settings) {
         setS(settings);
-        setMaskedApi(settings.tripay_api_key);
-        setMaskedPriv(settings.tripay_private_key);
       } else {
-        setS({ tripay_mode: 'sandbox', invoice_gen_day: 1, reminder_days_before: 3, grace_days: 3, auto_isolir_enabled: 0, isolir_profile: 'Isolir' });
+        setS({ invoice_gen_day: 1, reminder_days_before: 3, grace_days: 3, auto_isolir_enabled: 0, isolir_profile: 'Isolir' });
       }
     } catch (e: any) {
       toast.error('Gagal memuat pengaturan', { description: e.message });
@@ -44,21 +38,14 @@ export default function BillingSettingsTab({ workspaceId }: { workspaceId?: numb
   const save = async () => {
     setSaving(true);
     try {
-      const body: Partial<BillingSettings> = {
-        tripay_merchant_code: s.tripay_merchant_code || null,
-        tripay_mode: s.tripay_mode || 'sandbox',
+      await billingApi.updateSettings({
         invoice_gen_day: Number(s.invoice_gen_day) || 1,
         reminder_days_before: Number(s.reminder_days_before) || 0,
         grace_days: Number(s.grace_days) || 0,
         auto_isolir_enabled: s.auto_isolir_enabled ? 1 : 0,
         isolir_profile: s.isolir_profile || 'Isolir',
-      };
-      if (apiKey.trim()) body.tripay_api_key = apiKey.trim();
-      if (privKey.trim()) body.tripay_private_key = privKey.trim();
-
-      await billingApi.updateSettings(body);
+      });
       toast.success('Pengaturan billing disimpan');
-      setApiKey(''); setPrivKey('');
       load();
     } catch (e: any) {
       toast.error('Gagal menyimpan pengaturan', { description: e.message });
@@ -73,28 +60,16 @@ export default function BillingSettingsTab({ workspaceId }: { workspaceId?: numb
     <div className="max-w-2xl space-y-6">
       <Card className="p-4">
         <h3 className="font-semibold mb-1">Payment Gateway — Tripay</h3>
-        <p className="text-xs text-muted-foreground mb-4">Kredensial dipakai untuk membuat transaksi & memverifikasi webhook. Kunci tidak ditampilkan utuh setelah disimpan.</p>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <div>
-            <label className="text-xs text-muted-foreground">Merchant Code</label>
-            <Input value={s.tripay_merchant_code || ''} onChange={(e) => setS({ ...s, tripay_merchant_code: e.target.value })} placeholder="T1234" />
+        <p className="text-xs text-muted-foreground mb-4">Kredensial Tripay disetel global di server lewat file <code>.env</code>, bukan di sini. Berlaku untuk semua workspace.</p>
+        {gateway?.configured ? (
+          <div className="flex items-center gap-2 text-sm text-green-600">
+            <CheckCircle2 size={18} /> Gateway terkonfigurasi — mode <span className="font-medium">{gateway.mode}</span>
           </div>
-          <div>
-            <label className="text-xs text-muted-foreground">Mode</label>
-            <select className={selectCls} value={s.tripay_mode || 'sandbox'} onChange={(e) => setS({ ...s, tripay_mode: e.target.value as BillingSettings['tripay_mode'] })}>
-              <option value="sandbox">sandbox</option>
-              <option value="production">production</option>
-            </select>
+        ) : (
+          <div className="flex items-center gap-2 text-sm text-amber-600">
+            <AlertCircle size={18} /> Gateway belum dikonfigurasi (mode simulasi). Isi <code>TRIPAY_*</code> di <code>.env</code> server.
           </div>
-          <div>
-            <label className="text-xs text-muted-foreground">API Key {maskedApi && <span className="text-muted-foreground/70">(tersimpan: {maskedApi})</span>}</label>
-            <Input type="password" value={apiKey} onChange={(e) => setApiKey(e.target.value)} placeholder={maskedApi ? 'Biarkan kosong jika tidak diubah' : 'Masukkan API key'} />
-          </div>
-          <div>
-            <label className="text-xs text-muted-foreground">Private Key {maskedPriv && <span className="text-muted-foreground/70">(tersimpan)</span>}</label>
-            <Input type="password" value={privKey} onChange={(e) => setPrivKey(e.target.value)} placeholder={maskedPriv ? 'Biarkan kosong jika tidak diubah' : 'Masukkan private key'} />
-          </div>
-        </div>
+        )}
       </Card>
 
       <Card className="p-4">

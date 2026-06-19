@@ -25,6 +25,9 @@ router.put('/subscriptions/:id', admin.updateSubscription);
 
 router.get('/invoices', admin.listInvoices);
 router.post('/invoices/generate', admin.generateInvoices);
+router.post('/invoices/:id/send-wa', admin.sendInvoiceWa);
+
+router.get('/payments', admin.listPayments);
 
 router.get('/settings', admin.getSettings);
 router.put('/settings', admin.updateSettings);

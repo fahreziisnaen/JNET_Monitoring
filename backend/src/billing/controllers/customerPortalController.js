@@ -1,5 +1,5 @@
 const pool = require('../../config/database');
-const tripayService = require('../services/tripayService');
+const { createPaymentForInvoice } = require('../services/paymentService');
 
 exports.getMySubscription = async (req, res) => {
     try {
@@ -67,61 +67,29 @@ exports.payInvoice = async (req, res) => {
             return res.status(400).json({ message: 'Invoice sudah lunas.' });
         }
 
-        const [pending] = await pool.query(
-            "SELECT * FROM billing_payments WHERE invoice_id = ? AND status = 'pending' ORDER BY id DESC LIMIT 1",
-            [invoice.id]
-        );
-        if (pending.length > 0) {
-            return res.status(200).json({ message: 'Transaksi pembayaran masih aktif.', payment: pending[0] });
-        }
-
-        const [settingsRows] = await pool.query('SELECT * FROM billing_settings WHERE workspace_id = ?', [invoice.workspace_id]);
-        const settings = settingsRows[0] || null;
-
-        const merchantRef = `PAY-${invoice.invoice_number}-${Date.now()}`;
-        let txn;
+        let result;
         try {
-            txn = await tripayService.createTransaction(settings, {
-                merchantRef,
-                amount: Number(invoice.amount),
-                method: req.body.method,
-                customer: req.customer,
-                invoice,
-            });
+            result = await createPaymentForInvoice(invoice, { method: req.body.method });
         } catch (gwErr) {
             console.error('[Billing][Portal] gateway error:', gwErr.message);
             return res.status(502).json({ message: 'Gagal membuat transaksi pembayaran. Hubungi admin.' });
         }
 
-        const [result] = await pool.query(
-            `INSERT INTO billing_payments
-                (workspace_id, invoice_id, provider, merchant_ref, provider_ref, payment_method, amount, status, checkout_url, pay_code, expired_at, raw_response)
-             VALUES (?, ?, 'tripay', ?, ?, ?, ?, 'pending', ?, ?, ?, ?)`,
-            [
-                invoice.workspace_id,
-                invoice.id,
-                txn.merchantRef,
-                txn.reference || null,
-                txn.method || null,
-                invoice.amount,
-                txn.checkoutUrl || null,
-                txn.payCode || null,
-                txn.expiredAt || null,
-                JSON.stringify(txn.raw || {}),
-            ]
-        );
+        if (result.reused) {
+            return res.status(200).json({ message: 'Transaksi pembayaran masih aktif.', payment: result.payment });
+        }
 
         return res.status(201).json({
-            message: txn.simulated
+            message: result.simulated
                 ? 'Transaksi pembayaran dibuat (mode simulasi — gateway belum dikonfigurasi).'
                 : 'Transaksi pembayaran dibuat.',
             payment: {
-                id: result.insertId,
-                merchant_ref: txn.merchantRef,
-                checkout_url: txn.checkoutUrl || null,
-                pay_code: txn.payCode || null,
-                expired_at: txn.expiredAt || null,
-                simulated: !!txn.simulated,
+                id: result.payment.id,
+                merchant_ref: result.payment.merchant_ref,
+                checkout_url: result.payment.checkout_url || null,
+                pay_code: result.payment.pay_code || null,
+                expired_at: result.payment.expired_at || null,
+                simulated: result.simulated,
             },
         });
     } catch (error) {

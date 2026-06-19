@@ -30,13 +30,10 @@ exports.tripayCallback = async (req, res) => {
         }
         const payment = payments[0];
 
-        const [settingsRows] = await pool.query('SELECT * FROM billing_settings WHERE workspace_id = ?', [payment.workspace_id]);
-        const settings = settingsRows[0];
         const signatureHeader = req.headers['x-callback-signature'];
 
-        const isSimulated = !settings || !settings.tripay_private_key;
-        if (!isSimulated) {
-            const valid = tripayService.verifyCallbackSignature(settings.tripay_private_key, rawBody, signatureHeader);
+        if (tripayService.isConfigured()) {
+            const valid = tripayService.verifyCallbackSignature(rawBody, signatureHeader);
             if (!valid) {
                 console.warn('[Billing][Webhook] Signature tidak valid untuk', merchantRef);
                 return res.status(403).json({ success: false, message: 'Signature tidak valid.' });

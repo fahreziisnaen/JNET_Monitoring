@@ -170,12 +170,26 @@ export interface BillingInvoice {
   whatsapp_number?: string | null;
 }
 
+export interface BillingPayment {
+  id: number;
+  invoice_id: number;
+  provider: string;
+  payment_method: string | null;
+  amount: number;
+  fee: number;
+  status: 'pending' | 'paid' | 'failed' | 'expired' | 'refunded';
+  provider_ref: string | null;
+  paid_at: string | null;
+  created_at: string;
+  invoice_number: string;
+  period_year: number;
+  period_month: number;
+  customer_name?: string | null;
+  whatsapp_number?: string | null;
+}
+
 export interface BillingSettings {
   workspace_id: number;
-  tripay_merchant_code: string | null;
-  tripay_api_key: string | null;
-  tripay_private_key: string | null;
-  tripay_mode: 'sandbox' | 'production';
   invoice_gen_day: number;
   reminder_days_before: number;
   grace_days: number;
@@ -183,11 +197,17 @@ export interface BillingSettings {
   isolir_profile: string;
 }
 
+export interface GatewayStatus {
+  configured: boolean;
+  mode: string;
+}
+
 export type PackageInput = Partial<Omit<BillingPackage, 'is_active'>> & { is_active?: boolean };
 
 export interface PageMeta { total: number; page: number; limit: number }
 export type ListParams = { page?: number; limit?: number; q?: string };
 export type InvoiceListParams = ListParams & { status?: string; year?: number; month?: number };
+export type PaymentListParams = ListParams & { status?: string; method?: string };
 
 function qs(params: Record<string, unknown>): string {
   const sp = new URLSearchParams();
@@ -255,7 +275,11 @@ export function billingClient(workspaceId?: number | null) {
     listInvoices: (params: InvoiceListParams = {}) => req<{ invoices: BillingInvoice[] } & PageMeta>(`/invoices${qs(params)}`),
     generateInvoices: (b: { year?: number; month?: number } = {}) => req('/invoices/generate', { method: 'POST', ...json(b) }),
 
-    getSettings: () => req<{ settings: BillingSettings | null }>('/settings'),
+    sendInvoiceWa: (id: number, method?: string) => req<{ message: string; wa_sent: boolean; checkout_url: string; reused: boolean; simulated: boolean }>(`/invoices/${id}/send-wa`, { method: 'POST', ...json({ method }) }),
+
+    listPayments: (params: PaymentListParams = {}) => req<{ payments: BillingPayment[] } & PageMeta>(`/payments${qs(params)}`),
+
+    getSettings: () => req<{ settings: BillingSettings | null; gateway: GatewayStatus }>('/settings'),
     updateSettings: (b: Partial<BillingSettings>) => req('/settings', { method: 'PUT', ...json(b) }),
   };
 }

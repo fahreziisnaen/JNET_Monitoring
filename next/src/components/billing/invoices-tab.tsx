@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useState, useCallback, useMemo } from 'react';
-import { Loader2, RefreshCw } from 'lucide-react';
+import { Loader2, RefreshCw, Send } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { billingClient, formatRupiah, formatDateID, MONTHS_ID, BillingInvoice } from '@/utils/billing';
@@ -25,6 +25,7 @@ export default function InvoicesTab({ workspaceId }: { workspaceId?: number | nu
   const debouncedQ = useDebouncedValue(q);
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
+  const [sendingId, setSendingId] = useState<number | null>(null);
   const limit = 20;
 
   const load = useCallback(async () => {
@@ -44,6 +45,23 @@ export default function InvoicesTab({ workspaceId }: { workspaceId?: number | nu
   useEffect(() => { load(); }, [load]);
 
   useEffect(() => { setPage(1); }, [workspaceId]);
+
+  const sendWa = async (iv: BillingInvoice) => {
+    setSendingId(iv.id);
+    try {
+      const r = await billingApi.sendInvoiceWa(iv.id);
+      if (r.wa_sent) {
+        toast.success('Tagihan terkirim via WhatsApp', { description: iv.invoice_number });
+      } else {
+        toast.warning('Link dibuat, WA belum terhubung', { description: 'Salin link: ' + r.checkout_url });
+      }
+      load();
+    } catch (e: any) {
+      toast.error('Gagal mengirim tagihan', { description: e.message });
+    } finally {
+      setSendingId(null);
+    }
+  };
 
   const generate = async () => {
     if (!confirm('Generate invoice bulan ini untuk semua langganan aktif? (aman diulang, tidak akan dobel)')) return;
@@ -92,6 +110,7 @@ export default function InvoicesTab({ workspaceId }: { workspaceId?: number | nu
                 <th className="py-2 pr-3">Jumlah</th>
                 <th className="py-2 pr-3">Jatuh Tempo</th>
                 <th className="py-2 pr-3">Status</th>
+                <th className="py-2 pr-3 text-right">Aksi</th>
               </tr>
             </thead>
             <tbody>
@@ -104,6 +123,14 @@ export default function InvoicesTab({ workspaceId }: { workspaceId?: number | nu
                   <td className="py-2 pr-3">{formatDateID(iv.due_date)}</td>
                   <td className="py-2 pr-3">
                     <span className={`text-xs px-2 py-0.5 rounded ${statusCls[iv.status] || ''}`}>{iv.status}</span>
+                  </td>
+                  <td className="py-2 pr-3 text-right">
+                    {iv.status !== 'paid' && iv.status !== 'void' && (
+                      <Button variant="outline" size="sm" onClick={() => sendWa(iv)} disabled={sendingId === iv.id} title="Kirim link bayar via WhatsApp">
+                        {sendingId === iv.id ? <Loader2 className="animate-spin" size={14} /> : <Send size={14} />}
+                        <span className="ml-1.5">Kirim WA</span>
+                      </Button>
+                    )}
                   </td>
                 </tr>
               ))}
