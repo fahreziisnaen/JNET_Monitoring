@@ -6,6 +6,7 @@ const withTransaction = require('../../utils/withTransaction');
 const { createPaymentForInvoice } = require('../services/paymentService');
 const { sendWhatsAppMessage, isWhatsAppConnected } = require('../../services/whatsappService');
 const tripayService = require('../services/tripayService');
+const isolirService = require('../services/isolirService');
 
 const MONTHS_ID = ['', 'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
 
@@ -588,6 +589,58 @@ exports.sendInvoiceWa = async (req, res) => {
     } catch (e) {
         console.error('[Billing][Admin] sendInvoiceWa:', e.message);
         return res.status(500).json({ message: 'Gagal mengirim tagihan.' });
+    }
+};
+
+exports.payInvoiceCash = async (req, res) => {
+    try {
+        const ws = resolveWorkspaceId(req);
+        const [rows] = await pool.query(
+            'SELECT * FROM billing_invoices WHERE id = ? AND workspace_id = ?',
+            [req.params.id, ws]
+        );
+        if (rows.length === 0) return res.status(404).json({ message: 'Invoice tidak ditemukan.' });
+        const invoice = rows[0];
+        if (invoice.status === 'paid') return res.status(400).json({ message: 'Invoice sudah lunas.' });
+
+        const now = new Date();
+        await withTransaction(async (conn) => {
+            await conn.query(
+                "UPDATE billing_invoices SET status = 'paid', paid_at = ? WHERE id = ?",
+                [now, invoice.id]
+            );
+            await conn.query(
+                `INSERT INTO billing_payments (workspace_id, invoice_id, provider, merchant_ref, payment_method, amount, status, paid_at)
+                 VALUES (?, ?, 'manual', ?, 'cash', ?, 'paid', ?)`,
+                [ws, invoice.id, `CASH-INV${invoice.id}-${now.getTime()}`, invoice.amount, now]
+            );
+        });
+
+        try {
+            const [custRows] = await pool.query(
+                'SELECT bc.device_id, bc.pppoe_secret_name, p.pppoe_profile FROM billing_customers bc ' +
+                'LEFT JOIN billing_subscriptions s ON s.id = ? ' +
+                'LEFT JOIN billing_packages p ON p.id = s.package_id ' +
+                'WHERE bc.id = ?',
+                [invoice.subscription_id, invoice.customer_id]
+            );
+            const c = custRows[0];
+            if (c && c.pppoe_secret_name) {
+                await isolirService.restoreCustomer({
+                    workspaceId: ws,
+                    deviceId: c.device_id,
+                    secretName: c.pppoe_secret_name,
+                    targetProfile: c.pppoe_profile || null,
+                });
+            }
+        } catch (e) {
+            console.error('[Billing][Admin] payInvoiceCash restore gagal:', e.message);
+        }
+
+        return res.status(200).json({ message: 'Pembayaran tunai dicatat. Invoice lunas.' });
+    } catch (e) {
+        console.error('[Billing][Admin] payInvoiceCash:', e.message);
+        return res.status(500).json({ message: 'Gagal mencatat pembayaran tunai.' });
     }
 };
 

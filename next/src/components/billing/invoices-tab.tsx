@@ -1,9 +1,10 @@
 'use client';
 
 import React, { useEffect, useState, useCallback, useMemo } from 'react';
-import { Loader2, RefreshCw, Send } from 'lucide-react';
+import { Loader2, RefreshCw, Send, Banknote } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
+import ConfirmModal from '@/components/ui/confirm-modal';
 import { billingClient, formatRupiah, formatDateID, MONTHS_ID, BillingInvoice } from '@/utils/billing';
 import { Pagination, SearchBox, useDebouncedValue } from './list-controls';
 
@@ -26,6 +27,8 @@ export default function InvoicesTab({ workspaceId }: { workspaceId?: number | nu
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
   const [sendingId, setSendingId] = useState<number | null>(null);
+  const [toPayCash, setToPayCash] = useState<BillingInvoice | null>(null);
+  const [payingCash, setPayingCash] = useState(false);
   const limit = 20;
 
   const load = useCallback(async () => {
@@ -60,6 +63,21 @@ export default function InvoicesTab({ workspaceId }: { workspaceId?: number | nu
       toast.error('Gagal mengirim tagihan', { description: e.message });
     } finally {
       setSendingId(null);
+    }
+  };
+
+  const confirmPayCash = async () => {
+    if (!toPayCash) return;
+    setPayingCash(true);
+    try {
+      await billingApi.payInvoiceCash(toPayCash.id);
+      toast.success('Pembayaran tunai dicatat', { description: toPayCash.invoice_number });
+      setToPayCash(null);
+      load();
+    } catch (e: any) {
+      toast.error('Gagal mencatat pembayaran', { description: e.message });
+    } finally {
+      setPayingCash(false);
     }
   };
 
@@ -124,12 +142,17 @@ export default function InvoicesTab({ workspaceId }: { workspaceId?: number | nu
                   <td className="py-2 pr-3">
                     <span className={`text-xs px-2 py-0.5 rounded ${statusCls[iv.status] || ''}`}>{iv.status}</span>
                   </td>
-                  <td className="py-2 pr-3 text-right">
+                  <td className="py-2 pr-3">
                     {iv.status !== 'paid' && iv.status !== 'void' && (
-                      <Button variant="outline" size="sm" onClick={() => sendWa(iv)} disabled={sendingId === iv.id} title="Kirim link bayar via WhatsApp">
-                        {sendingId === iv.id ? <Loader2 className="animate-spin" size={14} /> : <Send size={14} />}
-                        <span className="ml-1.5">Kirim WA</span>
-                      </Button>
+                      <div className="flex items-center justify-end gap-2">
+                        <Button variant="outline" size="sm" onClick={() => setToPayCash(iv)} title="Tandai lunas — bayar tunai">
+                          <Banknote size={14} /><span className="ml-1.5">Bayar Cash</span>
+                        </Button>
+                        <Button variant="outline" size="sm" onClick={() => sendWa(iv)} disabled={sendingId === iv.id} title="Kirim link bayar via WhatsApp">
+                          {sendingId === iv.id ? <Loader2 className="animate-spin" size={14} /> : <Send size={14} />}
+                          <span className="ml-1.5">Kirim WA</span>
+                        </Button>
+                      </div>
                     )}
                   </td>
                 </tr>
@@ -142,6 +165,16 @@ export default function InvoicesTab({ workspaceId }: { workspaceId?: number | nu
       {!loading && total > 0 && (
         <Pagination page={page} limit={limit} total={total} onPage={setPage} loading={loading} />
       )}
+
+      <ConfirmModal
+        isOpen={!!toPayCash}
+        onClose={() => setToPayCash(null)}
+        onConfirm={confirmPayCash}
+        title="Tandai Lunas (Bayar Cash)"
+        description={`Tandai invoice ${toPayCash?.invoice_number || ''} sebesar ${formatRupiah(toPayCash?.amount || 0)} sebagai LUNAS via pembayaran tunai? Pelanggan yang terisolir akan otomatis dibuka.`}
+        confirmText="Tandai Lunas"
+        isLoading={payingCash}
+      />
     </div>
   );
 }
