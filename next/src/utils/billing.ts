@@ -277,7 +277,7 @@ export function billingClient(workspaceId?: number | null) {
     listInvoices: (params: InvoiceListParams = {}) => req<{ invoices: BillingInvoice[] } & PageMeta>(`/invoices${qs(params)}`),
     generateInvoices: (b: { year?: number; month?: number } = {}) => req('/invoices/generate', { method: 'POST', ...json(b) }),
 
-    sendInvoiceWa: (id: number, method?: string) => req<{ message: string; wa_sent: boolean; checkout_url: string; reused: boolean; simulated: boolean }>(`/invoices/${id}/send-wa`, { method: 'POST', ...json({ method }) }),
+    sendInvoiceWa: (id: number, method?: string) => req<{ message: string; wa_sent: boolean; wa_connected: boolean; checkout_url: string; reused: boolean; simulated: boolean }>(`/invoices/${id}/send-wa`, { method: 'POST', ...json({ method }) }),
 
     listPayments: (params: PaymentListParams = {}) => req<{ payments: BillingPayment[] } & PageMeta>(`/payments${qs(params)}`),
 

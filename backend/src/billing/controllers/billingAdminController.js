@@ -566,16 +566,21 @@ exports.sendInvoiceWa = async (req, res) => {
             `Terima kasih.`;
 
         const target = normalizeWa(invoice.whatsapp_number);
+        const waConnected = isWhatsAppConnected();
         let waSent = false;
-        if (isWhatsAppConnected()) {
+        if (waConnected) {
             waSent = await sendWhatsAppMessage(target, message);
         }
 
+        let waMessage;
+        if (waSent) waMessage = 'Link pembayaran terkirim via WhatsApp.';
+        else if (!waConnected) waMessage = 'Link dibuat, tapi WhatsApp bot belum terhubung. Salin link manual.';
+        else waMessage = 'Link dibuat, tapi gagal mengirim WA ke nomor pelanggan (nomor bot bisa kena flag, atau nomor pelanggan tidak valid). Salin link manual.';
+
         return res.status(200).json({
-            message: waSent
-                ? 'Link pembayaran terkirim via WhatsApp.'
-                : 'Link pembayaran dibuat, tapi WhatsApp belum terhubung. Salin link manual.',
+            message: waMessage,
             wa_sent: waSent,
+            wa_connected: waConnected,
             checkout_url: checkoutUrl,
             reused: result.reused,
             simulated: result.simulated,

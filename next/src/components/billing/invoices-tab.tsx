@@ -53,7 +53,7 @@ export default function InvoicesTab({ workspaceId }: { workspaceId?: number | nu
       if (r.wa_sent) {
         toast.success('Tagihan terkirim via WhatsApp', { description: iv.invoice_number });
       } else {
-        toast.warning('Link dibuat, WA belum terhubung', { description: 'Salin link: ' + r.checkout_url });
+        toast.warning(r.message, { description: 'Salin link: ' + r.checkout_url });
       }
       load();
     } catch (e: any) {
