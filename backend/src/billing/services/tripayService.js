@@ -65,7 +65,8 @@ async function createTransaction({ merchantRef, amount, method, customer, invoic
     const signature = buildTransactionSignature(config, merchantRef, intAmount);
 
     const itemName = invoice ? `Tagihan ${invoice.invoice_number}` : 'Tagihan internet';
-    const phone = normalizeWa(customer && customer.whatsapp_number) || undefined;
+    const waNum = normalizeWa(customer && customer.whatsapp_number);
+    const phone = waNum ? (waNum.startsWith('62') ? '0' + waNum.slice(2) : waNum) : undefined;
 
     const payload = {
         method: method || DEFAULT_CHANNEL,
