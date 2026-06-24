@@ -526,6 +526,35 @@ exports.listPayments = async (req, res) => {
     }
 };
 
+exports.paymentsSummary = async (req, res) => {
+    try {
+        const ws = resolveWorkspaceId(req);
+        const [[row]] = await pool.query(
+            `SELECT
+                COALESCE(SUM(CASE WHEN p.status = 'paid' THEN p.amount ELSE 0 END), 0) AS total_revenue,
+                COALESCE(SUM(CASE WHEN p.status = 'paid'
+                    AND YEAR(p.paid_at) = YEAR(CURDATE())
+                    AND MONTH(p.paid_at) = MONTH(CURDATE()) THEN p.amount ELSE 0 END), 0) AS month_revenue,
+                COUNT(CASE WHEN p.status = 'paid'
+                    AND YEAR(p.paid_at) = YEAR(CURDATE())
+                    AND MONTH(p.paid_at) = MONTH(CURDATE()) THEN 1 END) AS month_count,
+                COUNT(CASE WHEN p.status = 'paid' THEN 1 END) AS total_count
+             FROM billing_payments p
+             WHERE p.workspace_id = ?`,
+            [ws]
+        );
+        return res.status(200).json({
+            total_revenue: Number(row.total_revenue || 0),
+            month_revenue: Number(row.month_revenue || 0),
+            month_count: Number(row.month_count || 0),
+            total_count: Number(row.total_count || 0),
+        });
+    } catch (e) {
+        console.error('[Billing][Admin] paymentsSummary:', e.message);
+        return res.status(500).json({ message: 'Gagal mengambil ringkasan pendapatan.' });
+    }
+};
+
 exports.sendInvoiceWa = async (req, res) => {
     try {
         const ws = resolveWorkspaceId(req);

@@ -1,10 +1,10 @@
 'use client';
 
 import React, { useEffect, useState, useCallback, useMemo } from 'react';
-import { Loader2, RefreshCw } from 'lucide-react';
+import { Loader2, RefreshCw, Wallet, TrendingUp } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
-import { billingClient, formatRupiah, formatDateTimeID, MONTHS_ID, BillingPayment } from '@/utils/billing';
+import { billingClient, formatRupiah, formatDateTimeID, MONTHS_ID, BillingPayment, PaymentsSummary } from '@/utils/billing';
 import { Pagination, SearchBox, useDebouncedValue } from './list-controls';
 
 const STATUS = ['', 'paid', 'pending', 'failed', 'expired', 'refunded'];
@@ -41,6 +41,7 @@ export default function PaymentsTab({ workspaceId }: { workspaceId?: number | nu
   const debouncedQ = useDebouncedValue(q);
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
+  const [summary, setSummary] = useState<PaymentsSummary | null>(null);
   const limit = 20;
 
   const load = useCallback(async () => {
@@ -57,7 +58,17 @@ export default function PaymentsTab({ workspaceId }: { workspaceId?: number | nu
     }
   }, [filter, debouncedQ, page, billingApi, workspaceId]);
 
+  const loadSummary = useCallback(async () => {
+    if (workspaceId == null) { setSummary(null); return; }
+    try {
+      setSummary(await billingApi.paymentsSummary());
+    } catch {
+      setSummary(null);
+    }
+  }, [billingApi, workspaceId]);
+
   useEffect(() => { load(); }, [load]);
+  useEffect(() => { loadSummary(); }, [loadSummary]);
   useEffect(() => { setPage(1); }, [workspaceId]);
 
   const totalPaid = useMemo(
@@ -65,8 +76,29 @@ export default function PaymentsTab({ workspaceId }: { workspaceId?: number | nu
     [items]
   );
 
+  const monthName = MONTHS_ID[new Date().getMonth() + 1];
+
   return (
     <div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-5">
+        <div className="rounded-xl border bg-card p-4 flex items-center gap-4">
+          <div className="rounded-lg bg-green-500/15 text-green-600 p-2.5"><TrendingUp size={22} /></div>
+          <div>
+            <p className="text-xs text-muted-foreground">Pendapatan {monthName}</p>
+            <p className="text-xl font-bold">{summary ? formatRupiah(summary.month_revenue) : '—'}</p>
+            {summary && <p className="text-xs text-muted-foreground">{summary.month_count} pembayaran lunas</p>}
+          </div>
+        </div>
+        <div className="rounded-xl border bg-card p-4 flex items-center gap-4">
+          <div className="rounded-lg bg-blue-500/15 text-blue-600 p-2.5"><Wallet size={22} /></div>
+          <div>
+            <p className="text-xs text-muted-foreground">Total Pendapatan</p>
+            <p className="text-xl font-bold">{summary ? formatRupiah(summary.total_revenue) : '—'}</p>
+            {summary && <p className="text-xs text-muted-foreground">{summary.total_count} pembayaran lunas</p>}
+          </div>
+        </div>
+      </div>
+
       <div className="flex flex-col lg:flex-row justify-between gap-3 mb-4">
         <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 flex-1">
           <SearchBox value={q} onChange={(v) => { setQ(v); setPage(1); }} placeholder="Cari no. invoice / nama / nomor / ref..." />
@@ -75,7 +107,7 @@ export default function PaymentsTab({ workspaceId }: { workspaceId?: number | nu
             <select className="rounded-md border border-input bg-background px-3 py-2 text-sm" value={filter} onChange={(e) => { setFilter(e.target.value); setPage(1); }}>
               {STATUS.map((s) => <option key={s} value={s}>{s ? statusLabel[s] : 'Semua'}</option>)}
             </select>
-            <Button variant="ghost" size="icon" onClick={load} title="Muat ulang"><RefreshCw size={16} /></Button>
+            <Button variant="ghost" size="icon" onClick={() => { load(); loadSummary(); }} title="Muat ulang"><RefreshCw size={16} /></Button>
           </div>
         </div>
       </div>

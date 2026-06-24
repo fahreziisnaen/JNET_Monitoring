@@ -204,6 +204,13 @@ export interface GatewayStatus {
   mode: string;
 }
 
+export interface PaymentsSummary {
+  total_revenue: number;
+  month_revenue: number;
+  month_count: number;
+  total_count: number;
+}
+
 export type PackageInput = Partial<Omit<BillingPackage, 'is_active'>> & { is_active?: boolean };
 
 export interface PageMeta { total: number; page: number; limit: number }
@@ -281,6 +288,7 @@ export function billingClient(workspaceId?: number | null) {
     payInvoiceCash: (id: number) => req<{ message: string }>(`/invoices/${id}/pay-cash`, { method: 'POST' }),
 
     listPayments: (params: PaymentListParams = {}) => req<{ payments: BillingPayment[] } & PageMeta>(`/payments${qs(params)}`),
+    paymentsSummary: () => req<PaymentsSummary>('/payments/summary'),
 
     getSettings: () => req<{ settings: BillingSettings | null; gateway: GatewayStatus }>('/settings'),
     updateSettings: (b: Partial<BillingSettings>) => req('/settings', { method: 'PUT', ...json(b) }),

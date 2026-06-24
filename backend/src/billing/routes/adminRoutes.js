@@ -29,6 +29,7 @@ router.post('/invoices/:id/send-wa', admin.sendInvoiceWa);
 router.post('/invoices/:id/pay-cash', admin.payInvoiceCash);
 
 router.get('/payments', admin.listPayments);
+router.get('/payments/summary', admin.paymentsSummary);
 
 router.get('/settings', admin.getSettings);
 router.put('/settings', admin.updateSettings);
