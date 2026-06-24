@@ -9,6 +9,7 @@ import PackagesTab from '@/components/billing/packages-tab';
 import CustomersTab from '@/components/billing/customers-tab';
 import InvoicesTab from '@/components/billing/invoices-tab';
 import PaymentsTab from '@/components/billing/payments-tab';
+import RevenueSummary from '@/components/billing/revenue-summary';
 import BillingSettingsTab from '@/components/billing/settings-tab';
 
 type TabKey = 'packages' | 'customers' | 'invoices' | 'payments' | 'settings';
@@ -85,6 +86,8 @@ export default function BillingPage() {
           </div>
         )}
       </div>
+
+      <RevenueSummary workspaceId={wsId} />
 
       <div className="flex gap-1 sm:gap-2 mb-6 border-b overflow-x-auto">
         {TABS.map(({ key, label, icon: Icon }) => (
