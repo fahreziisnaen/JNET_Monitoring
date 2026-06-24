@@ -42,6 +42,8 @@ export default function PackagesTab({ workspaceId }: { workspaceId?: number | nu
   const [saving, setSaving] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [profiles, setProfiles] = useState<string[]>([]);
+  const [sort, setSort] = useState<'name' | 'price_asc' | 'price_desc'>('name');
+  const [statusFilter, setStatusFilter] = useState<'' | 'active' | 'inactive'>('');
 
   const load = useCallback(async () => {
     if (workspaceId == null) { setItems([]); setLoading(false); return; }
@@ -66,6 +68,17 @@ export default function PackagesTab({ workspaceId }: { workspaceId?: number | nu
       .then((data: string[]) => setProfiles(Array.isArray(data) ? data : []))
       .catch(() => setProfiles([]));
   }, [workspaceId]);
+
+  const displayed = useMemo(() => {
+    let list = items;
+    if (statusFilter === 'active') list = list.filter((p) => p.is_active === 1);
+    else if (statusFilter === 'inactive') list = list.filter((p) => p.is_active === 0);
+    const sorted = [...list];
+    if (sort === 'name') sorted.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+    else if (sort === 'price_asc') sorted.sort((a, b) => (a.price || 0) - (b.price || 0));
+    else if (sort === 'price_desc') sorted.sort((a, b) => (b.price || 0) - (a.price || 0));
+    return sorted;
+  }, [items, statusFilter, sort]);
 
   const openCreate = () => setForm({ ...emptyForm });
   const openEdit = (p: BillingPackage) => setForm({
@@ -171,6 +184,27 @@ export default function PackagesTab({ workspaceId }: { workspaceId?: number | nu
         </div>
       </div>
 
+      {items.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2 mb-4">
+          <div className="flex items-center gap-1.5">
+            <span className="text-sm text-muted-foreground">Urutkan:</span>
+            <select className="rounded-md border border-input bg-background px-3 py-2 text-sm" value={sort} onChange={(e) => setSort(e.target.value as typeof sort)}>
+              <option value="name">Nama (A–Z)</option>
+              <option value="price_asc">Harga termurah</option>
+              <option value="price_desc">Harga termahal</option>
+            </select>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <span className="text-sm text-muted-foreground">Status:</span>
+            <select className="rounded-md border border-input bg-background px-3 py-2 text-sm" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value as typeof statusFilter)}>
+              <option value="">Semua</option>
+              <option value="active">Aktif</option>
+              <option value="inactive">Nonaktif</option>
+            </select>
+          </div>
+        </div>
+      )}
+
       {form && (
         <Card className="p-4 mb-6">
           <div className="flex justify-between items-center mb-3">
@@ -238,9 +272,11 @@ export default function PackagesTab({ workspaceId }: { workspaceId?: number | nu
         <div className="flex justify-center py-12"><Loader2 className="animate-spin text-muted-foreground" /></div>
       ) : items.length === 0 ? (
         <p className="text-center text-muted-foreground py-12">Belum ada paket. Klik "Tambah Paket".</p>
+      ) : displayed.length === 0 ? (
+        <p className="text-center text-muted-foreground py-12">Tidak ada paket yang cocok dengan filter.</p>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-          {items.map((p) => (
+          {displayed.map((p) => (
             <Card key={p.id} className="p-4">
               <div className="flex justify-between items-start">
                 <div>

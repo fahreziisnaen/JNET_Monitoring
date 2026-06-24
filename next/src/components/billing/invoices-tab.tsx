@@ -22,6 +22,9 @@ export default function InvoicesTab({ workspaceId }: { workspaceId?: number | nu
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
   const [filter, setFilter] = useState('');
+  const [month, setMonth] = useState('');
+  const [year, setYear] = useState('');
+  const [sort, setSort] = useState<'recent' | 'due' | 'amount'>('recent');
   const [q, setQ] = useState('');
   const debouncedQ = useDebouncedValue(q);
   const [page, setPage] = useState(1);
@@ -35,7 +38,11 @@ export default function InvoicesTab({ workspaceId }: { workspaceId?: number | nu
     if (workspaceId == null) { setItems([]); setTotal(0); setLoading(false); return; }
     setLoading(true);
     try {
-      const { invoices, total } = await billingApi.listInvoices({ status: filter || undefined, q: debouncedQ, page, limit });
+      const { invoices, total } = await billingApi.listInvoices({
+        status: filter || undefined, q: debouncedQ, page, limit, sort,
+        month: month ? Number(month) : undefined,
+        year: year ? Number(year) : undefined,
+      });
       setItems(invoices || []);
       setTotal(total || 0);
     } catch (e: any) {
@@ -43,11 +50,11 @@ export default function InvoicesTab({ workspaceId }: { workspaceId?: number | nu
     } finally {
       setLoading(false);
     }
-  }, [filter, debouncedQ, page, billingApi, workspaceId]);
+  }, [filter, debouncedQ, page, sort, month, year, billingApi, workspaceId]);
 
   useEffect(() => { load(); }, [load]);
 
-  useEffect(() => { setPage(1); }, [workspaceId]);
+  useEffect(() => { setPage(1); }, [workspaceId, debouncedQ, filter, sort, month, year]);
 
   const sendWa = async (iv: BillingInvoice) => {
     setSendingId(iv.id);
@@ -95,15 +102,30 @@ export default function InvoicesTab({ workspaceId }: { workspaceId?: number | nu
     }
   };
 
+  const thisYear = new Date().getFullYear();
+  const years = [thisYear, thisYear - 1, thisYear - 2, thisYear - 3];
+
   return (
     <div>
       <div className="flex flex-col lg:flex-row justify-between gap-3 mb-4">
         <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 flex-1">
           <SearchBox value={q} onChange={(v) => { setQ(v); setPage(1); }} placeholder="Cari no. invoice / nama / nomor..." />
-          <div className="flex items-center gap-2">
-            <span className="text-sm text-muted-foreground">Status:</span>
-            <select className="rounded-md border border-input bg-background px-3 py-2 text-sm" value={filter} onChange={(e) => { setFilter(e.target.value); setPage(1); }}>
-              {STATUS.map((s) => <option key={s} value={s}>{s || 'Semua'}</option>)}
+          <div className="flex flex-wrap items-center gap-2">
+            <select className="rounded-md border border-input bg-background px-3 py-2 text-sm" value={filter} onChange={(e) => setFilter(e.target.value)} title="Status">
+              {STATUS.map((s) => <option key={s} value={s}>{s || 'Semua status'}</option>)}
+            </select>
+            <select className="rounded-md border border-input bg-background px-3 py-2 text-sm" value={month} onChange={(e) => setMonth(e.target.value)} title="Bulan">
+              <option value="">Semua bulan</option>
+              {MONTHS_ID.map((m, i) => i > 0 && <option key={i} value={i}>{m}</option>)}
+            </select>
+            <select className="rounded-md border border-input bg-background px-3 py-2 text-sm" value={year} onChange={(e) => setYear(e.target.value)} title="Tahun">
+              <option value="">Semua tahun</option>
+              {years.map((y) => <option key={y} value={y}>{y}</option>)}
+            </select>
+            <select className="rounded-md border border-input bg-background px-3 py-2 text-sm" value={sort} onChange={(e) => setSort(e.target.value as typeof sort)} title="Urutkan">
+              <option value="recent">Terbaru</option>
+              <option value="due">Jatuh tempo terdekat</option>
+              <option value="amount">Nominal terbesar</option>
             </select>
             <Button variant="ghost" size="icon" onClick={load} title="Muat ulang"><RefreshCw size={16} /></Button>
           </div>

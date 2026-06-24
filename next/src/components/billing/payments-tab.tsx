@@ -37,6 +37,8 @@ export default function PaymentsTab({ workspaceId }: { workspaceId?: number | nu
   const [items, setItems] = useState<BillingPayment[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('');
+  const [method, setMethod] = useState('');
+  const [sort, setSort] = useState<'recent' | 'amount'>('recent');
   const [q, setQ] = useState('');
   const debouncedQ = useDebouncedValue(q);
   const [page, setPage] = useState(1);
@@ -47,7 +49,10 @@ export default function PaymentsTab({ workspaceId }: { workspaceId?: number | nu
     if (workspaceId == null) { setItems([]); setTotal(0); setLoading(false); return; }
     setLoading(true);
     try {
-      const { payments, total } = await billingApi.listPayments({ status: filter || undefined, q: debouncedQ, page, limit });
+      const { payments, total } = await billingApi.listPayments({
+        status: filter || undefined, q: debouncedQ, page, limit, sort,
+        method: method || undefined,
+      });
       setItems(payments || []);
       setTotal(total || 0);
     } catch (e: any) {
@@ -55,10 +60,10 @@ export default function PaymentsTab({ workspaceId }: { workspaceId?: number | nu
     } finally {
       setLoading(false);
     }
-  }, [filter, debouncedQ, page, billingApi, workspaceId]);
+  }, [filter, debouncedQ, page, sort, method, billingApi, workspaceId]);
 
   useEffect(() => { load(); }, [load]);
-  useEffect(() => { setPage(1); }, [workspaceId]);
+  useEffect(() => { setPage(1); }, [workspaceId, debouncedQ, filter, sort, method]);
 
   const totalPaid = useMemo(
     () => items.filter((p) => p.status === 'paid').reduce((s, p) => s + Number(p.amount || 0), 0),
@@ -70,10 +75,20 @@ export default function PaymentsTab({ workspaceId }: { workspaceId?: number | nu
       <div className="flex flex-col lg:flex-row justify-between gap-3 mb-4">
         <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 flex-1">
           <SearchBox value={q} onChange={(v) => { setQ(v); setPage(1); }} placeholder="Cari no. invoice / nama / nomor / ref..." />
-          <div className="flex items-center gap-2">
-            <span className="text-sm text-muted-foreground">Status:</span>
-            <select className="rounded-md border border-input bg-background px-3 py-2 text-sm" value={filter} onChange={(e) => { setFilter(e.target.value); setPage(1); }}>
-              {STATUS.map((s) => <option key={s} value={s}>{s ? statusLabel[s] : 'Semua'}</option>)}
+          <div className="flex flex-wrap items-center gap-2">
+            <select className="rounded-md border border-input bg-background px-3 py-2 text-sm" value={filter} onChange={(e) => setFilter(e.target.value)} title="Status">
+              {STATUS.map((s) => <option key={s} value={s}>{s ? statusLabel[s] : 'Semua status'}</option>)}
+            </select>
+            <select className="rounded-md border border-input bg-background px-3 py-2 text-sm" value={method} onChange={(e) => setMethod(e.target.value)} title="Metode">
+              <option value="">Semua metode</option>
+              <option value="cash">Tunai</option>
+              <option value="QRIS">QRIS</option>
+              <option value="BRIVA">BRIVA</option>
+              <option value="BNIVA">BNIVA</option>
+            </select>
+            <select className="rounded-md border border-input bg-background px-3 py-2 text-sm" value={sort} onChange={(e) => setSort(e.target.value as typeof sort)} title="Urutkan">
+              <option value="recent">Terbaru</option>
+              <option value="amount">Nominal terbesar</option>
             </select>
             <Button variant="ghost" size="icon" onClick={load} title="Muat ulang"><RefreshCw size={16} /></Button>
           </div>

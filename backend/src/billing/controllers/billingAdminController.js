@@ -470,6 +470,12 @@ exports.listInvoices = async (req, res) => {
             params.push(like, like, like);
         }
         const where = filters.join(' AND ');
+        const ORDER = {
+            recent: 'i.period_year DESC, i.period_month DESC, i.id DESC',
+            due: 'i.due_date ASC, i.id DESC',
+            amount: 'i.amount DESC, i.id DESC',
+        };
+        const orderBy = ORDER[req.query.sort] || ORDER.recent;
         const [[{ total }]] = await pool.query(
             `SELECT COUNT(*) total
              FROM billing_invoices i
@@ -484,7 +490,7 @@ exports.listInvoices = async (req, res) => {
              FROM billing_invoices i
              JOIN billing_customers c ON c.id = i.customer_id
              WHERE ${where}
-             ORDER BY i.period_year DESC, i.period_month DESC, i.id DESC
+             ORDER BY ${orderBy}
              LIMIT ? OFFSET ?`,
             [...params, limit, offset]
         );
@@ -509,6 +515,11 @@ exports.listPayments = async (req, res) => {
             params.push(like, like, like, like);
         }
         const where = filters.join(' AND ');
+        const ORDER = {
+            recent: '(p.paid_at IS NULL), p.paid_at DESC, p.id DESC',
+            amount: 'p.amount DESC, p.id DESC',
+        };
+        const orderBy = ORDER[req.query.sort] || ORDER.recent;
         const [[{ total }]] = await pool.query(
             `SELECT COUNT(*) total
              FROM billing_payments p
@@ -526,7 +537,7 @@ exports.listPayments = async (req, res) => {
              JOIN billing_invoices i ON i.id = p.invoice_id
              JOIN billing_customers c ON c.id = i.customer_id
              WHERE ${where}
-             ORDER BY (p.paid_at IS NULL), p.paid_at DESC, p.id DESC
+             ORDER BY ${orderBy}
              LIMIT ? OFFSET ?`,
             [...params, limit, offset]
         );

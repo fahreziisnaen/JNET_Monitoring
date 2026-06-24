@@ -216,8 +216,8 @@ export type PackageInput = Partial<Omit<BillingPackage, 'is_active'>> & { is_act
 export interface PageMeta { total: number; page: number; limit: number }
 export type ListParams = { page?: number; limit?: number; q?: string };
 export type CustomerListParams = ListParams & { package_id?: number; status?: string; sort?: 'name' | 'recent' };
-export type InvoiceListParams = ListParams & { status?: string; year?: number; month?: number };
-export type PaymentListParams = ListParams & { status?: string; method?: string };
+export type InvoiceListParams = ListParams & { status?: string; year?: number; month?: number; sort?: 'recent' | 'due' | 'amount' };
+export type PaymentListParams = ListParams & { status?: string; method?: string; sort?: 'recent' | 'amount' };
 
 function qs(params: Record<string, unknown>): string {
   const sp = new URLSearchParams();
