@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useState, useCallback, useMemo } from 'react';
-import { Plus, Pencil, Trash2, Loader2, X, Search, Download } from 'lucide-react';
+import { Plus, Pencil, Trash2, Loader2, X, Search, Download, Eye } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -11,6 +11,7 @@ import { billingClient, formatRupiah, tenureLabel, formatDateID, BillingCustomer
 import { Pagination, SearchBox, useDebouncedValue } from './list-controls';
 import FullCustomerForm from './full-customer-form';
 import EditCustomerForm from './edit-customer-form';
+import ViewCustomerModal from './view-customer-modal';
 
 const REASON_LABEL: Record<SkippedClient['reason'], string> = {
   no_wa: 'Nomor WA tidak valid',
@@ -24,6 +25,7 @@ export default function CustomersTab({ workspaceId }: { workspaceId?: number | n
   const [items, setItems] = useState<BillingCustomer[]>([]);
   const [loading, setLoading] = useState(true);
   const [editId, setEditId] = useState<number | null>(null);
+  const [viewCustomer, setViewCustomer] = useState<BillingCustomer | null>(null);
   const [addOpen, setAddOpen] = useState(false);
   const [toDelete, setToDelete] = useState<BillingCustomer | null>(null);
   const [deleting, setDeleting] = useState(false);
@@ -270,6 +272,14 @@ export default function CustomersTab({ workspaceId }: { workspaceId?: number | n
         </Card>
       )}
 
+      {viewCustomer && (
+        <ViewCustomerModal
+          workspaceId={workspaceId}
+          customer={viewCustomer}
+          onClose={() => setViewCustomer(null)}
+        />
+      )}
+
       {editId != null && (
         <EditCustomerForm
           workspaceId={workspaceId}
@@ -343,8 +353,9 @@ export default function CustomersTab({ workspaceId }: { workspaceId?: number | n
                     ) : <span className="text-xs text-muted-foreground">—</span>}
                   </td>
                   <td className="py-2 pr-3 text-right">
-                    <button onClick={() => setEditId(c.id)} className="p-1.5 rounded hover:bg-accent text-muted-foreground"><Pencil size={16} /></button>
-                    <button onClick={() => setToDelete(c)} className="p-1.5 rounded hover:bg-accent text-destructive"><Trash2 size={16} /></button>
+                    <button onClick={() => setViewCustomer(c)} className="p-1.5 rounded hover:bg-accent text-muted-foreground" title="Lihat detail"><Eye size={16} /></button>
+                    <button onClick={() => setEditId(c.id)} className="p-1.5 rounded hover:bg-accent text-muted-foreground" title="Edit"><Pencil size={16} /></button>
+                    <button onClick={() => setToDelete(c)} className="p-1.5 rounded hover:bg-accent text-destructive" title="Hapus"><Trash2 size={16} /></button>
                   </td>
                 </tr>
               ))}
