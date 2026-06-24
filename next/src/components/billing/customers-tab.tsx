@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card } from '@/components/ui/card';
 import ConfirmModal from '@/components/ui/confirm-modal';
-import { billingClient, formatRupiah, tenureLabel, formatDateID, BillingCustomer, ImportableClient, ImportSummary, SkippedClient } from '@/utils/billing';
+import { billingClient, formatRupiah, tenureLabel, formatDateID, BillingCustomer, BillingPackage, ImportableClient, ImportSummary, SkippedClient } from '@/utils/billing';
 import { Pagination, SearchBox, useDebouncedValue } from './list-controls';
 import FullCustomerForm from './full-customer-form';
 import EditCustomerForm from './edit-customer-form';
@@ -33,6 +33,10 @@ export default function CustomersTab({ workspaceId }: { workspaceId?: number | n
   const debouncedQ = useDebouncedValue(q);
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
+  const [sort, setSort] = useState<'recent' | 'name'>('recent');
+  const [pkgFilter, setPkgFilter] = useState('');
+  const [statusFilter, setStatusFilter] = useState('');
+  const [packages, setPackages] = useState<BillingPackage[]>([]);
   const limit = 20;
 
   const [importOpen, setImportOpen] = useState(false);
@@ -47,7 +51,11 @@ export default function CustomersTab({ workspaceId }: { workspaceId?: number | n
     if (workspaceId == null) { setItems([]); setTotal(0); setLoading(false); return; }
     setLoading(true);
     try {
-      const { customers, total } = await billingApi.listCustomers({ page, limit, q: debouncedQ });
+      const { customers, total } = await billingApi.listCustomers({
+        page, limit, q: debouncedQ, sort,
+        package_id: pkgFilter ? Number(pkgFilter) : undefined,
+        status: statusFilter || undefined,
+      });
       setItems(customers || []);
       setTotal(total || 0);
     } catch (e: any) {
@@ -55,11 +63,16 @@ export default function CustomersTab({ workspaceId }: { workspaceId?: number | n
     } finally {
       setLoading(false);
     }
-  }, [billingApi, workspaceId, page, debouncedQ]);
+  }, [billingApi, workspaceId, page, debouncedQ, sort, pkgFilter, statusFilter]);
 
   useEffect(() => { load(); }, [load]);
 
-  useEffect(() => { setPage(1); }, [workspaceId]);
+  useEffect(() => {
+    if (workspaceId == null) { setPackages([]); return; }
+    billingApi.listPackages().then((r) => setPackages(r.packages || [])).catch(() => setPackages([]));
+  }, [billingApi, workspaceId]);
+
+  useEffect(() => { setPage(1); }, [workspaceId, debouncedQ, sort, pkgFilter, statusFilter]);
 
   const openImport = async () => {
     setImportOpen(true);
@@ -145,12 +158,41 @@ export default function CustomersTab({ workspaceId }: { workspaceId?: number | n
 
   return (
     <div>
-      <div className="flex flex-col sm:flex-row justify-between gap-3 mb-4">
+      <div className="flex flex-col sm:flex-row justify-between gap-3 mb-3">
         <SearchBox value={q} onChange={(v) => { setQ(v); setPage(1); }} placeholder="Cari nama / nomor / secret..." />
         <div className="flex gap-2">
           <Button variant="outline" onClick={openImport}><Download size={18} /> Import dari Monitoring</Button>
           <Button onClick={() => setAddOpen(true)}><Plus size={18} /> Tambah Pelanggan</Button>
         </div>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2 mb-4">
+        <div className="flex items-center gap-1.5">
+          <span className="text-sm text-muted-foreground">Urutkan:</span>
+          <select className="rounded-md border border-input bg-background px-3 py-2 text-sm" value={sort} onChange={(e) => setSort(e.target.value as 'recent' | 'name')}>
+            <option value="recent">Terbaru</option>
+            <option value="name">Nama (A–Z)</option>
+          </select>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <span className="text-sm text-muted-foreground">Paket:</span>
+          <select className="rounded-md border border-input bg-background px-3 py-2 text-sm max-w-[180px]" value={pkgFilter} onChange={(e) => setPkgFilter(e.target.value)}>
+            <option value="">Semua paket</option>
+            {packages.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+          </select>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <span className="text-sm text-muted-foreground">Status:</span>
+          <select className="rounded-md border border-input bg-background px-3 py-2 text-sm" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
+            <option value="">Semua status</option>
+            <option value="active">Aktif</option>
+            <option value="suspended">Isolir</option>
+            <option value="cancelled">Berhenti</option>
+          </select>
+        </div>
+        {(pkgFilter || statusFilter || sort !== 'recent') && (
+          <Button variant="ghost" size="sm" onClick={() => { setSort('recent'); setPkgFilter(''); setStatusFilter(''); }}>Reset</Button>
+        )}
       </div>
 
       {addOpen && (

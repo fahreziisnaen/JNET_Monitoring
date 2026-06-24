@@ -128,9 +128,24 @@ exports.listCustomers = async (req, res) => {
             const like = `%${q}%`;
             params.push(like, like, like, like);
         }
+        if (req.query.package_id) { filters.push('s.package_id = ?'); params.push(Number(req.query.package_id)); }
+        if (req.query.status) { filters.push('s.status = ?'); params.push(req.query.status); }
         const where = filters.join(' AND ');
+
+        const subJoin = `LEFT JOIN billing_subscriptions s ON s.id = (
+                 SELECT s2.id FROM billing_subscriptions s2
+                 WHERE s2.customer_id = c.id
+                 ORDER BY (s2.status = 'active') DESC, s2.created_at DESC LIMIT 1
+             )`;
+
+        const ORDER = {
+            name: "(c.name IS NULL OR c.name = ''), c.name ASC, c.id DESC",
+            recent: 'c.created_at DESC',
+        };
+        const orderBy = ORDER[req.query.sort] || ORDER.recent;
+
         const [[{ total }]] = await pool.query(
-            `SELECT COUNT(*) total FROM billing_customers c WHERE ${where}`, params
+            `SELECT COUNT(*) total FROM billing_customers c ${subJoin} WHERE ${where}`, params
         );
         const [rows] = await pool.query(
             `SELECT c.*, cl.client_name AS linked_client_name,
@@ -140,13 +155,9 @@ exports.listCustomers = async (req, res) => {
                     p.name AS package_name, p.price AS package_price
              FROM billing_customers c
              LEFT JOIN clients cl ON cl.id = c.client_id
-             LEFT JOIN billing_subscriptions s ON s.id = (
-                 SELECT s2.id FROM billing_subscriptions s2
-                 WHERE s2.customer_id = c.id
-                 ORDER BY (s2.status = 'active') DESC, s2.created_at DESC LIMIT 1
-             )
+             ${subJoin}
              LEFT JOIN billing_packages p ON p.id = s.package_id
-             WHERE ${where} ORDER BY c.created_at DESC LIMIT ? OFFSET ?`,
+             WHERE ${where} ORDER BY ${orderBy} LIMIT ? OFFSET ?`,
             [...params, limit, offset]
         );
         return res.status(200).json({ customers: rows, total, page, limit });

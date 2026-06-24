@@ -215,6 +215,7 @@ export type PackageInput = Partial<Omit<BillingPackage, 'is_active'>> & { is_act
 
 export interface PageMeta { total: number; page: number; limit: number }
 export type ListParams = { page?: number; limit?: number; q?: string };
+export type CustomerListParams = ListParams & { package_id?: number; status?: string; sort?: 'name' | 'recent' };
 export type InvoiceListParams = ListParams & { status?: string; year?: number; month?: number };
 export type PaymentListParams = ListParams & { status?: string; method?: string };
 
@@ -269,7 +270,7 @@ export function billingClient(workspaceId?: number | null) {
     updatePackage: (id: number, b: PackageInput) => req(`/packages/${id}`, { method: 'PUT', ...json(b) }),
     deletePackage: (id: number) => req(`/packages/${id}`, { method: 'DELETE' }),
 
-    listCustomers: (params: ListParams = {}) => req<{ customers: BillingCustomer[] } & PageMeta>(`/customers${qs(params)}`),
+    listCustomers: (params: CustomerListParams = {}) => req<{ customers: BillingCustomer[] } & PageMeta>(`/customers${qs(params)}`),
     getCustomerDetail: (id: number) => req<CustomerDetail>(`/customers/${id}`),
     createCustomer: (b: Partial<BillingCustomer>) => req('/customers', { method: 'POST', ...json(b) }),
     updateCustomer: (id: number, b: Partial<BillingCustomer>) => req(`/customers/${id}`, { method: 'PUT', ...json(b) }),
