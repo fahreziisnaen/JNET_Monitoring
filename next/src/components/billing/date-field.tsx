@@ -42,10 +42,14 @@ export default function DateField({
     if (!focused.current) setText(toDisplay(value));
   }, [value]);
 
-  const onText = (raw: string) => {
-    const f = formatTyping(raw);
+  const onText = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const el = e.target;
+    const raw = el.value;
+    const atEnd = (el.selectionStart ?? raw.length) === raw.length;
+    const adding = raw.length > text.length;
+    const f = adding && atEnd ? formatTyping(raw) : raw;
     setText(f);
-    if (f === '') { onChange(''); return; }
+    if (f.trim() === '') { onChange(''); return; }
     const iso = parseDisplay(f);
     if (iso) onChange(iso);
   };
@@ -63,7 +67,7 @@ export default function DateField({
         value={text}
         onFocusCapture={() => { focused.current = true; }}
         onBlur={onBlur}
-        onChange={(e) => onText(e.target.value)}
+        onChange={onText}
         placeholder="dd/mm/yyyy"
         inputMode="numeric"
         className="pr-10"
