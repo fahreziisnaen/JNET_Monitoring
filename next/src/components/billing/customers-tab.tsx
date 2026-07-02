@@ -163,9 +163,9 @@ export default function CustomersTab({ workspaceId }: { workspaceId?: number | n
       <div className="flex flex-col sm:flex-row justify-between gap-3 mb-3">
         <SearchBox value={q} onChange={(v) => { setQ(v); setPage(1); }} placeholder="Cari nama / nomor / secret..." />
         <div className="flex gap-2">
-          <Button variant="outline" onClick={() => { setMatchOpen(true); setImportOpen(false); }}><Wand2 size={18} /> Cocokkan Paket</Button>
-          <Button variant="outline" onClick={openImport}><Download size={18} /> Import dari Monitoring</Button>
-          <Button onClick={() => setAddOpen(true)}><Plus size={18} /> Tambah Pelanggan</Button>
+          <Button variant="outline" className="gap-2" onClick={() => { setMatchOpen(true); setImportOpen(false); }}><Wand2 size={18} />Cocokkan Paket</Button>
+          <Button variant="outline" className="gap-2" onClick={openImport}><Download size={18} />Import dari Monitoring</Button>
+          <Button className="gap-2" onClick={() => setAddOpen(true)}><Plus size={18} />Tambah Pelanggan</Button>
         </div>
       </div>
 
