@@ -243,6 +243,101 @@ exports.importClients = async (req, res) => {
     }
 };
 
+exports.listAssignableCustomers = async (req, res) => {
+    try {
+        const ws = resolveWorkspaceId(req);
+        const [rows] = await pool.query(
+            `SELECT c.id, c.name, c.whatsapp_number, c.pppoe_secret_name,
+                    ps.profile AS detected_profile,
+                    pkg.id AS package_id, pkg.name AS package_name, pkg.price AS package_price
+             FROM billing_customers c
+             LEFT JOIN pppoe_secrets ps ON ps.workspace_id = c.workspace_id AND ps.name = c.pppoe_secret_name
+             LEFT JOIN billing_packages pkg ON pkg.id = (
+                 SELECT pk.id FROM billing_packages pk
+                 WHERE pk.workspace_id = c.workspace_id AND LOWER(pk.pppoe_profile) = LOWER(ps.profile)
+                 ORDER BY pk.id LIMIT 1
+             )
+             WHERE c.workspace_id = ?
+               AND NOT EXISTS (
+                   SELECT 1 FROM billing_subscriptions s
+                   WHERE s.customer_id = c.id AND s.workspace_id = c.workspace_id
+               )
+             ORDER BY (pkg.id IS NULL), (c.name IS NULL OR c.name = ''), c.name ASC`,
+            [ws]
+        );
+        return res.status(200).json({ customers: rows });
+    } catch (e) {
+        console.error('[Billing][Admin] listAssignableCustomers:', e.message);
+        return res.status(500).json({ message: 'Gagal mengambil pelanggan tanpa paket.' });
+    }
+};
+
+exports.assignPackages = async (req, res) => {
+    try {
+        const ws = resolveWorkspaceId(req);
+        const { customer_ids, all } = req.body;
+
+        let sql = `SELECT c.id, c.name, c.whatsapp_number,
+                          ps.profile AS detected_profile,
+                          pkg.id AS package_id
+                   FROM billing_customers c
+                   LEFT JOIN pppoe_secrets ps ON ps.workspace_id = c.workspace_id AND ps.name = c.pppoe_secret_name
+                   LEFT JOIN billing_packages pkg ON pkg.id = (
+                       SELECT pk.id FROM billing_packages pk
+                       WHERE pk.workspace_id = c.workspace_id AND LOWER(pk.pppoe_profile) = LOWER(ps.profile)
+                       ORDER BY pk.id LIMIT 1
+                   )
+                   WHERE c.workspace_id = ?
+                     AND NOT EXISTS (
+                         SELECT 1 FROM billing_subscriptions s
+                         WHERE s.customer_id = c.id AND s.workspace_id = c.workspace_id
+                     )`;
+        const params = [ws];
+        if (!all) {
+            const ids = Array.isArray(customer_ids) ? customer_ids.map(Number).filter(Boolean) : [];
+            if (ids.length === 0) return res.status(400).json({ message: 'Pilih minimal satu pelanggan, atau kirim all=true.' });
+            sql += ` AND c.id IN (${ids.map(() => '?').join(',')})`;
+            params.push(...ids);
+        }
+        const [customers] = await pool.query(sql, params);
+
+        const start = new Date().toISOString().slice(0, 10);
+        const dueDay = Math.min(Math.max(new Date().getDate(), 1), 28);
+
+        const summary = { total: customers.length, assigned: 0, skipped_no_profile: 0, skipped_no_match: 0, skipped_error: 0 };
+        const skippedList = [];
+        for (const c of customers) {
+            const label = { name: c.name, whatsapp_number: c.whatsapp_number, profile: c.detected_profile };
+            try {
+                if (!c.detected_profile) {
+                    summary.skipped_no_profile++;
+                    skippedList.push({ ...label, reason: 'no_profile' });
+                    continue;
+                }
+                if (!c.package_id) {
+                    summary.skipped_no_match++;
+                    skippedList.push({ ...label, reason: 'no_match' });
+                    continue;
+                }
+                await pool.query(
+                    `INSERT INTO billing_subscriptions (workspace_id, customer_id, package_id, status, start_date, due_day_of_month)
+                     VALUES (?, ?, ?, 'active', ?, ?)`,
+                    [ws, c.id, c.package_id, start, dueDay]
+                );
+                summary.assigned++;
+            } catch (rowErr) {
+                console.error('[Billing][Admin] assignPackages row:', rowErr.message);
+                summary.skipped_error++;
+                skippedList.push({ ...label, reason: 'error' });
+            }
+        }
+        return res.status(200).json({ message: 'Pencocokan paket selesai.', summary, skipped: skippedList });
+    } catch (e) {
+        console.error('[Billing][Admin] assignPackages:', e.message);
+        return res.status(500).json({ message: 'Gagal mencocokkan paket.' });
+    }
+};
+
 exports.createCustomer = async (req, res) => {
     try {
         const ws = resolveWorkspaceId(req);

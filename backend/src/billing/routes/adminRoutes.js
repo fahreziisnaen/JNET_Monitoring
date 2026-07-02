@@ -18,6 +18,8 @@ router.put('/customers/:id', admin.updateCustomer);
 router.delete('/customers/:id', admin.deleteCustomer);
 router.get('/importable-clients', admin.listImportableClients);
 router.post('/import-clients', admin.importClients);
+router.get('/assignable-customers', admin.listAssignableCustomers);
+router.post('/assign-packages', admin.assignPackages);
 
 router.get('/subscriptions', admin.listSubscriptions);
 router.post('/subscriptions', admin.createSubscription);

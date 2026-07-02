@@ -252,6 +252,32 @@ export interface SkippedClient {
   reason: 'no_wa' | 'dup_wa' | 'exists' | 'error';
 }
 
+export interface AssignableCustomer {
+  id: number;
+  name: string | null;
+  whatsapp_number: string | null;
+  pppoe_secret_name: string | null;
+  detected_profile: string | null;
+  package_id: number | null;
+  package_name: string | null;
+  package_price: number | null;
+}
+
+export interface AssignSummary {
+  total: number;
+  assigned: number;
+  skipped_no_profile: number;
+  skipped_no_match: number;
+  skipped_error: number;
+}
+
+export interface AssignSkipped {
+  name: string | null;
+  whatsapp_number: string | null;
+  profile: string | null;
+  reason: 'no_profile' | 'no_match' | 'error';
+}
+
 export function billingClient(workspaceId?: number | null) {
   async function req<T = any>(path: string, options?: RequestInit): Promise<T> {
     let p = path;
@@ -277,6 +303,8 @@ export function billingClient(workspaceId?: number | null) {
     deleteCustomer: (id: number) => req(`/customers/${id}`, { method: 'DELETE' }),
     listImportableClients: () => req<{ clients: ImportableClient[] }>('/importable-clients'),
     importClients: (b: { client_ids?: number[]; all?: boolean }) => req<{ summary: ImportSummary; skipped: SkippedClient[] }>('/import-clients', { method: 'POST', ...json(b) }),
+    listAssignableCustomers: () => req<{ customers: AssignableCustomer[] }>('/assignable-customers'),
+    assignPackages: (b: { customer_ids?: number[]; all?: boolean }) => req<{ summary: AssignSummary; skipped: AssignSkipped[] }>('/assign-packages', { method: 'POST', ...json(b) }),
 
     listSubscriptions: (params: ListParams = {}) => req<{ subscriptions: BillingSubscription[] } & PageMeta>(`/subscriptions${qs(params)}`),
     createSubscription: (b: Partial<BillingSubscription>) => req('/subscriptions', { method: 'POST', ...json(b) }),
