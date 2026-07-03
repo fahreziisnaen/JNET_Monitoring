@@ -437,20 +437,14 @@ exports.deleteCustomer = async (req, res) => {
 
         await pool.query('DELETE FROM billing_customers WHERE id = ? AND workspace_id = ?', [req.params.id, ws]);
 
-        let routerSynced = false;
         if (cust.pppoe_secret_name) {
-            try {
-                const r = await removeSecretFromMonitoring({
-                    workspaceId: ws,
-                    secretName: cust.pppoe_secret_name,
-                    deviceId: cust.device_id || null,
-                });
-                routerSynced = r.router_synced;
-            } catch (syncErr) {
-                console.error('[Billing][Admin] deleteCustomer sync secret:', syncErr.message);
-            }
+            removeSecretFromMonitoring({
+                workspaceId: ws,
+                secretName: cust.pppoe_secret_name,
+                deviceId: cust.device_id || null,
+            }).catch((syncErr) => console.error('[Billing][Admin] deleteCustomer sync secret:', syncErr.message));
         }
-        return res.status(200).json({ message: 'Pelanggan dihapus.', router_synced: routerSynced });
+        return res.status(200).json({ message: 'Pelanggan dihapus.' });
     } catch (e) {
         console.error('[Billing][Admin] deleteCustomer:', e.message);
         return res.status(500).json({ message: 'Gagal menghapus pelanggan.' });

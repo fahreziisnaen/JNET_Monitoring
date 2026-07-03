@@ -16,7 +16,7 @@ async function removeSecretFromMonitoring({ workspaceId, secretName, deviceId })
             '/ppp/secret/print',
             [`?name=${secretName}`],
             deviceId,
-            { timeout: 30000 }
+            { timeout: 15000, noRetry: true }
         );
         if (secretData && secretData.length > 0) {
             mikrotikId = secretData[0]['.id'];
@@ -27,7 +27,7 @@ async function removeSecretFromMonitoring({ workspaceId, secretName, deviceId })
 
     if (mikrotikId) {
         try {
-            await runCommandForWorkspace(workspaceId, '/ppp/secret/remove', [`=.id=${mikrotikId}`], deviceId);
+            await runCommandForWorkspace(workspaceId, '/ppp/secret/remove', [`=.id=${mikrotikId}`], deviceId, { timeout: 20000, noRetry: true });
         } catch (e) {
             console.error(`[SecretDeletion] Gagal hapus dari Mikrotik: ${e.message}`);
         }
