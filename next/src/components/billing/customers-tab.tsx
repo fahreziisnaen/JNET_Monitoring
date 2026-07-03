@@ -347,7 +347,7 @@ export default function CustomersTab({ workspaceId }: { workspaceId?: number | n
         onClose={() => setToDelete(null)}
         onConfirm={confirmDelete}
         title="Hapus Pelanggan"
-        description={`Hapus pelanggan "${toDelete?.name || toDelete?.whatsapp_number || ''}"? Langganan & seluruh invoice pelanggan ini ikut terhapus permanen.`}
+        description={`Hapus pelanggan "${toDelete?.name || toDelete?.whatsapp_number || ''}"? Langganan, seluruh invoice & pembayaran ikut terhapus permanen. Secret PPPoE di router MikroTik dan data monitoring (peta/ODP/foto) JUGA dihapus — pelanggan akan kehilangan koneksi internet.`}
         confirmText="Hapus"
         isLoading={deleting}
       />

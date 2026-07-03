@@ -7,6 +7,7 @@ const { createPaymentForInvoice } = require('../services/paymentService');
 const { sendWhatsAppMessage, isWhatsAppConnected } = require('../../services/whatsappService');
 const tripayService = require('../services/tripayService');
 const isolirService = require('../services/isolirService');
+const { removeSecretFromMonitoring } = require('../../services/secretDeletionService');
 
 const MONTHS_ID = ['', 'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
 
@@ -375,6 +376,7 @@ exports.updateCustomer = async (req, res) => {
     try {
         const ws = resolveWorkspaceId(req);
         const { name, whatsapp_number, email, address, status, pppoe_secret_name, device_id, client_id, ktp_number } = req.body;
+        const hasSecret = Object.prototype.hasOwnProperty.call(req.body, 'pppoe_secret_name');
         const [result] = await pool.query(
             `UPDATE billing_customers SET
                 name = COALESCE(?, name),
@@ -382,12 +384,12 @@ exports.updateCustomer = async (req, res) => {
                 email = ?, address = ?,
                 ktp_number = COALESCE(?, ktp_number),
                 status = COALESCE(?, status),
-                pppoe_secret_name = COALESCE(?, pppoe_secret_name),
+                pppoe_secret_name = IF(?, ?, pppoe_secret_name),
                 device_id = COALESCE(?, device_id),
                 client_id = COALESCE(?, client_id)
              WHERE id = ? AND workspace_id = ?`,
             [name ?? null, whatsapp_number ? normalizeWa(whatsapp_number) : null, email ?? null, address ?? null, ktp_number ?? null, status ?? null,
-             pppoe_secret_name ?? null, device_id ?? null, client_id ?? null, req.params.id, ws]
+             hasSecret ? 1 : 0, hasSecret ? (pppoe_secret_name ?? null) : null, device_id ?? null, client_id ?? null, req.params.id, ws]
         );
         if (result.affectedRows === 0) return res.status(404).json({ message: 'Pelanggan tidak ditemukan.' });
         return res.status(200).json({ message: 'Pelanggan diperbarui.' });
@@ -427,12 +429,28 @@ exports.getCustomerDetail = async (req, res) => {
 exports.deleteCustomer = async (req, res) => {
     try {
         const ws = resolveWorkspaceId(req);
-        const [result] = await pool.query(
-            'DELETE FROM billing_customers WHERE id = ? AND workspace_id = ?',
+        const [[cust]] = await pool.query(
+            'SELECT pppoe_secret_name, device_id FROM billing_customers WHERE id = ? AND workspace_id = ?',
             [req.params.id, ws]
         );
-        if (result.affectedRows === 0) return res.status(404).json({ message: 'Pelanggan tidak ditemukan.' });
-        return res.status(200).json({ message: 'Pelanggan dihapus.' });
+        if (!cust) return res.status(404).json({ message: 'Pelanggan tidak ditemukan.' });
+
+        await pool.query('DELETE FROM billing_customers WHERE id = ? AND workspace_id = ?', [req.params.id, ws]);
+
+        let routerSynced = false;
+        if (cust.pppoe_secret_name) {
+            try {
+                const r = await removeSecretFromMonitoring({
+                    workspaceId: ws,
+                    secretName: cust.pppoe_secret_name,
+                    deviceId: cust.device_id || null,
+                });
+                routerSynced = r.router_synced;
+            } catch (syncErr) {
+                console.error('[Billing][Admin] deleteCustomer sync secret:', syncErr.message);
+            }
+        }
+        return res.status(200).json({ message: 'Pelanggan dihapus.', router_synced: routerSynced });
     } catch (e) {
         console.error('[Billing][Admin] deleteCustomer:', e.message);
         return res.status(500).json({ message: 'Gagal menghapus pelanggan.' });
