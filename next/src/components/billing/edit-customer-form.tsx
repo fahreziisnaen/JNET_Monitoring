@@ -66,6 +66,8 @@ export default function EditCustomerForm({
   const [dragOver, setDragOver] = useState(false);
   const [packages, setPackages] = useState<BillingPackage[]>([]);
   const [secrets, setSecrets] = useState<string[]>([]);
+  const [secretOpen, setSecretOpen] = useState(false);
+  const [secretQ, setSecretQ] = useState('');
   const [odps, setOdps] = useState<OdpAsset[]>([]);
   const [saving, setSaving] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -130,6 +132,11 @@ export default function EditCustomerForm({
     window.addEventListener('paste', onPaste);
     return () => window.removeEventListener('paste', onPaste);
   }, []);
+
+  const filteredSecrets = useMemo(() => {
+    const s = secretQ.trim().toLowerCase();
+    return (s ? secrets.filter((x) => x.toLowerCase().includes(s)) : secrets).slice(0, 50);
+  }, [secretQ, secrets]);
 
   const clientId = detail?.customer.client_id ?? null;
   const hasSub = !!detail?.subscription;
@@ -239,11 +246,44 @@ export default function EditCustomerForm({
             <div className="sm:col-span-2">
               <label className={labelCls}>Secret PPPoE (dari MikroTik — untuk isolir/unisolir & ganti profil)</label>
               {secrets.length > 0 ? (
-                <select className={selectCls} value={secret} onChange={(e) => setSecret(e.target.value)}>
-                  <option value="">— pilih secret —</option>
-                  {secret && !secrets.includes(secret) && <option value={secret}>{secret} (tersimpan, tak ada di router)</option>}
-                  {secrets.map((s) => <option key={s} value={s}>{s}</option>)}
-                </select>
+                <div className="relative">
+                  {secret && !secretOpen ? (
+                    <div className="flex items-center gap-2 h-10 px-3 rounded-md border border-input bg-background text-sm">
+                      <span className="font-mono truncate">{secret}</span>
+                      {!secrets.includes(secret) && <span className="text-xs text-amber-600 shrink-0">tak ada di router</span>}
+                      <button type="button" onClick={() => { setSecretOpen(true); setSecretQ(''); }} className="ml-auto text-xs text-primary hover:underline shrink-0">Ganti</button>
+                    </div>
+                  ) : (
+                    <>
+                      <Input
+                        value={secretQ}
+                        autoFocus={secretOpen}
+                        onChange={(e) => { setSecretQ(e.target.value); setSecretOpen(true); }}
+                        onFocus={() => setSecretOpen(true)}
+                        placeholder="Cari & pilih PPPoE secret..."
+                      />
+                      {secretOpen && (
+                        <>
+                          <div className="fixed inset-0 z-10" onClick={() => setSecretOpen(false)} />
+                          <div className="absolute z-20 mt-1 w-full max-h-60 overflow-y-auto rounded-md border bg-card shadow-lg">
+                            {filteredSecrets.length === 0 ? (
+                              <p className="px-3 py-3 text-sm text-muted-foreground">Tidak ada secret yang cocok.</p>
+                            ) : filteredSecrets.map((s) => (
+                              <button
+                                type="button"
+                                key={s}
+                                onClick={() => { setSecret(s); setSecretOpen(false); setSecretQ(''); }}
+                                className={`flex w-full items-center px-3 py-2 text-left text-sm font-mono hover:bg-accent ${s === secret ? 'bg-accent/60' : ''}`}
+                              >
+                                {s}
+                              </button>
+                            ))}
+                          </div>
+                        </>
+                      )}
+                    </>
+                  )}
+                </div>
               ) : (
                 <Input value={secret} onChange={(e) => setSecret(e.target.value)} placeholder="nama secret (router tak terjangkau)" />
               )}
