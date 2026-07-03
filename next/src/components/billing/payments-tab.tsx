@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useState, useCallback, useMemo } from 'react';
-import { Loader2, RefreshCw } from 'lucide-react';
+import { Loader2, RefreshCw, FileDown } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { billingClient, formatRupiah, formatDateTimeID, MONTHS_ID, BillingPayment } from '@/utils/billing';
@@ -39,6 +39,7 @@ export default function PaymentsTab({ workspaceId }: { workspaceId?: number | nu
   const [filter, setFilter] = useState('');
   const [method, setMethod] = useState('');
   const [sort, setSort] = useState<'recent' | 'amount'>('recent');
+  const [exporting, setExporting] = useState(false);
   const [q, setQ] = useState('');
   const debouncedQ = useDebouncedValue(q);
   const [page, setPage] = useState(1);
@@ -64,6 +65,17 @@ export default function PaymentsTab({ workspaceId }: { workspaceId?: number | nu
 
   useEffect(() => { load(); }, [load]);
   useEffect(() => { setPage(1); }, [workspaceId, debouncedQ, filter, sort, method]);
+
+  const doExport = async () => {
+    setExporting(true);
+    try {
+      await billingApi.exportPayments({ status: filter || undefined, method: method || undefined, sort, q: debouncedQ });
+    } catch (e: any) {
+      toast.error('Gagal mengekspor', { description: e.message });
+    } finally {
+      setExporting(false);
+    }
+  };
 
   const totalPaid = useMemo(
     () => items.filter((p) => p.status === 'paid').reduce((s, p) => s + Number(p.amount || 0), 0),
@@ -91,6 +103,9 @@ export default function PaymentsTab({ workspaceId }: { workspaceId?: number | nu
               <option value="amount">Nominal terbesar</option>
             </select>
             <Button variant="ghost" size="icon" onClick={load} title="Muat ulang"><RefreshCw size={16} /></Button>
+            <Button variant="outline" className="gap-2" onClick={doExport} disabled={exporting} title="Export ke Excel">
+              {exporting ? <Loader2 className="animate-spin" size={16} /> : <FileDown size={16} />} Excel
+            </Button>
           </div>
         </div>
       </div>

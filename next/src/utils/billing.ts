@@ -290,6 +290,29 @@ export function billingClient(workspaceId?: number | null) {
     return data as T;
   }
 
+  async function download(path: string, filename: string): Promise<void> {
+    let p = path;
+    if (workspaceId != null) {
+      p += (p.includes('?') ? '&' : '?') + `workspaceId=${workspaceId}`;
+    }
+    const res = await apiFetch(`${base()}${p}`);
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error((data && data.message) || `Error ${res.status}`);
+    }
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  }
+
+  const stamp = () => new Date().toISOString().slice(0, 10);
+
   return {
     listPackages: () => req<{ packages: BillingPackage[] }>('/packages'),
     createPackage: (b: PackageInput) => req('/packages', { method: 'POST', ...json(b) }),
@@ -305,18 +328,21 @@ export function billingClient(workspaceId?: number | null) {
     importClients: (b: { client_ids?: number[]; all?: boolean }) => req<{ summary: ImportSummary; skipped: SkippedClient[] }>('/import-clients', { method: 'POST', ...json(b) }),
     listAssignableCustomers: () => req<{ customers: AssignableCustomer[] }>('/assignable-customers'),
     assignPackages: (b: { customer_ids?: number[]; all?: boolean }) => req<{ summary: AssignSummary; skipped: AssignSkipped[] }>('/assign-packages', { method: 'POST', ...json(b) }),
+    exportCustomers: (params: CustomerListParams = {}) => download(`/customers/export${qs(params)}`, `pelanggan-${stamp()}.xlsx`),
 
     listSubscriptions: (params: ListParams = {}) => req<{ subscriptions: BillingSubscription[] } & PageMeta>(`/subscriptions${qs(params)}`),
     createSubscription: (b: Partial<BillingSubscription>) => req('/subscriptions', { method: 'POST', ...json(b) }),
     updateSubscription: (id: number, b: Partial<BillingSubscription>) => req(`/subscriptions/${id}`, { method: 'PUT', ...json(b) }),
 
     listInvoices: (params: InvoiceListParams = {}) => req<{ invoices: BillingInvoice[] } & PageMeta>(`/invoices${qs(params)}`),
+    exportInvoices: (params: InvoiceListParams = {}) => download(`/invoices/export${qs(params)}`, `invoice-${stamp()}.xlsx`),
     generateInvoices: (b: { year?: number; month?: number } = {}) => req('/invoices/generate', { method: 'POST', ...json(b) }),
 
     sendInvoiceWa: (id: number, method?: string) => req<{ message: string; wa_sent: boolean; wa_connected: boolean; checkout_url: string; reused: boolean; simulated: boolean }>(`/invoices/${id}/send-wa`, { method: 'POST', ...json({ method }) }),
     payInvoiceCash: (id: number) => req<{ message: string }>(`/invoices/${id}/pay-cash`, { method: 'POST' }),
 
     listPayments: (params: PaymentListParams = {}) => req<{ payments: BillingPayment[] } & PageMeta>(`/payments${qs(params)}`),
+    exportPayments: (params: PaymentListParams = {}) => download(`/payments/export${qs(params)}`, `pembayaran-${stamp()}.xlsx`),
     paymentsSummary: () => req<PaymentsSummary>('/payments/summary'),
 
     getSettings: () => req<{ settings: BillingSettings | null; gateway: GatewayStatus }>('/settings'),

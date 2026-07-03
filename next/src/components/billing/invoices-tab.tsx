@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useState, useCallback, useMemo } from 'react';
-import { Loader2, RefreshCw, Send, Banknote } from 'lucide-react';
+import { Loader2, RefreshCw, Send, Banknote, FileDown } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import ConfirmModal from '@/components/ui/confirm-modal';
@@ -25,6 +25,7 @@ export default function InvoicesTab({ workspaceId }: { workspaceId?: number | nu
   const [month, setMonth] = useState('');
   const [year, setYear] = useState('');
   const [sort, setSort] = useState<'recent' | 'due' | 'amount'>('recent');
+  const [exporting, setExporting] = useState(false);
   const [q, setQ] = useState('');
   const debouncedQ = useDebouncedValue(q);
   const [page, setPage] = useState(1);
@@ -102,6 +103,21 @@ export default function InvoicesTab({ workspaceId }: { workspaceId?: number | nu
     }
   };
 
+  const doExport = async () => {
+    setExporting(true);
+    try {
+      await billingApi.exportInvoices({
+        status: filter || undefined, sort, q: debouncedQ,
+        month: month ? Number(month) : undefined,
+        year: year ? Number(year) : undefined,
+      });
+    } catch (e: any) {
+      toast.error('Gagal mengekspor', { description: e.message });
+    } finally {
+      setExporting(false);
+    }
+  };
+
   const thisYear = new Date().getFullYear();
   const years = [thisYear, thisYear - 1, thisYear - 2, thisYear - 3];
 
@@ -128,6 +144,9 @@ export default function InvoicesTab({ workspaceId }: { workspaceId?: number | nu
               <option value="amount">Nominal terbesar</option>
             </select>
             <Button variant="ghost" size="icon" onClick={load} title="Muat ulang"><RefreshCw size={16} /></Button>
+            <Button variant="outline" className="gap-2" onClick={doExport} disabled={exporting} title="Export ke Excel">
+              {exporting ? <Loader2 className="animate-spin" size={16} /> : <FileDown size={16} />} Excel
+            </Button>
           </div>
         </div>
         <Button onClick={generate} disabled={generating}>

@@ -8,6 +8,7 @@ const { sendWhatsAppMessage, isWhatsAppConnected } = require('../../services/wha
 const tripayService = require('../services/tripayService');
 const isolirService = require('../services/isolirService');
 const { removeSecretFromMonitoring } = require('../../services/secretDeletionService');
+const ExcelJS = require('exceljs');
 
 const MONTHS_ID = ['', 'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
 
@@ -681,6 +682,201 @@ exports.paymentsSummary = async (req, res) => {
     } catch (e) {
         console.error('[Billing][Admin] paymentsSummary:', e.message);
         return res.status(500).json({ message: 'Gagal mengambil ringkasan pendapatan.' });
+    }
+};
+
+const SUB_STATUS_LABEL = { active: 'Aktif', suspended: 'Isolir', cancelled: 'Berhenti' };
+const CUST_STATUS_LABEL = { active: 'Aktif', inactive: 'Nonaktif', suspended: 'Isolir' };
+const INVOICE_STATUS_LABEL = { unpaid: 'Belum Bayar', paid: 'Lunas', overdue: 'Terlambat', void: 'Batal' };
+const PAYMENT_STATUS_LABEL = { paid: 'Lunas', pending: 'Menunggu', failed: 'Gagal', expired: 'Kadaluarsa', refunded: 'Refund' };
+
+async function sendWorkbook(res, filename, sheetName, columns, rows) {
+    const wb = new ExcelJS.Workbook();
+    const sheet = wb.addWorksheet(sheetName);
+    sheet.columns = columns;
+    sheet.getRow(1).font = { bold: true };
+    sheet.getRow(1).alignment = { vertical: 'middle' };
+    rows.forEach((r) => sheet.addRow(r));
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    await wb.xlsx.write(res);
+    res.end();
+}
+
+exports.exportCustomers = async (req, res) => {
+    try {
+        const ws = resolveWorkspaceId(req);
+        const { q } = paginationParams(req);
+        const filters = ['c.workspace_id = ?'];
+        const params = [ws];
+        if (q) {
+            filters.push('(c.name LIKE ? OR c.whatsapp_number LIKE ? OR c.pppoe_secret_name LIKE ? OR c.ktp_number LIKE ?)');
+            const like = `%${q}%`;
+            params.push(like, like, like, like);
+        }
+        if (req.query.package_id) { filters.push('s.package_id = ?'); params.push(Number(req.query.package_id)); }
+        if (req.query.status) { filters.push('s.status = ?'); params.push(req.query.status); }
+        const where = filters.join(' AND ');
+        const subJoin = `LEFT JOIN billing_subscriptions s ON s.id = (
+                 SELECT s2.id FROM billing_subscriptions s2
+                 WHERE s2.customer_id = c.id
+                 ORDER BY (s2.status = 'active') DESC, s2.created_at DESC LIMIT 1
+             )`;
+        const ORDER = {
+            name: "(c.name IS NULL OR c.name = ''), c.name ASC, c.id DESC",
+            recent: 'c.created_at DESC',
+        };
+        const orderBy = ORDER[req.query.sort] || ORDER.recent;
+        const [rows] = await pool.query(
+            `SELECT c.name, c.whatsapp_number, c.ktp_number, c.pppoe_secret_name, c.status,
+                    s.status AS subscription_status,
+                    DATE_FORMAT(s.start_date, '%Y-%m-%d') AS subscription_start_date,
+                    p.name AS package_name, p.price AS package_price
+             FROM billing_customers c
+             ${subJoin}
+             LEFT JOIN billing_packages p ON p.id = s.package_id
+             WHERE ${where} ORDER BY ${orderBy}`,
+            params
+        );
+        const columns = [
+            { header: 'Nama', key: 'name', width: 24 },
+            { header: 'WhatsApp', key: 'wa', width: 18 },
+            { header: 'No. KTP', key: 'ktp', width: 20 },
+            { header: 'Secret PPPoE', key: 'secret', width: 18 },
+            { header: 'Paket', key: 'package', width: 20 },
+            { header: 'Harga/bln', key: 'price', width: 14, style: { numFmt: '#,##0' } },
+            { header: 'Status Langganan', key: 'sub_status', width: 16 },
+            { header: 'Mulai Langganan', key: 'start', width: 16 },
+            { header: 'Status Pelanggan', key: 'cust_status', width: 16 },
+        ];
+        const data = rows.map((r) => ({
+            name: r.name || '',
+            wa: r.whatsapp_number || '',
+            ktp: r.ktp_number || '',
+            secret: r.pppoe_secret_name || '',
+            package: r.package_name || '',
+            price: r.package_price != null ? Number(r.package_price) : null,
+            sub_status: r.subscription_status ? (SUB_STATUS_LABEL[r.subscription_status] || r.subscription_status) : '',
+            start: r.subscription_start_date ? tanggalID(r.subscription_start_date) : '',
+            cust_status: CUST_STATUS_LABEL[r.status] || r.status || '',
+        }));
+        return sendWorkbook(res, `pelanggan-${new Date().toISOString().slice(0, 10)}.xlsx`, 'Pelanggan', columns, data);
+    } catch (e) {
+        console.error('[Billing][Admin] exportCustomers:', e.message);
+        return res.status(500).json({ message: 'Gagal mengekspor pelanggan.' });
+    }
+};
+
+exports.exportInvoices = async (req, res) => {
+    try {
+        const ws = resolveWorkspaceId(req);
+        const { q } = paginationParams(req);
+        const filters = ['i.workspace_id = ?'];
+        const params = [ws];
+        if (req.query.status) { filters.push('i.status = ?'); params.push(req.query.status); }
+        if (req.query.year) { filters.push('i.period_year = ?'); params.push(parseInt(req.query.year)); }
+        if (req.query.month) { filters.push('i.period_month = ?'); params.push(parseInt(req.query.month)); }
+        if (q) {
+            filters.push('(i.invoice_number LIKE ? OR c.name LIKE ? OR c.whatsapp_number LIKE ?)');
+            const like = `%${q}%`;
+            params.push(like, like, like);
+        }
+        const where = filters.join(' AND ');
+        const ORDER = {
+            recent: 'i.period_year DESC, i.period_month DESC, i.id DESC',
+            due: 'i.due_date ASC, i.id DESC',
+            amount: 'i.amount DESC, i.id DESC',
+        };
+        const orderBy = ORDER[req.query.sort] || ORDER.recent;
+        const [rows] = await pool.query(
+            `SELECT i.invoice_number, i.period_year, i.period_month, i.amount, i.status,
+                    DATE_FORMAT(i.due_date, '%Y-%m-%d') AS due_date,
+                    c.name AS customer_name, c.whatsapp_number
+             FROM billing_invoices i
+             JOIN billing_customers c ON c.id = i.customer_id
+             WHERE ${where} ORDER BY ${orderBy}`,
+            params
+        );
+        const columns = [
+            { header: 'No. Invoice', key: 'no', width: 22 },
+            { header: 'Pelanggan', key: 'name', width: 24 },
+            { header: 'WhatsApp', key: 'wa', width: 18 },
+            { header: 'Periode', key: 'period', width: 18 },
+            { header: 'Jumlah', key: 'amount', width: 14, style: { numFmt: '#,##0' } },
+            { header: 'Jatuh Tempo', key: 'due', width: 16 },
+            { header: 'Status', key: 'status', width: 14 },
+        ];
+        const data = rows.map((r) => ({
+            no: r.invoice_number || '',
+            name: r.customer_name || '',
+            wa: r.whatsapp_number || '',
+            period: `${MONTHS_ID[r.period_month] || r.period_month} ${r.period_year}`,
+            amount: r.amount != null ? Number(r.amount) : null,
+            due: r.due_date ? tanggalID(r.due_date) : '',
+            status: INVOICE_STATUS_LABEL[r.status] || r.status || '',
+        }));
+        return sendWorkbook(res, `invoice-${new Date().toISOString().slice(0, 10)}.xlsx`, 'Invoice', columns, data);
+    } catch (e) {
+        console.error('[Billing][Admin] exportInvoices:', e.message);
+        return res.status(500).json({ message: 'Gagal mengekspor invoice.' });
+    }
+};
+
+exports.exportPayments = async (req, res) => {
+    try {
+        const ws = resolveWorkspaceId(req);
+        const { q } = paginationParams(req);
+        const filters = ['p.workspace_id = ?'];
+        const params = [ws];
+        if (req.query.status) { filters.push('p.status = ?'); params.push(req.query.status); }
+        if (req.query.method) { filters.push('p.payment_method = ?'); params.push(req.query.method); }
+        if (q) {
+            filters.push('(i.invoice_number LIKE ? OR c.name LIKE ? OR c.whatsapp_number LIKE ? OR p.provider_ref LIKE ?)');
+            const like = `%${q}%`;
+            params.push(like, like, like, like);
+        }
+        const where = filters.join(' AND ');
+        const ORDER = {
+            recent: '(p.paid_at IS NULL), p.paid_at DESC, p.id DESC',
+            amount: 'p.amount DESC, p.id DESC',
+        };
+        const orderBy = ORDER[req.query.sort] || ORDER.recent;
+        const [rows] = await pool.query(
+            `SELECT p.payment_method, p.provider, p.amount, p.status,
+                    DATE_FORMAT(p.paid_at, '%Y-%m-%d %H:%i') AS paid_at,
+                    i.invoice_number, i.period_year, i.period_month,
+                    c.name AS customer_name, c.whatsapp_number
+             FROM billing_payments p
+             JOIN billing_invoices i ON i.id = p.invoice_id
+             JOIN billing_customers c ON c.id = i.customer_id
+             WHERE ${where} ORDER BY ${orderBy}`,
+            params
+        );
+        const methodLabel = (r) => (r.payment_method === 'cash' ? 'Tunai' : (r.payment_method || r.provider || ''));
+        const columns = [
+            { header: 'Tanggal Bayar', key: 'paid', width: 18 },
+            { header: 'Pelanggan', key: 'name', width: 24 },
+            { header: 'WhatsApp', key: 'wa', width: 18 },
+            { header: 'No. Invoice', key: 'no', width: 22 },
+            { header: 'Periode', key: 'period', width: 18 },
+            { header: 'Metode', key: 'method', width: 14 },
+            { header: 'Jumlah', key: 'amount', width: 14, style: { numFmt: '#,##0' } },
+            { header: 'Status', key: 'status', width: 14 },
+        ];
+        const data = rows.map((r) => ({
+            paid: r.paid_at || '',
+            name: r.customer_name || '',
+            wa: r.whatsapp_number || '',
+            no: r.invoice_number || '',
+            period: `${MONTHS_ID[r.period_month] || r.period_month} ${r.period_year}`,
+            method: methodLabel(r),
+            amount: r.amount != null ? Number(r.amount) : null,
+            status: PAYMENT_STATUS_LABEL[r.status] || r.status || '',
+        }));
+        return sendWorkbook(res, `pembayaran-${new Date().toISOString().slice(0, 10)}.xlsx`, 'Pembayaran', columns, data);
+    } catch (e) {
+        console.error('[Billing][Admin] exportPayments:', e.message);
+        return res.status(500).json({ message: 'Gagal mengekspor pembayaran.' });
     }
 };
 

@@ -12,6 +12,7 @@ router.put('/packages/:id', admin.updatePackage);
 router.delete('/packages/:id', admin.deletePackage);
 
 router.get('/customers', admin.listCustomers);
+router.get('/customers/export', admin.exportCustomers);
 router.get('/customers/:id', admin.getCustomerDetail);
 router.post('/customers', admin.createCustomer);
 router.put('/customers/:id', admin.updateCustomer);
@@ -26,12 +27,14 @@ router.post('/subscriptions', admin.createSubscription);
 router.put('/subscriptions/:id', admin.updateSubscription);
 
 router.get('/invoices', admin.listInvoices);
+router.get('/invoices/export', admin.exportInvoices);
 router.post('/invoices/generate', admin.generateInvoices);
 router.post('/invoices/:id/send-wa', admin.sendInvoiceWa);
 router.post('/invoices/:id/pay-cash', admin.payInvoiceCash);
 
 router.get('/payments', admin.listPayments);
 router.get('/payments/summary', admin.paymentsSummary);
+router.get('/payments/export', admin.exportPayments);
 
 router.get('/settings', admin.getSettings);
 router.put('/settings', admin.updateSettings);
