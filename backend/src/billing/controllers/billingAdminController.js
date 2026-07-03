@@ -16,6 +16,24 @@ function rupiah(n) {
     return 'Rp ' + Number(n || 0).toLocaleString('id-ID');
 }
 
+async function syncSecretProfile(ws, customerId, packageId) {
+    const [[row]] = await pool.query(
+        `SELECT c.pppoe_secret_name, c.device_id, p.pppoe_profile
+         FROM billing_customers c
+         JOIN billing_packages p ON p.id = ? AND p.workspace_id = ?
+         WHERE c.id = ? AND c.workspace_id = ?`,
+        [packageId, ws, customerId, ws]
+    );
+    if (!row || !row.pppoe_secret_name) return { ok: false, message: 'Pelanggan tidak punya secret PPPoE, profil router dilewati.' };
+    if (!row.pppoe_profile) return { ok: false, message: 'Paket tidak punya profil PPPoE, profil router tidak diubah.' };
+    return isolirService.changeProfile({
+        workspaceId: ws,
+        deviceId: row.device_id || null,
+        secretName: row.pppoe_secret_name,
+        profile: row.pppoe_profile,
+    });
+}
+
 function tanggalID(d) {
     const s = String(d).slice(0, 10);
     const [y, m, day] = s.split('-').map(Number);
@@ -535,7 +553,11 @@ exports.createSubscription = async (req, res) => {
             return subId;
         });
 
-        return res.status(201).json({ message: 'Langganan dibuat.', id: subscriptionId });
+        let profileSync = null;
+        try { profileSync = await syncSecretProfile(ws, customer_id, Number(package_id)); }
+        catch (e) { profileSync = { ok: false, message: e.message }; }
+
+        return res.status(201).json({ message: 'Langganan dibuat.', id: subscriptionId, profile_sync: profileSync });
     } catch (e) {
         console.error('[Billing][Admin] createSubscription:', e.message);
         return res.status(500).json({ message: 'Gagal membuat langganan.' });
@@ -546,6 +568,12 @@ exports.updateSubscription = async (req, res) => {
     try {
         const ws = resolveWorkspaceId(req);
         const { package_id, status, due_day_of_month, start_date } = req.body;
+        const [[sub]] = await pool.query(
+            'SELECT customer_id, package_id FROM billing_subscriptions WHERE id = ? AND workspace_id = ?',
+            [req.params.id, ws]
+        );
+        if (!sub) return res.status(404).json({ message: 'Langganan tidak ditemukan.' });
+
         const [result] = await pool.query(
             `UPDATE billing_subscriptions SET
                 package_id = COALESCE(?, package_id),
@@ -556,7 +584,15 @@ exports.updateSubscription = async (req, res) => {
             [package_id ?? null, status ?? null, due_day_of_month ?? null, start_date ?? null, req.params.id, ws]
         );
         if (result.affectedRows === 0) return res.status(404).json({ message: 'Langganan tidak ditemukan.' });
-        return res.status(200).json({ message: 'Langganan diperbarui.' });
+
+        let profileSync = null;
+        const newPkg = package_id != null ? Number(package_id) : null;
+        const isStopping = status === 'suspended' || status === 'cancelled';
+        if (newPkg && newPkg !== sub.package_id && !isStopping) {
+            try { profileSync = await syncSecretProfile(ws, sub.customer_id, newPkg); }
+            catch (e) { profileSync = { ok: false, message: e.message }; }
+        }
+        return res.status(200).json({ message: 'Langganan diperbarui.', profile_sync: profileSync });
     } catch (e) {
         console.error('[Billing][Admin] updateSubscription:', e.message);
         return res.status(500).json({ message: 'Gagal memperbarui langganan.' });

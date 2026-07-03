@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useEscKey } from '@/hooks/useEscKey';
 import { billingClient, updateClientGeo, fetchOdpAssets, formatRupiah, BillingPackage, OdpAsset, CustomerDetail } from '@/utils/billing';
+import { apiFetch } from '@/utils/api';
 import OdpPicker from './odp-picker';
 import DateField from './date-field';
 
@@ -64,6 +65,7 @@ export default function EditCustomerForm({
   const [existingPhotoUrl, setExistingPhotoUrl] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState(false);
   const [packages, setPackages] = useState<BillingPackage[]>([]);
+  const [secrets, setSecrets] = useState<string[]>([]);
   const [odps, setOdps] = useState<OdpAsset[]>([]);
   const [saving, setSaving] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -73,11 +75,16 @@ export default function EditCustomerForm({
   useEffect(() => {
     let active = true;
     setLoading(true);
+    const apiUrl = process.env.NEXT_PUBLIC_API_BASE_URL;
     Promise.all([
       billingApi.getCustomerDetail(customerId),
       billingApi.listPackages().then((r) => r.packages || []).catch(() => []),
       fetchOdpAssets(workspaceId).catch(() => []),
-    ]).then(([d, pkgs, odpList]) => {
+      apiFetch(`${apiUrl}/api/pppoe/secrets?workspaceId=${workspaceId}`)
+        .then((r) => (r.ok ? r.json() : []))
+        .then((rows: Array<{ name?: string }>) => (Array.isArray(rows) ? rows.map((s) => s.name).filter(Boolean) as string[] : []))
+        .catch(() => [] as string[]),
+    ]).then(([d, pkgs, odpList, secretList]) => {
       if (!active) return;
       const c = d.customer;
       setDetail(d);
@@ -96,6 +103,7 @@ export default function EditCustomerForm({
       if (la != null && ln != null) setCoordText(`${la}, ${ln}`);
       setExistingPhotoUrl(c.photo_url ? `${process.env.NEXT_PUBLIC_API_BASE_URL}${c.photo_url}` : null);
       setPackages(pkgs);
+      setSecrets(secretList);
       setOdps(odpList);
       if (d.subscription) setPackageId(String(d.subscription.package_id));
       if (d.subscription?.start_date) setStartDate(d.subscription.start_date);
@@ -173,6 +181,7 @@ export default function EditCustomerForm({
         await updateClientGeo(workspaceId, clientId, geo);
       }
 
+      let subResult: any = null;
       if (packageId) {
         if (hasSub) {
           const sub = detail!.subscription!;
@@ -182,15 +191,22 @@ export default function EditCustomerForm({
             body.start_date = startDate;
             body.due_day_of_month = Math.min(Math.max(Number(startDate.slice(8, 10)) || 1, 1), 28);
           }
-          if (Object.keys(body).length) await billingApi.updateSubscription(sub.id, body as any);
+          if (Object.keys(body).length) subResult = await billingApi.updateSubscription(sub.id, body as any);
         } else {
           const start = startDate || todayStr();
           const dueDay = Math.min(Math.max(Number(start.slice(8, 10)) || 1, 1), 28);
-          await billingApi.createSubscription({ customer_id: customerId, package_id: Number(packageId), start_date: start, due_day_of_month: dueDay } as any);
+          subResult = await billingApi.createSubscription({ customer_id: customerId, package_id: Number(packageId), start_date: start, due_day_of_month: dueDay } as any);
         }
       }
 
-      toast.success('Pelanggan diperbarui');
+      const sync = subResult?.profile_sync;
+      if (sync && !sync.ok) {
+        toast.warning('Paket tersimpan, tapi profil MikroTik belum sinkron', { description: sync.message });
+      } else if (sync?.ok) {
+        toast.success('Pelanggan diperbarui', { description: sync.message });
+      } else {
+        toast.success('Pelanggan diperbarui');
+      }
       onSaved();
     } catch (e: any) {
       toast.error('Gagal menyimpan perubahan', { description: e.message });
@@ -221,8 +237,16 @@ export default function EditCustomerForm({
         ) : (
           <div className="px-6 py-5 overflow-y-auto grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="sm:col-span-2">
-              <label className={labelCls}>Nama Secret PPPoE (billing — untuk isolir/unisolir)</label>
-              <Input value={secret} onChange={(e) => setSecret(e.target.value)} placeholder="nama secret" />
+              <label className={labelCls}>Secret PPPoE (dari MikroTik — untuk isolir/unisolir & ganti profil)</label>
+              {secrets.length > 0 ? (
+                <select className={selectCls} value={secret} onChange={(e) => setSecret(e.target.value)}>
+                  <option value="">— pilih secret —</option>
+                  {secret && !secrets.includes(secret) && <option value={secret}>{secret} (tersimpan, tak ada di router)</option>}
+                  {secrets.map((s) => <option key={s} value={s}>{s}</option>)}
+                </select>
+              ) : (
+                <Input value={secret} onChange={(e) => setSecret(e.target.value)} placeholder="nama secret (router tak terjangkau)" />
+              )}
             </div>
             <div className="sm:col-span-2">
               <label className={labelCls}>Nama</label>

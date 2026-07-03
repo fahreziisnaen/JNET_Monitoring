@@ -76,4 +76,36 @@ async function restoreCustomer({ workspaceId, deviceId, secretName, targetProfil
     return { ok: true, message: `Isolir ${secretName} dibuka`, profile };
 }
 
-module.exports = { isolateCustomer, restoreCustomer };
+async function changeProfile({ workspaceId, deviceId, secretName, profile }) {
+    if (!secretName || !profile) return { ok: false, message: 'Secret atau profil kosong.' };
+    const opts = { noRetry: true, timeout: 20000 };
+
+    const secretData = await runCommandForWorkspace(workspaceId, '/ppp/secret/print', [`?name=${secretName}`], deviceId, opts);
+    if (!secretData || secretData.length === 0) {
+        return { ok: false, message: 'Secret tidak ditemukan di router.' };
+    }
+    const current = secretData[0];
+    if (current.profile === profile) {
+        await pool.query(
+            'UPDATE pppoe_secrets SET profile = ? WHERE workspace_id = ? AND name = ?',
+            [profile, workspaceId, secretName]
+        ).catch(() => {});
+        return { ok: true, message: 'Profil di router sudah sesuai.', profile };
+    }
+
+    await runCommandForWorkspace(workspaceId, '/ppp/secret/set', [`=.id=${current['.id']}`, `=profile=${profile}`], deviceId, opts);
+    await pool.query(
+        'UPDATE pppoe_secrets SET profile = ? WHERE workspace_id = ? AND name = ?',
+        [profile, workspaceId, secretName]
+    ).catch(() => {});
+
+    const active = await runCommandForWorkspace(workspaceId, '/ppp/active/print', [`?name=${secretName}`], deviceId, opts).catch(() => []);
+    for (const a of active || []) {
+        await runCommandForWorkspace(workspaceId, '/ppp/active/remove', [`=.id=${a['.id']}`], deviceId, opts).catch(() => {});
+    }
+
+    notifyStore(workspaceId, deviceId, secretName, profile);
+    return { ok: true, message: `Profil ${secretName} diubah ke ${profile}.`, profile };
+}
+
+module.exports = { isolateCustomer, restoreCustomer, changeProfile };
