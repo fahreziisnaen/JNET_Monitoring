@@ -34,6 +34,35 @@ async function syncSecretProfile(ws, customerId, packageId) {
     });
 }
 
+async function applySubscriptionMikrotik(ws, subscriptionId, customerId, newStatus) {
+    const [[row]] = await pool.query(
+        `SELECT c.pppoe_secret_name, c.device_id, p.pppoe_profile, st.isolir_profile
+         FROM billing_customers c
+         LEFT JOIN billing_subscriptions s ON s.id = ?
+         LEFT JOIN billing_packages p ON p.id = s.package_id
+         LEFT JOIN billing_settings st ON st.workspace_id = c.workspace_id
+         WHERE c.id = ? AND c.workspace_id = ?`,
+        [subscriptionId, customerId, ws]
+    );
+    if (!row || !row.pppoe_secret_name) {
+        return { ok: false, skipped: true, message: 'Pelanggan tidak punya secret PPPoE, router dilewati.' };
+    }
+    if (newStatus === 'active') {
+        return isolirService.restoreCustomer({
+            workspaceId: ws,
+            deviceId: row.device_id || null,
+            secretName: row.pppoe_secret_name,
+            targetProfile: row.pppoe_profile || null,
+        });
+    }
+    return isolirService.isolateCustomer({
+        workspaceId: ws,
+        deviceId: row.device_id || null,
+        secretName: row.pppoe_secret_name,
+        isolirProfile: row.isolir_profile || 'Isolir',
+    });
+}
+
 function tanggalID(d) {
     const s = String(d).slice(0, 10);
     const [y, m, day] = s.split('-').map(Number);
@@ -569,7 +598,7 @@ exports.updateSubscription = async (req, res) => {
         const ws = resolveWorkspaceId(req);
         const { package_id, status, due_day_of_month, start_date } = req.body;
         const [[sub]] = await pool.query(
-            'SELECT customer_id, package_id FROM billing_subscriptions WHERE id = ? AND workspace_id = ?',
+            'SELECT customer_id, package_id, status FROM billing_subscriptions WHERE id = ? AND workspace_id = ?',
             [req.params.id, ws]
         );
         if (!sub) return res.status(404).json({ message: 'Langganan tidak ditemukan.' });
@@ -586,13 +615,21 @@ exports.updateSubscription = async (req, res) => {
         if (result.affectedRows === 0) return res.status(404).json({ message: 'Langganan tidak ditemukan.' });
 
         let profileSync = null;
+        let isolir = null;
         const newPkg = package_id != null ? Number(package_id) : null;
-        const isStopping = status === 'suspended' || status === 'cancelled';
-        if (newPkg && newPkg !== sub.package_id && !isStopping) {
+        const pkgChanged = newPkg && newPkg !== sub.package_id;
+        const statusChanged = status != null && status !== sub.status;
+        const effectiveStatus = status || sub.status;
+
+        if (statusChanged && (status === 'active' || status === 'suspended')) {
+            try { isolir = await applySubscriptionMikrotik(ws, req.params.id, sub.customer_id, status); }
+            catch (e) { isolir = { ok: false, message: e.message }; }
+        } else if (pkgChanged && effectiveStatus === 'active') {
             try { profileSync = await syncSecretProfile(ws, sub.customer_id, newPkg); }
             catch (e) { profileSync = { ok: false, message: e.message }; }
         }
-        return res.status(200).json({ message: 'Langganan diperbarui.', profile_sync: profileSync });
+
+        return res.status(200).json({ message: 'Langganan diperbarui.', profile_sync: profileSync, isolir });
     } catch (e) {
         console.error('[Billing][Admin] updateSubscription:', e.message);
         return res.status(500).json({ message: 'Gagal memperbarui langganan.' });

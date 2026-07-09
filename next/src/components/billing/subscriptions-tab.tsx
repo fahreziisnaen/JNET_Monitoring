@@ -115,8 +115,16 @@ export default function SubscriptionsTab({ workspaceId }: { workspaceId?: number
 
   const changeStatus = async (s: BillingSubscription, status: BillingSubscription['status']) => {
     try {
-      await billingApi.updateSubscription(s.id, { status });
-      toast.success(`Status langganan: ${status}`);
+      const res: any = await billingApi.updateSubscription(s.id, { status });
+      const iso = res?.isolir;
+      const label = status === 'active' ? 'Aktif — koneksi dibuka' : status === 'suspended' ? 'Isolir — koneksi diputus' : 'Berhenti';
+      if (iso && iso.skipped) {
+        toast.warning(`Status: ${label}`, { description: iso.message });
+      } else if (iso && iso.ok === false) {
+        toast.warning('Status tersimpan, tapi router gagal diubah', { description: iso.message });
+      } else {
+        toast.success(`Status: ${label}`);
+      }
       load();
     } catch (e: any) {
       toast.error('Gagal ubah status', { description: e.message });
