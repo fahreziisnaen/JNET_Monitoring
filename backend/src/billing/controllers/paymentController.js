@@ -22,13 +22,13 @@ exports.tripayCallback = async (req, res) => {
         }
 
         const [payments] = await pool.query(
-            'SELECT * FROM billing_payments WHERE merchant_ref = ? LIMIT 1',
+            'SELECT id FROM billing_payments WHERE merchant_ref = ? LIMIT 1',
             [merchantRef]
         );
         if (payments.length === 0) {
             return res.status(404).json({ success: false, message: 'Transaksi tidak ditemukan.' });
         }
-        const payment = payments[0];
+        const paymentId = payments[0].id;
 
         const signatureHeader = req.headers['x-callback-signature'];
 
@@ -43,10 +43,26 @@ exports.tripayCallback = async (req, res) => {
         const gwStatus = String(payload.status || '').toUpperCase();
         const statusMap = { PAID: 'paid', EXPIRED: 'expired', FAILED: 'failed', REFUND: 'refunded' };
         const newStatus = statusMap[gwStatus] || 'pending';
+        const TERMINAL = ['paid', 'expired', 'failed', 'refunded'];
 
         const restoreArgs = await withTransaction(async (conn) => {
+            const [rows] = await conn.query(
+                'SELECT * FROM billing_payments WHERE id = ? FOR UPDATE',
+                [paymentId]
+            );
+            const payment = rows[0];
+
+            if (payment.status === newStatus && TERMINAL.includes(newStatus)) {
+                console.log(`[Billing][Webhook] Callback duplikat (${newStatus}) untuk ${merchantRef}, diabaikan.`);
+                return null;
+            }
+            if (payment.status === 'paid' && newStatus !== 'refunded') {
+                console.warn(`[Billing][Webhook] Callback ${newStatus} untuk ${merchantRef} diabaikan; pembayaran sudah lunas.`);
+                return null;
+            }
+
             await conn.query(
-                'UPDATE billing_payments SET status = ?, provider_ref = COALESCE(?, provider_ref), paid_at = ?, raw_response = ? WHERE id = ?',
+                'UPDATE billing_payments SET status = ?, provider_ref = COALESCE(?, provider_ref), paid_at = COALESCE(paid_at, ?), raw_response = ? WHERE id = ?',
                 [newStatus, payload.reference || null, newStatus === 'paid' ? new Date() : null, JSON.stringify(payload), payment.id]
             );
             if (newStatus === 'paid') {
@@ -65,12 +81,14 @@ exports.tripayCallback = async (req, res) => {
 };
 
 async function markInvoicePaid(invoiceId, conn) {
-    const [invRows] = await conn.query('SELECT * FROM billing_invoices WHERE id = ?', [invoiceId]);
+    const [invRows] = await conn.query('SELECT * FROM billing_invoices WHERE id = ? FOR UPDATE', [invoiceId]);
     if (invRows.length === 0) return null;
     const invoice = invRows[0];
 
+    if (invoice.status === 'paid') return null;
+
     await conn.query(
-        "UPDATE billing_invoices SET status = 'paid', paid_at = ? WHERE id = ?",
+        "UPDATE billing_invoices SET status = 'paid', paid_at = COALESCE(paid_at, ?) WHERE id = ?",
         [new Date(), invoiceId]
     );
 
