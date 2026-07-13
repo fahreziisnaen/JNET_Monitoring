@@ -2,6 +2,7 @@ const path = require('path');
 const fs = require('fs');
 const readline = require('readline');
 const bcrypt = require('bcryptjs');
+require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
 const pool = require('../src/config/database');
 
 const DEFAULT_AVATAR = '/public/uploads/avatars/default.jpg';
