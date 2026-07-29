@@ -398,7 +398,10 @@ export default function CustomersTab({ workspaceId }: { workspaceId?: number | n
             <tbody>
               {items.map((c) => (
                 <tr key={c.id} className="border-b hover:bg-accent/40">
-                  <td className="py-2 pr-3 font-medium">{c.name || <span className="text-muted-foreground">—</span>}</td>
+                  <td className="py-2 pr-3 font-medium">
+                    {c.name || <span className="text-muted-foreground">—</span>}
+                    {c.pppoe_secret_name && <span className="block text-xs font-mono font-normal text-muted-foreground">{c.pppoe_secret_name}</span>}
+                  </td>
                   <td className="py-2 pr-3 font-mono">{c.whatsapp_number}</td>
                   <td className="py-2 pr-3 font-mono text-xs">{c.ktp_number || <span className="text-muted-foreground">—</span>}</td>
                   <td className="py-2 pr-3">
