@@ -172,13 +172,22 @@ exports.listCustomers = async (req, res) => {
         const { page, limit, offset, q } = paginationParams(req);
         const filters = ['c.workspace_id = ?'];
         const params = [ws];
+        const profileExpr = `(SELECT ps.profile FROM pppoe_secrets ps
+                 WHERE ps.workspace_id = c.workspace_id AND ps.name = c.pppoe_secret_name
+                   AND (c.device_id IS NULL OR ps.device_id = c.device_id) LIMIT 1)`;
+        const effStatus = `CASE
+                 WHEN s.id IS NULL THEN NULL
+                 WHEN s.status = 'cancelled' THEN 'cancelled'
+                 WHEN LOWER(${profileExpr}) = 'isolir' THEN 'suspended'
+                 WHEN ${profileExpr} IS NULL THEN s.status
+                 ELSE 'active' END`;
         if (q) {
             filters.push('(c.name LIKE ? OR c.whatsapp_number LIKE ? OR c.pppoe_secret_name LIKE ? OR c.ktp_number LIKE ?)');
             const like = `%${q}%`;
             params.push(like, like, like, like);
         }
         if (req.query.package_id) { filters.push('s.package_id = ?'); params.push(Number(req.query.package_id)); }
-        if (req.query.status) { filters.push('s.status = ?'); params.push(req.query.status); }
+        if (req.query.status) { filters.push(`${effStatus} = ?`); params.push(req.query.status); }
         const where = filters.join(' AND ');
 
         const subJoin = `LEFT JOIN billing_subscriptions s ON s.id = (
@@ -198,7 +207,7 @@ exports.listCustomers = async (req, res) => {
         );
         const [rows] = await pool.query(
             `SELECT c.*, cl.client_name AS linked_client_name,
-                    s.id AS subscription_id, s.status AS subscription_status,
+                    s.id AS subscription_id, ${effStatus} AS subscription_status,
                     s.package_id, DATE_FORMAT(s.start_date, '%Y-%m-%d') AS subscription_start_date,
                     s.due_day_of_month,
                     p.name AS package_name, p.price AS package_price
@@ -782,13 +791,22 @@ exports.exportCustomers = async (req, res) => {
         const { q } = paginationParams(req);
         const filters = ['c.workspace_id = ?'];
         const params = [ws];
+        const profileExpr = `(SELECT ps.profile FROM pppoe_secrets ps
+                 WHERE ps.workspace_id = c.workspace_id AND ps.name = c.pppoe_secret_name
+                   AND (c.device_id IS NULL OR ps.device_id = c.device_id) LIMIT 1)`;
+        const effStatus = `CASE
+                 WHEN s.id IS NULL THEN NULL
+                 WHEN s.status = 'cancelled' THEN 'cancelled'
+                 WHEN LOWER(${profileExpr}) = 'isolir' THEN 'suspended'
+                 WHEN ${profileExpr} IS NULL THEN s.status
+                 ELSE 'active' END`;
         if (q) {
             filters.push('(c.name LIKE ? OR c.whatsapp_number LIKE ? OR c.pppoe_secret_name LIKE ? OR c.ktp_number LIKE ?)');
             const like = `%${q}%`;
             params.push(like, like, like, like);
         }
         if (req.query.package_id) { filters.push('s.package_id = ?'); params.push(Number(req.query.package_id)); }
-        if (req.query.status) { filters.push('s.status = ?'); params.push(req.query.status); }
+        if (req.query.status) { filters.push(`${effStatus} = ?`); params.push(req.query.status); }
         const where = filters.join(' AND ');
         const subJoin = `LEFT JOIN billing_subscriptions s ON s.id = (
                  SELECT s2.id FROM billing_subscriptions s2
@@ -802,7 +820,7 @@ exports.exportCustomers = async (req, res) => {
         const orderBy = ORDER[req.query.sort] || ORDER.recent;
         const [rows] = await pool.query(
             `SELECT c.name, c.whatsapp_number, c.ktp_number, c.pppoe_secret_name, c.status,
-                    s.status AS subscription_status,
+                    ${effStatus} AS subscription_status,
                     DATE_FORMAT(s.start_date, '%Y-%m-%d') AS subscription_start_date,
                     p.name AS package_name, p.price AS package_price
              FROM billing_customers c
