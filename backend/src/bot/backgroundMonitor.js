@@ -32,6 +32,9 @@ const userStatusCache = new Map();
 const serverStartTime = Date.now();
 const SUPPRESSION_PERIOD_MS = 5 * 60 * 1000; // 5 minutes
 
+const BILLING_SYNC_MS = 30000;
+let lastBillingWriteback = 0;
+
 
 /**
  * Mulai monitoring untuk satu perangkat FISIK (Physical Device).
@@ -517,6 +520,21 @@ async function startPhysicalMonitor(group, broadcastCallback) {
                 } catch (instErr) {
                     console.error(`[Pencatatan] Gagal sync workspace ${inst.workspace_id}: ${instErr.message}`);
                 }
+            }
+
+            if (now - lastBillingWriteback >= BILLING_SYNC_MS) {
+                lastBillingWriteback = now;
+                pool.query(
+                    `UPDATE billing_subscriptions s
+                     JOIN billing_customers c ON c.id = s.customer_id
+                     SET s.status = 'suspended'
+                     WHERE s.status = 'active'
+                       AND EXISTS (SELECT 1 FROM pppoe_secrets ps
+                                   WHERE ps.workspace_id = c.workspace_id AND ps.name = c.pppoe_secret_name
+                                     AND (c.device_id IS NULL OR ps.device_id = c.device_id)
+                                     AND LOWER(ps.profile) = 'isolir')`
+                ).then(([r]) => { if (r.affectedRows) console.log(`[Billing][Sync] ${r.affectedRows} langganan → suspended (isolir router)`); })
+                 .catch(e => console.error(`[Billing][Sync] gagal: ${e.message}`));
             }
 
         } catch (err) {

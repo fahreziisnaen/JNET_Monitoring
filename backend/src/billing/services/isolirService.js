@@ -66,6 +66,12 @@ async function restoreCustomer({ workspaceId, deviceId, secretName, targetProfil
         'UPDATE pppoe_secrets SET profile = ?, previous_profile = NULL WHERE workspace_id = ? AND name = ?',
         [profile, workspaceId, secretName]
     ).catch(() => {});
+    await pool.query(
+        `UPDATE billing_subscriptions s JOIN billing_customers c ON c.id = s.customer_id
+         SET s.status = 'active'
+         WHERE s.status = 'suspended' AND c.workspace_id = ? AND c.pppoe_secret_name = ?`,
+        [workspaceId, secretName]
+    ).catch(() => {});
 
     const active = await runCommandForWorkspace(workspaceId, '/ppp/active/print', [`?name=${secretName}`], deviceId);
     for (const a of active || []) {
