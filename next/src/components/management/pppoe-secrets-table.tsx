@@ -13,7 +13,7 @@ import ConfirmModal from '../ui/confirm-modal';
 import EditPppoeSecretModal from './edit-pppoe-secret-modal';
 import PppoeDetailModal from './pppoe-detail-modal';
 import { apiFetch } from '@/utils/api';
-import { formatUptime, formatCompactUptime } from '@/utils/format';
+import { formatUptime, formatCompactUptime, formatSecondsToUptime } from '@/utils/format';
 
 export interface PppoeSecret {
   '.id': string;
@@ -26,6 +26,7 @@ export interface PppoeSecret {
   deviceId?: number;
   workspaceId?: number;
   uptime?: string;
+  downSeconds?: number | null;
   client_name?: string;
   whatsapp_number?: string;
 }
@@ -85,6 +86,7 @@ const PppoeSecretsTable = ({ refreshTrigger, onActionComplete, initialFilter = '
         deviceId: resolvedDeviceId,
         workspaceId: secret.workspaceId || secret.workspace_id || (resolvedDeviceId ? getDeviceWorkspaceId(resolvedDeviceId) ?? undefined : undefined),
         uptime: secret.uptime || 'N/A',
+        downSeconds: secret.downSeconds ?? null,
         client_name: secret.client_name,
         whatsapp_number: secret.whatsapp_number
       };
@@ -589,6 +591,8 @@ const PppoeSecretsTable = ({ refreshTrigger, onActionComplete, initialFilter = '
                               <span className="sm:hidden">{formatCompactUptime(uptime)}</span>
                               <span className="hidden sm:inline">{formatUptime(uptime)}</span>
                             </span>
+                          ) : (user.downSeconds && user.downSeconds > 0) ? (
+                            <span className="text-red-500">mati {formatSecondsToUptime(user.downSeconds)}</span>
                           ) : '-'}
                         </td>
                         <td className="p-2 sm:p-4 text-center">

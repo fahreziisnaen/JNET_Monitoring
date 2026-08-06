@@ -454,6 +454,13 @@ async function startPhysicalMonitor(group, broadcastCallback) {
                             }
                         }
 
+                        const downSecMap = new Map();
+                        if (inactiveNames.length > 0) {
+                            const [downs] = await pool.query('SELECT pppoe_user, TIMESTAMPDIFF(SECOND, start_time, NOW()) AS secs FROM downtime_events WHERE workspace_id=? AND device_id=? AND end_time IS NULL AND pppoe_user IN (?)', [inst.workspace_id, inst.id, inactiveNames]).catch(() => [[]]);
+                            downs.forEach(d => downSecMap.set(d.pppoe_user, d.secs));
+                        }
+                        enriched.forEach(s => { if (!s.isActive) s.downSeconds = downSecMap.get(s.name) ?? null; });
+
                         // --- REALTIME TOAST NOTIFICATION BROADCAST ---
                         // 1. Always update cache to maintain baseline
                         for (const secret of enriched) {
