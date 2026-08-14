@@ -35,6 +35,13 @@ const SUPPRESSION_PERIOD_MS = 5 * 60 * 1000; // 5 minutes
 const BILLING_SYNC_MS = 30000;
 let lastBillingWriteback = 0;
 
+async function pruneBatched(sql, params, batch = 10000, maxBatches = 500) {
+    for (let i = 0; i < maxBatches; i++) {
+        const [r] = await pool.query(`${sql} LIMIT ${batch}`, params);
+        if (!r.affectedRows || r.affectedRows < batch) break;
+    }
+}
+
 
 /**
  * Mulai monitoring untuk satu perangkat FISIK (Physical Device).
@@ -426,13 +433,13 @@ async function startPhysicalMonitor(group, broadcastCallback) {
                         const PRUNING_INTERVAL_MS = 60 * 60 * 1000; // 1 jam
                         if (now - state.lastPruning >= PRUNING_INTERVAL_MS) {
                             state.lastPruning = now;
-                            pool.query(
+                            pruneBatched(
                                 'DELETE FROM interface_traffic_logs WHERE workspace_id = ? AND timestamp < NOW() - INTERVAL 3 MONTH',
                                 [inst.workspace_id]
                             ).catch(e => console.error(`[Pruning] Gagal hapus log trafik 3-bulan: ${e.message}`));
 
                             // 6. Pruning Log Penggunaan Kuota PPPoE (maksimal 3 Bulan = ~90 Hari)
-                            pool.query(
+                            pruneBatched(
                                 'DELETE FROM pppoe_usage_logs WHERE workspace_id = ? AND usage_date < NOW() - INTERVAL 3 MONTH',
                                 [inst.workspace_id]
                             ).catch(e => console.error(`[Pruning] Gagal hapus log pppoe usage 3-bulan: ${e.message}`));
