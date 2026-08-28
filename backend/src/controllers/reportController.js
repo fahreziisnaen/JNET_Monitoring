@@ -23,6 +23,11 @@ const formatAvgBandwidth = (avgBytes) => {
     return `${mbps.toFixed(2)} Mbps`;
 };
 
+const formatRupiah = (nominal) => {
+    if (nominal === null || nominal === undefined || isNaN(+nominal)) return '-';
+    return 'Rp ' + Number(nominal).toLocaleString('id-ID');
+};
+
 // Helper function to draw a box/card
 function drawBox(doc, x, y, width, height, fillColor = '#f0f0f0', strokeColor = '#cccccc') {
     doc.rect(x, y, width, height)
@@ -417,6 +422,35 @@ exports.generateMonthlyReport = async (req, res) => {
         const deviceStatsMap = new Map(); // deviceId -> { device_name, avg_cpu, avg_memory, usage, users, SLA }
         const clientStatsPerDevice = new Map(); // deviceId -> [client stats]
 
+        // Lookup nominal tagihan (billing invoice) per PPPoE secret untuk bulan yang dipilih,
+        // di-cache per workspace agar tidak query berulang jika satu workspace punya banyak device.
+        const billingBySecretCache = new Map(); // workspaceId -> Map(secretName -> amount)
+
+        async function getBillingBySecret(workspaceId) {
+            if (billingBySecretCache.has(workspaceId)) return billingBySecretCache.get(workspaceId);
+            const map = new Map();
+            try {
+                const [invRows] = await pool.query(
+                    `SELECT c.pppoe_secret_name, i.amount
+                     FROM billing_invoices i
+                     JOIN billing_customers c ON c.id = i.customer_id AND c.workspace_id = i.workspace_id
+                     WHERE i.workspace_id = ? AND i.period_year = ? AND i.period_month = ?
+                       AND c.pppoe_secret_name IS NOT NULL AND c.pppoe_secret_name <> ''
+                       AND i.status <> 'void'`,
+                    [workspaceId, yearNum, monthNum]
+                );
+                invRows.forEach(row => {
+                    if (!map.has(row.pppoe_secret_name)) {
+                        map.set(row.pppoe_secret_name, row.amount);
+                    }
+                });
+            } catch (billingError) {
+                console.error(`[Report] Error fetching billing invoices for workspace ${workspaceId}:`, billingError.message);
+            }
+            billingBySecretCache.set(workspaceId, map);
+            return map;
+        }
+
         for (const devInfo of verifiedDeviceInfos) {
             const deviceId = devInfo.id;
             const deviceName = devInfo.name;
@@ -520,6 +554,8 @@ exports.generateMonthlyReport = async (req, res) => {
                     );
 
                     // Process client stats with error handling
+                    const invoiceBySecret = await getBillingBySecret(deviceWorkspaceId);
+
                     clientStats = await Promise.all(
                         clientUsage.map(async (client) => {
                             try {
@@ -537,7 +573,8 @@ exports.generateMonthlyReport = async (req, res) => {
                                     pppoe_user: client.pppoe_user,
                                     total_usage: client.total_usage || 0,
                                     total_downtime_seconds: downtimeData[0]?.total_downtime_seconds || 0,
-                                    downtime_events: downtimeData[0]?.downtime_events || 0
+                                    downtime_events: downtimeData[0]?.downtime_events || 0,
+                                    invoice_amount: invoiceBySecret.get(client.pppoe_user) ?? null
                                 };
                             } catch (clientError) {
                                 console.error(`[Report] Error fetching downtime for client ${client.pppoe_user}:`, clientError);
@@ -546,7 +583,8 @@ exports.generateMonthlyReport = async (req, res) => {
                                     pppoe_user: client.pppoe_user,
                                     total_usage: client.total_usage || 0,
                                     total_downtime_seconds: 0,
-                                    downtime_events: 0
+                                    downtime_events: 0,
+                                    invoice_amount: invoiceBySecret.get(client.pppoe_user) ?? null
                                 };
                             }
                         })
@@ -673,14 +711,15 @@ exports.generateMonthlyReport = async (req, res) => {
                             clientName,
                             formatDataSize(client.total_usage || 0),
                             formatDuration(client.total_downtime_seconds || 0),
-                            (client.downtime_events || 0).toString()
+                            (client.downtime_events || 0).toString(),
+                            formatRupiah(client.invoice_amount)
                         ];
                     });
 
                     const tableResult2 = drawTableWithHeader(doc, {
                         startY: currentY,
-                        columnWidths: [180, 120, 150, 100],
-                        headers: ['Client', 'Total Usage', 'Total Downtime', 'Downtime Events'],
+                        columnWidths: [160, 100, 120, 90, 120],
+                        headers: ['Client', 'Total Usage', 'Total Downtime', 'Downtime Events', 'Nominal Tagihan'],
                         rows: clientRows,
                         fontSize: 9,
                         headerFontSize: 10,

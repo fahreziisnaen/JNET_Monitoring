@@ -351,6 +351,7 @@ const ReportPage = () => {
               <li>Statistik SLA & downtime</li>
               <li>Semua client (PPPoE secret) yang ada di MikroTik</li>
               <li>Ringkasan data usage per client</li>
+              <li>Nominal tagihan (billing invoice) per client</li>
             </ul>
           </div>
         </CardContent>
