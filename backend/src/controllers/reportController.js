@@ -718,12 +718,12 @@ exports.generateMonthlyReport = async (req, res) => {
 
                     const tableResult2 = drawTableWithHeader(doc, {
                         startY: currentY,
-                        columnWidths: [150, 90, 95, 70, 90],
+                        columnWidths: [120, 85, 100, 95, 95],
                         headers: ['Client', 'Total Usage', 'Total Downtime', 'Downtime Events', 'Nominal Tagihan'],
                         columnAligns: ['left', 'right', 'left', 'right', 'right'],
                         rows: clientRows,
                         fontSize: 9,
-                        headerFontSize: 10,
+                        headerFontSize: 9,
                         pageBottom: 750,
                         pageNum: pageNum
                     });
@@ -994,7 +994,9 @@ function drawTableWithHeader(doc, options) {
         headerFontSize = 10,
         pageBottom = 750,
         columnAligns = null,
-        cellPadding = 5
+        cellPadding = 5,
+        minRowHeight = 20,
+        minHeaderHeight = 25
     } = options;
     let { pageNum } = options;
     let currentY = startY;
@@ -1013,14 +1015,21 @@ function drawTableWithHeader(doc, options) {
     const startX = leftMargin + (availableWidth - tableWidth) / 2;
 
     const alignOf = (i) => (columnAligns && columnAligns[i] === 'right' ? 'right' : 'left');
+    const cellWidthOf = (i) => Math.max(widths[i] - (cellPadding * 2), 10);
+
+    // Tinggi header otomatis (agar teks header tidak terpotong/meluber)
+    const headerRowHeight = headers.reduce((max, header, i) => {
+        const height = doc.heightOfString(String(header), { width: cellWidthOf(i) });
+        return Math.max(max, height);
+    }, minHeaderHeight) + (cellPadding * 2);
 
     const drawHeaderRow = (y) => {
-        doc.fillColor('#edf2f7').rect(startX, y, tableWidth, 25).fill();
+        doc.fillColor('#edf2f7').rect(startX, y, tableWidth, headerRowHeight).fill();
         doc.fillColor('#2d3748').fontSize(headerFontSize).font('Helvetica-Bold');
         let x = startX;
         headers.forEach((header, i) => {
-            doc.text(header, x + cellPadding, y + 7, {
-                width: widths[i] - (cellPadding * 2),
+            doc.text(header, x + cellPadding, y + cellPadding, {
+                width: cellWidthOf(i),
                 align: alignOf(i)
             });
             x += widths[i];
@@ -1028,37 +1037,43 @@ function drawTableWithHeader(doc, options) {
     };
 
     drawHeaderRow(currentY);
-    currentY += 25;
+    currentY += headerRowHeight;
 
     // Draw rows
     doc.font('Helvetica').fontSize(fontSize).fillColor('#4a5568');
     rows.forEach((row, rowIndex) => {
+        // Tinggi baris otomatis mengikuti isi terpanjang agar tidak saling menimpa
+        const rowHeight = row.reduce((max, cell, i) => {
+            const height = doc.heightOfString(String(cell), { width: cellWidthOf(i) });
+            return Math.max(max, height);
+        }, minRowHeight) + (cellPadding * 2);
+
         // Check for new page
-        if (currentY > pageBottom) {
+        if (currentY + rowHeight > pageBottom) {
             pageNum = addFooterAndNewPage(doc, pageNum);
             currentY = 50;
 
             // Redraw headers on new page
             drawHeaderRow(currentY);
-            currentY += 25;
+            currentY += headerRowHeight;
             doc.font('Helvetica').fontSize(fontSize).fillColor('#4a5568');
         }
 
         // Draw background for alternate rows
         if (rowIndex % 2 === 1) {
-            doc.fillColor('#f7fafc').rect(startX, currentY, tableWidth, 20).fill();
+            doc.fillColor('#f7fafc').rect(startX, currentY, tableWidth, rowHeight).fill();
         }
 
         doc.fillColor('#4a5568');
         let x = startX;
         row.forEach((cell, i) => {
-            doc.text(cell.toString(), x + cellPadding, currentY + 5, {
-                width: widths[i] - (cellPadding * 2),
+            doc.text(String(cell), x + cellPadding, currentY + cellPadding, {
+                width: cellWidthOf(i),
                 align: alignOf(i)
             });
             x += widths[i];
         });
-        currentY += 20;
+        currentY += rowHeight;
     });
 
     return { currentY, pageNum };
