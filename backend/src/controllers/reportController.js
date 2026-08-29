@@ -718,7 +718,7 @@ exports.generateMonthlyReport = async (req, res) => {
 
                     const tableResult2 = drawTableWithHeader(doc, {
                         startY: currentY,
-                        columnWidths: [120, 85, 100, 95, 95],
+                        columnWidths: [112, 65, 140, 88, 90],
                         headers: ['Client', 'Total Usage', 'Total Downtime', 'Downtime Events', 'Nominal Tagihan'],
                         columnAligns: ['left', 'right', 'left', 'right', 'right'],
                         rows: clientRows,
