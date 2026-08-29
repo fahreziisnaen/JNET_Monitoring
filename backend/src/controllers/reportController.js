@@ -704,8 +704,8 @@ exports.generateMonthlyReport = async (req, res) => {
                     currentY += 20;
 
                     const clientRows = deviceClientStats.map(client => {
-                        const clientName = (client.pppoe_user || 'N/A').length > 25
-                            ? (client.pppoe_user || 'N/A').substring(0, 22) + '...'
+                        const clientName = (client.pppoe_user || 'N/A').length > 22
+                            ? (client.pppoe_user || 'N/A').substring(0, 19) + '...'
                             : (client.pppoe_user || 'N/A');
                         return [
                             clientName,
@@ -718,8 +718,9 @@ exports.generateMonthlyReport = async (req, res) => {
 
                     const tableResult2 = drawTableWithHeader(doc, {
                         startY: currentY,
-                        columnWidths: [160, 100, 120, 90, 120],
+                        columnWidths: [150, 90, 95, 70, 90],
                         headers: ['Client', 'Total Usage', 'Total Downtime', 'Downtime Events', 'Nominal Tagihan'],
+                        columnAligns: ['left', 'right', 'left', 'right', 'right'],
                         rows: clientRows,
                         fontSize: 9,
                         headerFontSize: 10,
@@ -984,20 +985,49 @@ function addFooterAndNewPage(doc, pageNum) {
 }
 
 function drawTableWithHeader(doc, options) {
-    const { startY, columnWidths, headers, rows, fontSize = 9, headerFontSize = 10, pageBottom = 750 } = options;
+    const {
+        startY,
+        columnWidths,
+        headers,
+        rows,
+        fontSize = 9,
+        headerFontSize = 10,
+        pageBottom = 750,
+        columnAligns = null,
+        cellPadding = 5
+    } = options;
     let { pageNum } = options;
     let currentY = startY;
 
-    // Draw headers
-    doc.fillColor('#edf2f7').rect(50, currentY, doc.page.width - 100, 25).fill();
-    doc.fillColor('#2d3748').fontSize(headerFontSize).font('Helvetica-Bold');
-    
-    let currentX = 50;
-    headers.forEach((header, i) => {
-        doc.text(header, currentX + 5, currentY + 7, { width: columnWidths[i] });
-        currentX += columnWidths[i];
-    });
-    
+    // Ukuran halaman & margin agar tabel selalu muat dalam satu halaman
+    const pageWidth = doc.page.width || 595;
+    const leftMargin = 50;
+    const rightMargin = 50;
+    const availableWidth = pageWidth - leftMargin - rightMargin;
+
+    // Skala proporsional bila total kolom melebihi lebar yang tersedia, lalu ratakan
+    const totalWidth = columnWidths.reduce((a, b) => a + b, 0);
+    const scaleFactor = totalWidth > availableWidth ? availableWidth / totalWidth : 1;
+    const widths = columnWidths.map(w => w * scaleFactor);
+    const tableWidth = widths.reduce((a, b) => a + b, 0);
+    const startX = leftMargin + (availableWidth - tableWidth) / 2;
+
+    const alignOf = (i) => (columnAligns && columnAligns[i] === 'right' ? 'right' : 'left');
+
+    const drawHeaderRow = (y) => {
+        doc.fillColor('#edf2f7').rect(startX, y, tableWidth, 25).fill();
+        doc.fillColor('#2d3748').fontSize(headerFontSize).font('Helvetica-Bold');
+        let x = startX;
+        headers.forEach((header, i) => {
+            doc.text(header, x + cellPadding, y + 7, {
+                width: widths[i] - (cellPadding * 2),
+                align: alignOf(i)
+            });
+            x += widths[i];
+        });
+    };
+
+    drawHeaderRow(currentY);
     currentY += 25;
 
     // Draw rows
@@ -1007,29 +1037,26 @@ function drawTableWithHeader(doc, options) {
         if (currentY > pageBottom) {
             pageNum = addFooterAndNewPage(doc, pageNum);
             currentY = 50;
-            
+
             // Redraw headers on new page
-            doc.fillColor('#edf2f7').rect(50, currentY, doc.page.width - 100, 25).fill();
-            doc.fillColor('#2d3748').fontSize(headerFontSize).font('Helvetica-Bold');
-            let headerX = 50;
-            headers.forEach((header, i) => {
-                doc.text(header, headerX + 5, currentY + 7, { width: columnWidths[i] });
-                headerX += columnWidths[i];
-            });
+            drawHeaderRow(currentY);
             currentY += 25;
             doc.font('Helvetica').fontSize(fontSize).fillColor('#4a5568');
         }
 
         // Draw background for alternate rows
         if (rowIndex % 2 === 1) {
-            doc.fillColor('#f7fafc').rect(50, currentY, doc.page.width - 100, 20).fill();
+            doc.fillColor('#f7fafc').rect(startX, currentY, tableWidth, 20).fill();
         }
 
         doc.fillColor('#4a5568');
-        let rowX = 50;
+        let x = startX;
         row.forEach((cell, i) => {
-            doc.text(cell.toString(), rowX + 5, currentY + 5, { width: columnWidths[i] });
-            rowX += columnWidths[i];
+            doc.text(cell.toString(), x + cellPadding, currentY + 5, {
+                width: widths[i] - (cellPadding * 2),
+                align: alignOf(i)
+            });
+            x += widths[i];
         });
         currentY += 20;
     });
