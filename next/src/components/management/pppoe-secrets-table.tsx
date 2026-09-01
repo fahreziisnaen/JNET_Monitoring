@@ -210,8 +210,6 @@ const PppoeSecretsTable = ({ refreshTrigger, onActionComplete, initialFilter = '
             break;
           }
           case 'uptime': {
-            const aUptime = a.uptime || 'N/A';
-            const bUptime = b.uptime || 'N/A';
             // Parse uptime string to seconds for comparison
             // Format MikroTik: "1w2d3h4m5s" (w=week, d=day, h=hour, m=minute, s=second)
             const parseUptime = (uptime: string | null): number => {
@@ -233,8 +231,16 @@ const PppoeSecretsTable = ({ refreshTrigger, onActionComplete, initialFilter = '
 
               return totalSeconds;
             };
-            aValue = parseUptime(aUptime);
-            bValue = parseUptime(bUptime);
+            // User aktif di-sort berdasarkan uptime, user tidak aktif
+            // (menampilkan "mati {durasi}") di-sort berdasarkan downSeconds
+            const getUptimeValue = (secret: PppoeSecret): number => {
+              if (isSecretActive(secret)) {
+                return parseUptime(secret.uptime || 'N/A');
+              }
+              return secret.downSeconds || 0;
+            };
+            aValue = getUptimeValue(a);
+            bValue = getUptimeValue(b);
             break;
           }
           default:
