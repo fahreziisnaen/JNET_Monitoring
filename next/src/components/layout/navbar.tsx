@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Home, Settings, SlidersHorizontal, MapPin, Wifi, ShieldCheck, FileText, X, Menu } from 'lucide-react';
+import { Home, Settings, SlidersHorizontal, MapPin, Wifi, ShieldCheck, FileText, CreditCard, X, Menu } from 'lucide-react';
 import { useAuth } from '@/components/providers/auth-provider';
 import { useState, useEffect, useCallback } from 'react';
 
@@ -31,6 +31,8 @@ const Navbar = () => {
     const { user } = useAuth();
     const isNoc = user?.role === 'noc';
     const showNoc = user?.is_super_admin || isNoc || user?.role === 'admin';
+    // Billing: owner + admin + noc + super_admin
+    const canBilling = user?.is_super_admin || user?.is_owner || user?.role === 'admin' || isNoc;
     const [isOpen, setIsOpen] = useState(false);
 
     // Lock body scroll when FAB menu is open
@@ -73,6 +75,7 @@ const Navbar = () => {
 
     const allItems = [
         ...filteredNavItems,
+        ...(canBilling ? [{ icon: CreditCard, label: 'Billing', href: '/billing' }] : []),
         ...(showNoc ? [{ icon: NocIcon as any, label: 'NOC', href: '/noc' }] : []),
     ];
 

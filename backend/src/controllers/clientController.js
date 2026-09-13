@@ -1,4 +1,5 @@
 const pool = require('../config/database');
+const withTransaction = require('../utils/withTransaction');
 const { runCommandForWorkspace } = require('../utils/apiConnection');
 const mikrotikStore = require('../utils/mikrotikStore');
 const path = require('path');
@@ -252,7 +253,7 @@ exports.createClient = async (req, res) => {
         workspace_id = parseInt(req.query.workspaceId);
     }
 
-    const { pppoe_secret_name, client_name, whatsapp_number, latitude, longitude, odp_asset_id, connection_path, device_id } = req.body;
+    const { pppoe_secret_name, client_name, whatsapp_number, latitude, longitude, odp_asset_id, connection_path, device_id, ktp_number } = req.body;
     const photo_url = req.file ? `/public/uploads/clients/${req.file.filename}` : null;
     const deviceId = device_id ? parseInt(device_id) : null;
 
@@ -300,40 +301,67 @@ exports.createClient = async (req, res) => {
             [workspace_id, pppoe_secret_name]
         );
 
-        // If already connected to different ODP, remove old connection
-        if (existingConnections.length > 0) {
-            const oldOdpId = existingConnections[0].asset_id;
-            // If linking to different ODP or unlinking, remove old connection
-            if (!odp_asset_id || oldOdpId !== odp_asset_id) {
-                await pool.query(
-                    'DELETE FROM odp_user_connections WHERE workspace_id = ? AND asset_id = ? AND pppoe_secret_name = ?',
-                    [workspace_id, oldOdpId, pppoe_secret_name]
-                );
+        // Insert client + tautan ODP dalam satu transaction agar tidak ada state setengah jalan
+        const result = await withTransaction(async (conn) => {
+            // If already connected to different ODP, remove old connection
+            if (existingConnections.length > 0) {
+                const oldOdpId = existingConnections[0].asset_id;
+                // If linking to different ODP or unlinking, remove old connection
+                if (!odp_asset_id || oldOdpId !== odp_asset_id) {
+                    await conn.query(
+                        'DELETE FROM odp_user_connections WHERE workspace_id = ? AND asset_id = ? AND pppoe_secret_name = ?',
+                        [workspace_id, oldOdpId, pppoe_secret_name]
+                    );
+                }
             }
-        }
 
-        // Insert client (simpan device_id agar JOIN pppoe_user_status nanti lebih akurat)
-        const [result] = await pool.query(
-            'INSERT INTO clients (workspace_id, pppoe_secret_name, client_name, whatsapp_number, latitude, longitude, odp_asset_id, connection_path, photo_url, device_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-            [workspace_id, pppoe_secret_name, client_name || null, whatsapp_number || null, lat, lon, odp_asset_id || null, connection_path || null, photo_url, deviceId]
-        );
-
-        // If linked to ODP, also add to odp_user_connections if not exists
-        if (odp_asset_id) {
-            const [existingConnection] = await pool.query(
-                'SELECT id FROM odp_user_connections WHERE workspace_id = ? AND asset_id = ? AND pppoe_secret_name = ?',
-                [workspace_id, odp_asset_id, pppoe_secret_name]
+            // Insert client (simpan device_id agar JOIN pppoe_user_status nanti lebih akurat)
+            const [ins] = await conn.query(
+                'INSERT INTO clients (workspace_id, pppoe_secret_name, client_name, whatsapp_number, latitude, longitude, odp_asset_id, connection_path, photo_url, device_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+                [workspace_id, pppoe_secret_name, client_name || null, whatsapp_number || null, lat, lon, odp_asset_id || null, connection_path || null, photo_url, deviceId]
             );
 
-            if (existingConnection.length === 0) {
-                await pool.query(
-                    'INSERT INTO odp_user_connections (workspace_id, asset_id, pppoe_secret_name) VALUES (?, ?, ?)',
+            // If linked to ODP, also add to odp_user_connections if not exists
+            if (odp_asset_id) {
+                const [existingConnection] = await conn.query(
+                    'SELECT id FROM odp_user_connections WHERE workspace_id = ? AND asset_id = ? AND pppoe_secret_name = ?',
                     [workspace_id, odp_asset_id, pppoe_secret_name]
                 );
+
+                if (existingConnection.length === 0) {
+                    await conn.query(
+                        'INSERT INTO odp_user_connections (workspace_id, asset_id, pppoe_secret_name) VALUES (?, ?, ?)',
+                        [workspace_id, odp_asset_id, pppoe_secret_name]
+                    );
+                }
             }
+
+            return ins;
+        });
+
+        // Auto-sync ke billing (best-effort; jangan ganggu pembuatan client jika billing gagal/absen).
+        let billingCustomerId = null;
+        try {
+            const { upsertFromClient } = require('../billing/services/customerSyncService');
+            await upsertFromClient({
+                workspaceId: workspace_id,
+                clientId: result.insertId,
+                name: client_name,
+                whatsapp: whatsapp_number,
+                secret: pppoe_secret_name,
+                deviceId,
+                ktp: ktp_number,
+            });
+            const [bc] = await pool.query(
+                'SELECT id FROM billing_customers WHERE workspace_id = ? AND client_id = ? LIMIT 1',
+                [workspace_id, result.insertId]
+            );
+            billingCustomerId = bc[0]?.id ?? null;
+        } catch (syncErr) {
+            console.warn('[CREATE CLIENT] auto-sync billing dilewati:', syncErr.message);
         }
 
-        res.status(201).json({ message: 'Client berhasil dibuat', clientId: result.insertId });
+        res.status(201).json({ message: 'Client berhasil dibuat', clientId: result.insertId, billingCustomerId });
     } catch (error) {
         console.error("[CREATE CLIENT ERROR]:", error);
         res.status(500).json({ message: 'Gagal membuat client.' });
@@ -388,64 +416,19 @@ exports.updateClient = async (req, res) => {
         const client = clients[0];
         const oldOdpId = client.odp_asset_id;
 
-        // Validate ODP if provided
-        if (odp_asset_id !== undefined) {
-            if (odp_asset_id === null) {
-                // Unlink from ODP
-                // Remove from odp_user_connections
-                await pool.query(
-                    'DELETE FROM odp_user_connections WHERE workspace_id = ? AND asset_id = ? AND pppoe_secret_name = ?',
-                    [workspace_id, oldOdpId, client.pppoe_secret_name]
-                );
-                // Reset kabel karena client sekarang tidak punya parent lagi
-                await pool.query(
-                    'UPDATE clients SET connection_path = NULL WHERE id = ? AND workspace_id = ?',
-                    [id, workspace_id]
-                );
-            } else {
-                // Link to new ODP
-                const [odpAsset] = await pool.query(
-                    'SELECT id, type FROM network_assets WHERE id = ? AND workspace_id = ?',
-                    [odp_asset_id, workspace_id]
-                );
+        // Validate ODP if provided (read; sebelum transaction)
+        if (odp_asset_id !== undefined && odp_asset_id !== null) {
+            const [odpAsset] = await pool.query(
+                'SELECT id, type FROM network_assets WHERE id = ? AND workspace_id = ?',
+                [odp_asset_id, workspace_id]
+            );
 
-                if (odpAsset.length === 0) {
-                    return res.status(404).json({ message: 'ODP tidak ditemukan.' });
-                }
+            if (odpAsset.length === 0) {
+                return res.status(404).json({ message: 'ODP tidak ditemukan.' });
+            }
 
-                if (odpAsset[0].type !== 'ODP') {
-                    return res.status(400).json({ message: 'Asset yang dipilih bukan ODP.' });
-                }
-
-                // Remove from old ODP connection if exists
-                if (oldOdpId) {
-                    await pool.query(
-                        'DELETE FROM odp_user_connections WHERE workspace_id = ? AND asset_id = ? AND pppoe_secret_name = ?',
-                        [workspace_id, oldOdpId, client.pppoe_secret_name]
-                    );
-                }
-
-                // Reset connection_path karena kabel menuju ODP lama akan kacau setelah ganti ODP
-                // Biarkan peta menggambar garis lurus default dari client ke ODP baru
-                if (oldOdpId && oldOdpId !== parseInt(odp_asset_id)) {
-                    await pool.query(
-                        'UPDATE clients SET connection_path = NULL WHERE id = ? AND workspace_id = ?',
-                        [id, workspace_id]
-                    );
-                }
-
-                // Add to new ODP connection if not exists
-                const [existingConnection] = await pool.query(
-                    'SELECT id FROM odp_user_connections WHERE workspace_id = ? AND asset_id = ? AND pppoe_secret_name = ?',
-                    [workspace_id, odp_asset_id, client.pppoe_secret_name]
-                );
-
-                if (existingConnection.length === 0) {
-                    await pool.query(
-                        'INSERT INTO odp_user_connections (workspace_id, asset_id, pppoe_secret_name) VALUES (?, ?, ?)',
-                        [workspace_id, odp_asset_id, client.pppoe_secret_name]
-                    );
-                }
+            if (odpAsset[0].type !== 'ODP') {
+                return res.status(400).json({ message: 'Asset yang dipilih bukan ODP.' });
             }
         }
 
@@ -478,27 +461,19 @@ exports.updateClient = async (req, res) => {
             values.push(whatsapp_number);
         }
 
+        // Tentukan foto lama untuk dihapus; file baru dihapus setelah commit (bukan sebelum)
+        let oldPhotoToDelete = null;
         if (req.file) {
-            // Delete old photo if exists
             const [oldClient] = await pool.query('SELECT photo_url FROM clients WHERE id = ? AND workspace_id = ?', [id, workspace_id]);
             if (oldClient.length > 0 && oldClient[0].photo_url) {
-                const oldPath = path.join(__dirname, '../../', oldClient[0].photo_url);
-                if (fs.existsSync(oldPath)) {
-                    fs.unlinkSync(oldPath);
-                }
+                oldPhotoToDelete = path.join(__dirname, '../../', oldClient[0].photo_url);
             }
-
-            const photoUrl = `/public/uploads/clients/${req.file.filename}`;
             updates.push('photo_url = ?');
-            values.push(photoUrl);
+            values.push(`/public/uploads/clients/${req.file.filename}`);
         } else if (req.body.deletePhoto === 'true') {
-            // Handle explicit delete request
             const [oldClient] = await pool.query('SELECT photo_url FROM clients WHERE id = ? AND workspace_id = ?', [id, workspace_id]);
             if (oldClient.length > 0 && oldClient[0].photo_url) {
-                const oldPath = path.join(__dirname, '../../', oldClient[0].photo_url);
-                if (fs.existsSync(oldPath)) {
-                    fs.unlinkSync(oldPath);
-                }
+                oldPhotoToDelete = path.join(__dirname, '../../', oldClient[0].photo_url);
             }
             updates.push('photo_url = ?');
             values.push(null);
@@ -510,10 +485,82 @@ exports.updateClient = async (req, res) => {
 
         values.push(id, workspace_id);
 
-        await pool.query(
-            `UPDATE clients SET ${updates.join(', ')} WHERE id = ? AND workspace_id = ?`,
-            values
-        );
+        // Rewiring ODP + update client dalam satu transaction agar tidak ada state setengah jalan
+        await withTransaction(async (conn) => {
+            if (odp_asset_id !== undefined) {
+                if (odp_asset_id === null) {
+                    // Unlink from ODP + reset kabel karena client tidak punya parent lagi
+                    await conn.query(
+                        'DELETE FROM odp_user_connections WHERE workspace_id = ? AND asset_id = ? AND pppoe_secret_name = ?',
+                        [workspace_id, oldOdpId, client.pppoe_secret_name]
+                    );
+                    await conn.query(
+                        'UPDATE clients SET connection_path = NULL WHERE id = ? AND workspace_id = ?',
+                        [id, workspace_id]
+                    );
+                } else {
+                    // Remove from old ODP connection if exists
+                    if (oldOdpId) {
+                        await conn.query(
+                            'DELETE FROM odp_user_connections WHERE workspace_id = ? AND asset_id = ? AND pppoe_secret_name = ?',
+                            [workspace_id, oldOdpId, client.pppoe_secret_name]
+                        );
+                    }
+
+                    // Reset connection_path karena kabel menuju ODP lama akan kacau setelah ganti ODP
+                    if (oldOdpId && oldOdpId !== parseInt(odp_asset_id)) {
+                        await conn.query(
+                            'UPDATE clients SET connection_path = NULL WHERE id = ? AND workspace_id = ?',
+                            [id, workspace_id]
+                        );
+                    }
+
+                    // Add to new ODP connection if not exists
+                    const [existingConnection] = await conn.query(
+                        'SELECT id FROM odp_user_connections WHERE workspace_id = ? AND asset_id = ? AND pppoe_secret_name = ?',
+                        [workspace_id, odp_asset_id, client.pppoe_secret_name]
+                    );
+
+                    if (existingConnection.length === 0) {
+                        await conn.query(
+                            'INSERT INTO odp_user_connections (workspace_id, asset_id, pppoe_secret_name) VALUES (?, ?, ?)',
+                            [workspace_id, odp_asset_id, client.pppoe_secret_name]
+                        );
+                    }
+                }
+            }
+
+            await conn.query(
+                `UPDATE clients SET ${updates.join(', ')} WHERE id = ? AND workspace_id = ?`,
+                values
+            );
+        });
+
+        // Hapus file foto lama setelah commit (aman bila transaction batal)
+        if (oldPhotoToDelete && fs.existsSync(oldPhotoToDelete)) {
+            try { fs.unlinkSync(oldPhotoToDelete); } catch (e) { console.warn('[UPDATE CLIENT] hapus foto lama gagal:', e.message); }
+        }
+
+        // Auto-sync ke billing (best-effort): begitu WA diisi/diubah, pelanggan billing dibuat.
+        try {
+            const [[fresh]] = await pool.query(
+                'SELECT client_name, whatsapp_number, pppoe_secret_name, device_id FROM clients WHERE id = ? AND workspace_id = ?',
+                [id, workspace_id]
+            );
+            if (fresh) {
+                const { upsertFromClient } = require('../billing/services/customerSyncService');
+                await upsertFromClient({
+                    workspaceId: workspace_id,
+                    clientId: parseInt(id),
+                    name: fresh.client_name,
+                    whatsapp: fresh.whatsapp_number,
+                    secret: fresh.pppoe_secret_name,
+                    deviceId: fresh.device_id,
+                });
+            }
+        } catch (syncErr) {
+            console.warn('[UPDATE CLIENT] auto-sync billing dilewati:', syncErr.message);
+        }
 
         res.status(200).json({ message: 'Client berhasil diupdate' });
     } catch (error) {

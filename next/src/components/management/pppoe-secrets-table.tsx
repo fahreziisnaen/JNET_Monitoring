@@ -13,7 +13,7 @@ import ConfirmModal from '../ui/confirm-modal';
 import EditPppoeSecretModal from './edit-pppoe-secret-modal';
 import PppoeDetailModal from './pppoe-detail-modal';
 import { apiFetch } from '@/utils/api';
-import { formatUptime, formatCompactUptime } from '@/utils/format';
+import { formatUptime, formatCompactUptime, formatSecondsToUptime } from '@/utils/format';
 
 export interface PppoeSecret {
   '.id': string;
@@ -26,6 +26,7 @@ export interface PppoeSecret {
   deviceId?: number;
   workspaceId?: number;
   uptime?: string;
+  downSeconds?: number | null;
   client_name?: string;
   whatsapp_number?: string;
 }
@@ -85,6 +86,7 @@ const PppoeSecretsTable = ({ refreshTrigger, onActionComplete, initialFilter = '
         deviceId: resolvedDeviceId,
         workspaceId: secret.workspaceId || secret.workspace_id || (resolvedDeviceId ? getDeviceWorkspaceId(resolvedDeviceId) ?? undefined : undefined),
         uptime: secret.uptime || 'N/A',
+        downSeconds: secret.downSeconds ?? null,
         client_name: secret.client_name,
         whatsapp_number: secret.whatsapp_number
       };
@@ -208,8 +210,6 @@ const PppoeSecretsTable = ({ refreshTrigger, onActionComplete, initialFilter = '
             break;
           }
           case 'uptime': {
-            const aUptime = a.uptime || 'N/A';
-            const bUptime = b.uptime || 'N/A';
             // Parse uptime string to seconds for comparison
             // Format MikroTik: "1w2d3h4m5s" (w=week, d=day, h=hour, m=minute, s=second)
             const parseUptime = (uptime: string | null): number => {
@@ -231,8 +231,16 @@ const PppoeSecretsTable = ({ refreshTrigger, onActionComplete, initialFilter = '
 
               return totalSeconds;
             };
-            aValue = parseUptime(aUptime);
-            bValue = parseUptime(bUptime);
+            // User aktif di-sort berdasarkan uptime, user tidak aktif
+            // (menampilkan "mati {durasi}") di-sort berdasarkan downSeconds
+            const getUptimeValue = (secret: PppoeSecret): number => {
+              if (isSecretActive(secret)) {
+                return parseUptime(secret.uptime || 'N/A');
+              }
+              return secret.downSeconds || 0;
+            };
+            aValue = getUptimeValue(a);
+            bValue = getUptimeValue(b);
             break;
           }
           default:
@@ -589,6 +597,8 @@ const PppoeSecretsTable = ({ refreshTrigger, onActionComplete, initialFilter = '
                               <span className="sm:hidden">{formatCompactUptime(uptime)}</span>
                               <span className="hidden sm:inline">{formatUptime(uptime)}</span>
                             </span>
+                          ) : (user.downSeconds && user.downSeconds > 0) ? (
+                            <span className="text-red-500">mati {formatSecondsToUptime(user.downSeconds)}</span>
                           ) : '-'}
                         </td>
                         <td className="p-2 sm:p-4 text-center">

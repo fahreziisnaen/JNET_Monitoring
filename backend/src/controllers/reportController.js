@@ -23,6 +23,11 @@ const formatAvgBandwidth = (avgBytes) => {
     return `${mbps.toFixed(2)} Mbps`;
 };
 
+const formatRupiah = (nominal) => {
+    if (nominal === null || nominal === undefined || isNaN(+nominal)) return '-';
+    return 'Rp ' + Number(nominal).toLocaleString('id-ID');
+};
+
 // Helper function to draw a box/card
 function drawBox(doc, x, y, width, height, fillColor = '#f0f0f0', strokeColor = '#cccccc') {
     doc.rect(x, y, width, height)
@@ -417,6 +422,35 @@ exports.generateMonthlyReport = async (req, res) => {
         const deviceStatsMap = new Map(); // deviceId -> { device_name, avg_cpu, avg_memory, usage, users, SLA }
         const clientStatsPerDevice = new Map(); // deviceId -> [client stats]
 
+        // Lookup nominal tagihan (billing invoice) per PPPoE secret untuk bulan yang dipilih,
+        // di-cache per workspace agar tidak query berulang jika satu workspace punya banyak device.
+        const billingBySecretCache = new Map(); // workspaceId -> Map(secretName -> amount)
+
+        async function getBillingBySecret(workspaceId) {
+            if (billingBySecretCache.has(workspaceId)) return billingBySecretCache.get(workspaceId);
+            const map = new Map();
+            try {
+                const [invRows] = await pool.query(
+                    `SELECT c.pppoe_secret_name, i.amount
+                     FROM billing_invoices i
+                     JOIN billing_customers c ON c.id = i.customer_id AND c.workspace_id = i.workspace_id
+                     WHERE i.workspace_id = ? AND i.period_year = ? AND i.period_month = ?
+                       AND c.pppoe_secret_name IS NOT NULL AND c.pppoe_secret_name <> ''
+                       AND i.status <> 'void'`,
+                    [workspaceId, yearNum, monthNum]
+                );
+                invRows.forEach(row => {
+                    if (!map.has(row.pppoe_secret_name)) {
+                        map.set(row.pppoe_secret_name, row.amount);
+                    }
+                });
+            } catch (billingError) {
+                console.error(`[Report] Error fetching billing invoices for workspace ${workspaceId}:`, billingError.message);
+            }
+            billingBySecretCache.set(workspaceId, map);
+            return map;
+        }
+
         for (const devInfo of verifiedDeviceInfos) {
             const deviceId = devInfo.id;
             const deviceName = devInfo.name;
@@ -520,6 +554,8 @@ exports.generateMonthlyReport = async (req, res) => {
                     );
 
                     // Process client stats with error handling
+                    const invoiceBySecret = await getBillingBySecret(deviceWorkspaceId);
+
                     clientStats = await Promise.all(
                         clientUsage.map(async (client) => {
                             try {
@@ -537,7 +573,8 @@ exports.generateMonthlyReport = async (req, res) => {
                                     pppoe_user: client.pppoe_user,
                                     total_usage: client.total_usage || 0,
                                     total_downtime_seconds: downtimeData[0]?.total_downtime_seconds || 0,
-                                    downtime_events: downtimeData[0]?.downtime_events || 0
+                                    downtime_events: downtimeData[0]?.downtime_events || 0,
+                                    invoice_amount: invoiceBySecret.get(client.pppoe_user) ?? null
                                 };
                             } catch (clientError) {
                                 console.error(`[Report] Error fetching downtime for client ${client.pppoe_user}:`, clientError);
@@ -546,7 +583,8 @@ exports.generateMonthlyReport = async (req, res) => {
                                     pppoe_user: client.pppoe_user,
                                     total_usage: client.total_usage || 0,
                                     total_downtime_seconds: 0,
-                                    downtime_events: 0
+                                    downtime_events: 0,
+                                    invoice_amount: invoiceBySecret.get(client.pppoe_user) ?? null
                                 };
                             }
                         })
@@ -666,24 +704,26 @@ exports.generateMonthlyReport = async (req, res) => {
                     currentY += 20;
 
                     const clientRows = deviceClientStats.map(client => {
-                        const clientName = (client.pppoe_user || 'N/A').length > 25
-                            ? (client.pppoe_user || 'N/A').substring(0, 22) + '...'
+                        const clientName = (client.pppoe_user || 'N/A').length > 22
+                            ? (client.pppoe_user || 'N/A').substring(0, 19) + '...'
                             : (client.pppoe_user || 'N/A');
                         return [
                             clientName,
                             formatDataSize(client.total_usage || 0),
                             formatDuration(client.total_downtime_seconds || 0),
-                            (client.downtime_events || 0).toString()
+                            (client.downtime_events || 0).toString(),
+                            formatRupiah(client.invoice_amount)
                         ];
                     });
 
                     const tableResult2 = drawTableWithHeader(doc, {
                         startY: currentY,
-                        columnWidths: [180, 120, 150, 100],
-                        headers: ['Client', 'Total Usage', 'Total Downtime', 'Downtime Events'],
+                        columnWidths: [112, 65, 140, 88, 90],
+                        headers: ['Client', 'Total Usage', 'Total Downtime', 'Downtime Events', 'Nominal Tagihan'],
+                        columnAligns: ['left', 'right', 'left', 'right', 'right'],
                         rows: clientRows,
                         fontSize: 9,
-                        headerFontSize: 10,
+                        headerFontSize: 9,
                         pageBottom: 750,
                         pageNum: pageNum
                     });
@@ -945,54 +985,95 @@ function addFooterAndNewPage(doc, pageNum) {
 }
 
 function drawTableWithHeader(doc, options) {
-    const { startY, columnWidths, headers, rows, fontSize = 9, headerFontSize = 10, pageBottom = 750 } = options;
+    const {
+        startY,
+        columnWidths,
+        headers,
+        rows,
+        fontSize = 9,
+        headerFontSize = 10,
+        pageBottom = 750,
+        columnAligns = null,
+        cellPadding = 5,
+        minRowHeight = 20,
+        minHeaderHeight = 25
+    } = options;
     let { pageNum } = options;
     let currentY = startY;
 
-    // Draw headers
-    doc.fillColor('#edf2f7').rect(50, currentY, doc.page.width - 100, 25).fill();
-    doc.fillColor('#2d3748').fontSize(headerFontSize).font('Helvetica-Bold');
-    
-    let currentX = 50;
-    headers.forEach((header, i) => {
-        doc.text(header, currentX + 5, currentY + 7, { width: columnWidths[i] });
-        currentX += columnWidths[i];
-    });
-    
-    currentY += 25;
+    // Ukuran halaman & margin agar tabel selalu muat dalam satu halaman
+    const pageWidth = doc.page.width || 595;
+    const leftMargin = 50;
+    const rightMargin = 50;
+    const availableWidth = pageWidth - leftMargin - rightMargin;
+
+    // Skala proporsional bila total kolom melebihi lebar yang tersedia, lalu ratakan
+    const totalWidth = columnWidths.reduce((a, b) => a + b, 0);
+    const scaleFactor = totalWidth > availableWidth ? availableWidth / totalWidth : 1;
+    const widths = columnWidths.map(w => w * scaleFactor);
+    const tableWidth = widths.reduce((a, b) => a + b, 0);
+    const startX = leftMargin + (availableWidth - tableWidth) / 2;
+
+    const alignOf = (i) => (columnAligns && columnAligns[i] === 'right' ? 'right' : 'left');
+    const cellWidthOf = (i) => Math.max(widths[i] - (cellPadding * 2), 10);
+
+    // Tinggi header otomatis (agar teks header tidak terpotong/meluber)
+    const headerRowHeight = headers.reduce((max, header, i) => {
+        const height = doc.heightOfString(String(header), { width: cellWidthOf(i) });
+        return Math.max(max, height);
+    }, minHeaderHeight) + (cellPadding * 2);
+
+    const drawHeaderRow = (y) => {
+        doc.fillColor('#edf2f7').rect(startX, y, tableWidth, headerRowHeight).fill();
+        doc.fillColor('#2d3748').fontSize(headerFontSize).font('Helvetica-Bold');
+        let x = startX;
+        headers.forEach((header, i) => {
+            doc.text(header, x + cellPadding, y + cellPadding, {
+                width: cellWidthOf(i),
+                align: alignOf(i)
+            });
+            x += widths[i];
+        });
+    };
+
+    drawHeaderRow(currentY);
+    currentY += headerRowHeight;
 
     // Draw rows
     doc.font('Helvetica').fontSize(fontSize).fillColor('#4a5568');
     rows.forEach((row, rowIndex) => {
+        // Tinggi baris otomatis mengikuti isi terpanjang agar tidak saling menimpa
+        const rowHeight = row.reduce((max, cell, i) => {
+            const height = doc.heightOfString(String(cell), { width: cellWidthOf(i) });
+            return Math.max(max, height);
+        }, minRowHeight) + (cellPadding * 2);
+
         // Check for new page
-        if (currentY > pageBottom) {
+        if (currentY + rowHeight > pageBottom) {
             pageNum = addFooterAndNewPage(doc, pageNum);
             currentY = 50;
-            
+
             // Redraw headers on new page
-            doc.fillColor('#edf2f7').rect(50, currentY, doc.page.width - 100, 25).fill();
-            doc.fillColor('#2d3748').fontSize(headerFontSize).font('Helvetica-Bold');
-            let headerX = 50;
-            headers.forEach((header, i) => {
-                doc.text(header, headerX + 5, currentY + 7, { width: columnWidths[i] });
-                headerX += columnWidths[i];
-            });
-            currentY += 25;
+            drawHeaderRow(currentY);
+            currentY += headerRowHeight;
             doc.font('Helvetica').fontSize(fontSize).fillColor('#4a5568');
         }
 
         // Draw background for alternate rows
         if (rowIndex % 2 === 1) {
-            doc.fillColor('#f7fafc').rect(50, currentY, doc.page.width - 100, 20).fill();
+            doc.fillColor('#f7fafc').rect(startX, currentY, tableWidth, rowHeight).fill();
         }
 
         doc.fillColor('#4a5568');
-        let rowX = 50;
+        let x = startX;
         row.forEach((cell, i) => {
-            doc.text(cell.toString(), rowX + 5, currentY + 5, { width: columnWidths[i] });
-            rowX += columnWidths[i];
+            doc.text(String(cell), x + cellPadding, currentY + cellPadding, {
+                width: cellWidthOf(i),
+                align: alignOf(i)
+            });
+            x += widths[i];
         });
-        currentY += 20;
+        currentY += rowHeight;
     });
 
     return { currentY, pageNum };

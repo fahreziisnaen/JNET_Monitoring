@@ -100,7 +100,12 @@ const corsOptions = {
 };
 
 app.use(cors(corsOptions));
-app.use(express.json());
+// Tangkap raw body (dipakai webhook billing untuk verifikasi signature HMAC gateway).
+app.use(express.json({
+    verify: (req, res, buf) => {
+        if (buf && buf.length) req.rawBody = buf.toString('utf8');
+    }
+}));
 app.use(cookieParser());
 app.use('/public', express.static('public'));
 
@@ -129,6 +134,14 @@ app.use('/api/reports', reportRoutes);
 app.use('/api/backup', backupRoutes);
 app.use('/api/noc', nocRoutes);
 app.use('/api/api-keys', apiKeyRoutes);
+
+// Modul Billing (pelanggan, admin, webhook gateway) — terpisah & opt-in scheduler.
+// Dibungkus try/catch agar kegagalan billing TIDAK menjatuhkan backend monitoring.
+try {
+    require('./src/billing').register(app);
+} catch (billingErr) {
+    console.error('[Billing] Gagal memuat modul billing (monitoring tetap berjalan):', billingErr.message);
+}
 
 const wss = new WebSocket.Server({ server, path: "/ws" });
 broadcast.init(wss);

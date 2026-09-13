@@ -706,6 +706,19 @@ exports.deleteSecret = async (req, res) => {
             // D. Broadcast penghapusan ke WebSocket agar UI terupdate real-time
             mikrotikStore.markPendingDelete(workspace_id, deviceId, secretName);
             broadcast.broadcastSinglePppoeRemove(workspace_id, deviceId, secretName);
+
+            // E. Hapus pelanggan billing yang tertaut ke secret ini (langganan/invoice/pembayaran ikut via cascade)
+            try {
+                const [billingResult] = await pool.query(
+                    'DELETE FROM billing_customers WHERE workspace_id = ? AND pppoe_secret_name = ?',
+                    [workspace_id, secretName]
+                );
+                if (billingResult.affectedRows > 0) {
+                    console.log(`[Delete Secret] Pelanggan billing untuk "${secretName}" ikut dihapus.`);
+                }
+            } catch (billingErr) {
+                console.warn(`[Delete Secret] Gagal hapus pelanggan billing: ${billingErr.message}`);
+            }
         }
         
         // Trigger background refresh agar cache mikrotikStoreSinkron

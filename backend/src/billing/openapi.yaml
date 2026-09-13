@@ -1,0 +1,662 @@
+openapi: 3.1.0
+info:
+  title: JNET Monitoring — Billing API
+  version: 0.1.0
+  description: |
+    API contract for the **Billing** module (ISP customer payments) that runs
+    inside the JNET Monitoring backend. Only the billing module is documented here.
+
+    ## Authentication
+    - **customerAuth** — Customer JWT (claim `aud: billing-customer`), obtained from
+      `POST /customer/auth/verify-otp`. Sent via `Authorization: Bearer <token>`
+      (or the `billing_token` cookie). Used by the billing app (React Native).
+    - **adminAuth** — Existing JNET Monitoring admin JWT (`protect` + `authorizeAdmin`).
+      Customer and admin tokens are NOT interchangeable (different audience).
+    - **Webhook** does not use a bearer token; it is secured by an HMAC-SHA256
+      signature (`X-Callback-Signature`).
+  contact:
+    name: JNET Monitoring
+servers:
+  - url: /api/billing
+    description: Relative to the backend host (e.g. https://monitor.domain.com)
+
+tags:
+  - name: Customer Auth
+    description: Customer login via WhatsApp OTP
+  - name: Customer Portal
+    description: The customer's own data (subscription, invoices, payments)
+  - name: Admin
+    description: Manage packages, customers, subscriptions, invoices, settings
+  - name: Webhook
+    description: Payment gateway callback (Tripay)
+
+paths:
+  # ============================ CUSTOMER AUTH ============================
+  /customer/auth/request-otp:
+    post:
+      tags: [Customer Auth]
+      summary: Request a login OTP via WhatsApp
+      description: |
+        Sends an OTP to a registered customer's WhatsApp number (registered by an
+        admin). The response is always generic so it never reveals which numbers
+        are registered. If the WhatsApp gateway is down it returns 503 (no bypass).
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [whatsapp_number]
+              properties:
+                whatsapp_number:
+                  type: string
+                  example: "081234567890"
+      responses:
+        '200':
+          description: OTP sent (or the number is not registered — identical response)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Message' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { description: Customer account is inactive, content: { application/json: { schema: { $ref: '#/components/schemas/Message' } } } }
+        '503': { description: WhatsApp service unavailable, content: { application/json: { schema: { $ref: '#/components/schemas/Message' } } } }
+
+  /customer/auth/verify-otp:
+    post:
+      tags: [Customer Auth]
+      summary: Verify OTP and log in
+      description: Verifies the OTP, creates a session, and returns a customer JWT (valid 30 days). Also sets the `billing_token` cookie.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [whatsapp_number, otp]
+              properties:
+                whatsapp_number: { type: string, example: "081234567890" }
+                otp: { type: string, example: "123456" }
+      responses:
+        '200':
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message: { type: string }
+                  token: { type: string, description: Customer JWT }
+                  customer:
+                    type: object
+                    properties:
+                      id: { type: integer }
+                      name: { type: string, nullable: true }
+                      whatsapp_number: { type: string }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { description: Wrong or expired OTP, content: { application/json: { schema: { $ref: '#/components/schemas/Message' } } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /customer/auth/logout:
+    post:
+      tags: [Customer Auth]
+      summary: Log out (revoke session)
+      security: [{ customerAuth: [] }]
+      responses:
+        '200': { description: Logged out, content: { application/json: { schema: { $ref: '#/components/schemas/Message' } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /customer/me:
+    get:
+      tags: [Customer Auth]
+      summary: Current customer profile
+      security: [{ customerAuth: [] }]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  customer: { $ref: '#/components/schemas/Customer' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  # ============================ CUSTOMER PORTAL ============================
+  /customer/subscription:
+    get:
+      tags: [Customer Portal]
+      summary: The customer's active subscription and package
+      security: [{ customerAuth: [] }]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  subscription:
+                    oneOf:
+                      - $ref: '#/components/schemas/SubscriptionWithPackage'
+                      - type: 'null'
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /customer/invoices:
+    get:
+      tags: [Customer Portal]
+      summary: The customer's invoices
+      security: [{ customerAuth: [] }]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  invoices:
+                    type: array
+                    items: { $ref: '#/components/schemas/Invoice' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /customer/invoices/{id}:
+    get:
+      tags: [Customer Portal]
+      summary: Invoice detail with payment history
+      security: [{ customerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/PathId' }]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  invoice: { $ref: '#/components/schemas/Invoice' }
+                  payments:
+                    type: array
+                    items: { $ref: '#/components/schemas/Payment' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /customer/invoices/{id}/pay:
+    post:
+      tags: [Customer Portal]
+      summary: Create a payment transaction for an invoice
+      description: |
+        Creates a transaction at the payment gateway. If a `pending` payment
+        already exists, it is returned instead (idempotent). When the gateway is
+        not configured, a simulated transaction is returned (`simulated: true`).
+      security: [{ customerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/PathId' }]
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                method: { type: string, description: Payment channel (e.g. QRIS, BRIVA), optional }
+      responses:
+        '200': { description: A pending transaction already exists, content: { application/json: { schema: { type: object, properties: { message: { type: string }, payment: { $ref: '#/components/schemas/Payment' } } } } } }
+        '201':
+          description: Transaction created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message: { type: string }
+                  payment:
+                    type: object
+                    properties:
+                      id: { type: integer }
+                      merchant_ref: { type: string }
+                      checkout_url: { type: string, nullable: true }
+                      pay_code: { type: string, nullable: true }
+                      expired_at: { type: string, format: date-time, nullable: true }
+                      simulated: { type: boolean }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '502': { description: Failed to create the transaction at the gateway, content: { application/json: { schema: { $ref: '#/components/schemas/Message' } } } }
+
+  # ============================ ADMIN: PACKAGES ============================
+  /admin/packages:
+    get:
+      tags: [Admin]
+      summary: List packages
+      security: [{ adminAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/WorkspaceOverride' }]
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { type: object, properties: { packages: { type: array, items: { $ref: '#/components/schemas/Package' } } } } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+    post:
+      tags: [Admin]
+      summary: Create a package
+      security: [{ adminAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PackageInput' }
+      responses:
+        '201': { $ref: '#/components/responses/Created' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /admin/packages/{id}:
+    put:
+      tags: [Admin]
+      summary: Update a package
+      security: [{ adminAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/PathId' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PackageInput' }
+      responses:
+        '200': { $ref: '#/components/responses/OkMessage' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      tags: [Admin]
+      summary: Delete a package
+      security: [{ adminAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/PathId' }]
+      responses:
+        '200': { $ref: '#/components/responses/OkMessage' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { description: Package is still used by a subscription, content: { application/json: { schema: { $ref: '#/components/schemas/Message' } } } }
+
+  # ============================ ADMIN: CUSTOMERS ============================
+  /admin/customers:
+    get:
+      tags: [Admin]
+      summary: List billing customers
+      security: [{ adminAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/WorkspaceOverride' }]
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { type: object, properties: { customers: { type: array, items: { $ref: '#/components/schemas/Customer' } } } } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+    post:
+      tags: [Admin]
+      summary: Create a billing customer
+      description: Can auto-link to an existing `clients` row via `client_id` (inheriting name, PPPoE secret, device).
+      security: [{ adminAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CustomerInput' }
+      responses:
+        '201': { $ref: '#/components/responses/Created' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '409': { description: WhatsApp number already registered, content: { application/json: { schema: { $ref: '#/components/schemas/Message' } } } }
+
+  /admin/customers/{id}:
+    put:
+      tags: [Admin]
+      summary: Update a customer
+      security: [{ adminAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/PathId' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CustomerInput' }
+      responses:
+        '200': { $ref: '#/components/responses/OkMessage' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  # ============================ ADMIN: SUBSCRIPTIONS ============================
+  /admin/subscriptions:
+    get:
+      tags: [Admin]
+      summary: List subscriptions
+      security: [{ adminAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/WorkspaceOverride' }]
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { type: object, properties: { subscriptions: { type: array, items: { $ref: '#/components/schemas/Subscription' } } } } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+    post:
+      tags: [Admin]
+      summary: Create a subscription (customer ↔ package)
+      security: [{ adminAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [customer_id, package_id]
+              properties:
+                customer_id: { type: integer }
+                package_id: { type: integer }
+                start_date: { type: string, format: date }
+                due_day_of_month: { type: integer, minimum: 1, maximum: 28, default: 1 }
+      responses:
+        '201': { $ref: '#/components/responses/Created' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /admin/subscriptions/{id}:
+    put:
+      tags: [Admin]
+      summary: Update a subscription
+      security: [{ adminAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/PathId' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                package_id: { type: integer }
+                status: { type: string, enum: [active, suspended, cancelled] }
+                due_day_of_month: { type: integer, minimum: 1, maximum: 28 }
+      responses:
+        '200': { $ref: '#/components/responses/OkMessage' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  # ============================ ADMIN: INVOICES ============================
+  /admin/invoices:
+    get:
+      tags: [Admin]
+      summary: List invoices (filter by status/year/month)
+      security: [{ adminAuth: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/WorkspaceOverride' }
+        - { name: status, in: query, schema: { type: string, enum: [unpaid, paid, overdue, void] } }
+        - { name: year, in: query, schema: { type: integer } }
+        - { name: month, in: query, schema: { type: integer, minimum: 1, maximum: 12 } }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { type: object, properties: { invoices: { type: array, items: { $ref: '#/components/schemas/Invoice' } } } } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /admin/invoices/generate:
+    post:
+      tags: [Admin]
+      summary: Generate invoices (idempotent) for all active subscriptions
+      security: [{ adminAuth: [] }]
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                year: { type: integer, description: Defaults to current year }
+                month: { type: integer, minimum: 1, maximum: 12, description: Defaults to current month }
+      responses:
+        '200':
+          description: Generation summary
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message: { type: string }
+                  summary:
+                    type: object
+                    properties:
+                      workspaceId: { type: integer }
+                      year: { type: integer }
+                      month: { type: integer }
+                      total: { type: integer }
+                      created: { type: integer }
+                      skipped: { type: integer }
+                      invoiceIds: { type: array, items: { type: integer } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  # ============================ ADMIN: SETTINGS ============================
+  /admin/settings:
+    get:
+      tags: [Admin]
+      summary: Get billing settings (gateway keys are masked)
+      security: [{ adminAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/WorkspaceOverride' }]
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { type: object, properties: { settings: { oneOf: [ { $ref: '#/components/schemas/Settings' }, { type: 'null' } ] } } } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+    put:
+      tags: [Admin]
+      summary: Save billing settings (upsert)
+      security: [{ adminAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SettingsInput' }
+      responses:
+        '200': { $ref: '#/components/responses/OkMessage' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  # ============================ WEBHOOK ============================
+  /webhook/tripay:
+    post:
+      tags: [Webhook]
+      summary: Tripay payment callback
+      description: |
+        Called by Tripay when a transaction status changes. The RAW body is
+        verified with HMAC-SHA256 using `tripay_private_key` (the
+        `X-Callback-Signature` header). When `status: PAID`, the invoice is
+        marked paid and the customer is automatically un-isolated (if they have
+        a PPPoE secret).
+      security: []
+      parameters:
+        - name: X-Callback-Signature
+          in: header
+          required: true
+          schema: { type: string }
+          description: HMAC-SHA256(rawBody, tripay_private_key) in hex
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                merchant_ref: { type: string, example: "PAY-INV-1-202606-5-1718000000000" }
+                reference: { type: string, example: "T123456789" }
+                status: { type: string, enum: [PAID, EXPIRED, FAILED, REFUND], example: PAID }
+      responses:
+        '200': { description: Acknowledged, content: { application/json: { schema: { type: object, properties: { success: { type: boolean } } } } } }
+        '400': { description: Invalid body / missing merchant_ref }
+        '403': { description: Invalid signature }
+        '404': { description: Transaction not found }
+
+components:
+  securitySchemes:
+    customerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Customer JWT (aud=billing-customer) from verify-otp
+    adminAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JNET Monitoring admin JWT (role admin/owner/super_admin)
+
+  parameters:
+    PathId:
+      name: id
+      in: path
+      required: true
+      schema: { type: integer }
+    WorkspaceOverride:
+      name: workspaceId
+      in: query
+      required: false
+      schema: { type: integer }
+      description: Override workspace (admin/noc/superadmin only)
+
+  responses:
+    OkMessage:
+      description: Success
+      content: { application/json: { schema: { $ref: '#/components/schemas/Message' } } }
+    Created:
+      description: Created
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              message: { type: string }
+              id: { type: integer }
+    BadRequest:
+      description: Invalid input
+      content: { application/json: { schema: { $ref: '#/components/schemas/Message' } } }
+    Unauthorized:
+      description: Unauthorized / invalid token
+      content: { application/json: { schema: { $ref: '#/components/schemas/Message' } } }
+    NotFound:
+      description: Not found
+      content: { application/json: { schema: { $ref: '#/components/schemas/Message' } } }
+
+  schemas:
+    Message:
+      type: object
+      properties:
+        message: { type: string }
+    Customer:
+      type: object
+      properties:
+        id: { type: integer }
+        workspace_id: { type: integer }
+        client_id: { type: integer, nullable: true }
+        device_id: { type: integer, nullable: true }
+        pppoe_secret_name: { type: string, nullable: true }
+        name: { type: string, nullable: true }
+        whatsapp_number: { type: string }
+        email: { type: string, nullable: true }
+        address: { type: string, nullable: true }
+        status: { type: string, enum: [active, inactive, suspended] }
+    CustomerInput:
+      type: object
+      required: [whatsapp_number]
+      properties:
+        client_id: { type: integer, nullable: true, description: Link to clients.id }
+        device_id: { type: integer, nullable: true }
+        pppoe_secret_name: { type: string, nullable: true }
+        name: { type: string }
+        whatsapp_number: { type: string }
+        email: { type: string }
+        address: { type: string }
+        status: { type: string, enum: [active, inactive, suspended] }
+    Package:
+      type: object
+      properties:
+        id: { type: integer }
+        workspace_id: { type: integer }
+        name: { type: string }
+        description: { type: string, nullable: true }
+        price: { type: number, format: float }
+        speed_mbps: { type: integer, nullable: true }
+        pppoe_profile: { type: string, nullable: true }
+        billing_cycle: { type: string, enum: [monthly] }
+        is_active: { type: integer, enum: [0, 1] }
+    PackageInput:
+      type: object
+      required: [name, price]
+      properties:
+        name: { type: string }
+        description: { type: string }
+        price: { type: number, format: float, minimum: 0 }
+        speed_mbps: { type: integer }
+        pppoe_profile: { type: string, description: PPPoE profile restored when paid }
+        is_active: { type: boolean }
+    Subscription:
+      type: object
+      properties:
+        id: { type: integer }
+        workspace_id: { type: integer }
+        customer_id: { type: integer }
+        package_id: { type: integer }
+        status: { type: string, enum: [active, suspended, cancelled] }
+        start_date: { type: string, format: date }
+        due_day_of_month: { type: integer }
+        next_due_date: { type: string, format: date, nullable: true }
+        customer_name: { type: string, nullable: true }
+        whatsapp_number: { type: string, nullable: true }
+        package_name: { type: string, nullable: true }
+        price: { type: number, nullable: true }
+    SubscriptionWithPackage:
+      type: object
+      properties:
+        id: { type: integer }
+        status: { type: string }
+        start_date: { type: string, format: date }
+        due_day_of_month: { type: integer }
+        next_due_date: { type: string, format: date, nullable: true }
+        package_id: { type: integer }
+        package_name: { type: string }
+        price: { type: number }
+        speed_mbps: { type: integer, nullable: true }
+        description: { type: string, nullable: true }
+    Invoice:
+      type: object
+      properties:
+        id: { type: integer }
+        workspace_id: { type: integer }
+        subscription_id: { type: integer }
+        customer_id: { type: integer }
+        invoice_number: { type: string }
+        period_year: { type: integer }
+        period_month: { type: integer }
+        amount: { type: number, format: float }
+        due_date: { type: string, format: date }
+        status: { type: string, enum: [unpaid, paid, overdue, void] }
+        paid_at: { type: string, format: date-time, nullable: true }
+        created_at: { type: string, format: date-time }
+    Payment:
+      type: object
+      properties:
+        id: { type: integer }
+        invoice_id: { type: integer }
+        provider: { type: string, example: tripay }
+        merchant_ref: { type: string }
+        provider_ref: { type: string, nullable: true }
+        payment_method: { type: string, nullable: true }
+        amount: { type: number, format: float }
+        status: { type: string, enum: [pending, paid, failed, expired, refunded] }
+        checkout_url: { type: string, nullable: true }
+        pay_code: { type: string, nullable: true }
+        expired_at: { type: string, format: date-time, nullable: true }
+        paid_at: { type: string, format: date-time, nullable: true }
+    Settings:
+      type: object
+      properties:
+        workspace_id: { type: integer }
+        tripay_merchant_code: { type: string, nullable: true }
+        tripay_api_key: { type: string, nullable: true, description: Masked on GET }
+        tripay_private_key: { type: string, nullable: true, description: Masked on GET }
+        tripay_mode: { type: string, enum: [sandbox, production] }
+        invoice_gen_day: { type: integer }
+        reminder_days_before: { type: integer }
+        grace_days: { type: integer }
+        auto_isolir_enabled: { type: integer, enum: [0, 1] }
+        isolir_profile: { type: string }
+    SettingsInput:
+      type: object
+      properties:
+        tripay_merchant_code: { type: string }
+        tripay_api_key: { type: string }
+        tripay_private_key: { type: string }
+        tripay_mode: { type: string, enum: [sandbox, production] }
+        invoice_gen_day: { type: integer, minimum: 1, maximum: 28 }
+        reminder_days_before: { type: integer, minimum: 0 }
+        grace_days: { type: integer, minimum: 0 }
+        auto_isolir_enabled: { type: boolean }
+        isolir_profile: { type: string }
