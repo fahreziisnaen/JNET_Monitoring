@@ -9,11 +9,13 @@ import ConfirmModal from '../ui/confirm-modal';
 import { useAuth } from '../providers/auth-provider';
 import { useMikrotik } from '../providers/mikrotik-provider';
 import { apiFetch } from '@/utils/api';
+import { toast } from 'sonner';
 
 const DeviceManagementCard = () => {
     const { user } = useAuth();
     const { allDevicesStatus } = useMikrotik() || {};
-    const isAdmin = user?.role === 'admin';
+    // Samakan dengan authorizeAdmin di backend: admin, owner, atau Super Admin
+    const isAdmin = user?.role === 'admin' || user?.is_owner || user?.is_super_admin;
     const [devices, setDevices] = useState<Device[]>([]);
     const [activeDeviceId, setActiveDeviceId] = useState<number | null>(null);
     const [loading, setLoading] = useState(true);
@@ -29,7 +31,8 @@ const DeviceManagementCard = () => {
         setLoading(true);
         try {
             const [devicesRes, workspaceRes] = await Promise.all([
-                apiFetch(`${apiUrl}/api/devices`),
+                // Batasi ke workspace aktif; tanpa ini Super Admin menerima perangkat semua workspace
+                apiFetch(`${apiUrl}/api/devices?workspaceId=${user.workspace_id}`),
                 apiFetch(`${apiUrl}/api/workspaces/me`)
             ]);
 
@@ -77,12 +80,16 @@ const DeviceManagementCard = () => {
         if (!deviceToProcess?.id) return;
         setIsActionLoading(true);
         try {
-            await apiFetch(`${apiUrl}/api/devices/${deviceToProcess.id}`, {
+            const res = await apiFetch(`${apiUrl}/api/devices/${deviceToProcess.id}`, {
                 method: 'DELETE'
             });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) throw new Error(data.message || 'Gagal menghapus perangkat.');
+            toast.success('Perangkat Dihapus', { description: data.message });
             handleSuccess();
-        } catch (error) {
+        } catch (error: any) {
             console.error("Gagal menghapus perangkat:", error);
+            toast.error('Gagal Menghapus Perangkat', { description: error.message });
         } finally {
             setIsActionLoading(false);
             setIsDeleteModalOpen(false);
