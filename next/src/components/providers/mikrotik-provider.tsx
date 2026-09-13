@@ -339,8 +339,8 @@ export const MikrotikProvider = ({ children }: { children: React.ReactNode }) =>
                 // This is crucial for Superadmins when selecting a device from another workspace
                 return apiFetch(`${apiUrl}/api/devices`);
             })
-            .then(res => res.ok ? res.json() : [])
-            .then((devices: any[]) => {
+            .then(res => res.ok ? res.json() : null)
+            .then((devices: any[] | null) => {
                 if (Array.isArray(devices)) {
                     devices.forEach(d => {
                         const existing = deviceDataRef.current.get(d.id) || { ...DEFAULT_DEVICE_DATA };
@@ -352,21 +352,36 @@ export const MikrotikProvider = ({ children }: { children: React.ReactNode }) =>
                 }
                 triggerRender();
 
-                // 3. Load selections from localStorage
-                const dashboardSaved = localStorage.getItem(`dashboard-devices-${user.workspace_id}`);
-                const activeSaved = localStorage.getItem(`active-device-${user.workspace_id}`);
+                // 3. Load selections from localStorage, buang ID perangkat yang sudah tidak ada (mis. sudah dihapus).
+                //    Jika daftar perangkat gagal dimuat, jangan filter agar pilihan tidak hilang karena gangguan jaringan.
+                const knownIds = Array.isArray(devices) ? new Set(devices.map(d => d.id)) : null;
+                const isKnown = (id: number) => !knownIds || knownIds.has(id);
+                const dashboardKey = `dashboard-devices-${user.workspace_id}`;
+                const activeKey = `active-device-${user.workspace_id}`;
+                const dashboardSaved = localStorage.getItem(dashboardKey);
+                const activeSaved = localStorage.getItem(activeKey);
 
                 if (dashboardSaved) {
                     try {
                         const ids = JSON.parse(dashboardSaved);
-                        if (Array.isArray(ids)) setDashboardDeviceIds(ids.filter(id => !isNaN(id)));
+                        if (Array.isArray(ids)) {
+                            const validIds = ids.filter(id => !isNaN(id) && isKnown(id));
+                            if (validIds.length !== ids.length) {
+                                if (validIds.length > 0) localStorage.setItem(dashboardKey, JSON.stringify(validIds));
+                                else localStorage.removeItem(dashboardKey);
+                            }
+                            setDashboardDeviceIds(validIds);
+                        }
                     } catch (e) { console.error('Failed to parse dashboard device IDs:', e); }
                 }
 
                 if (activeSaved) {
                     try {
                         const id = JSON.parse(activeSaved);
-                        if (typeof id === 'number' && !isNaN(id)) setActiveDeviceId(id);
+                        if (typeof id === 'number' && !isNaN(id)) {
+                            if (isKnown(id)) setActiveDeviceId(id);
+                            else localStorage.removeItem(activeKey);
+                        }
                     } catch (e) { console.error('Failed to parse active device ID:', e); }
                 }
                 setIsLoaded(true);

@@ -13,7 +13,7 @@ import { toast } from 'sonner';
 
 const DeviceManagementCard = () => {
     const { user } = useAuth();
-    const { allDevicesStatus } = useMikrotik() || {};
+    const { allDevicesStatus, selectedDeviceIds, setSelectedDeviceIds } = useMikrotik() || {};
     // Samakan dengan authorizeAdmin di backend: admin, owner, atau Super Admin
     const isAdmin = user?.role === 'admin' || user?.is_owner || user?.is_super_admin;
     const [devices, setDevices] = useState<Device[]>([]);
@@ -84,8 +84,15 @@ const DeviceManagementCard = () => {
                 method: 'DELETE'
             });
             const data = await res.json().catch(() => ({}));
-            if (!res.ok) throw new Error(data.message || 'Gagal menghapus perangkat.');
+            if (!res.ok) {
+                const detail = data.error ? ` (${data.error})` : '';
+                throw new Error(`${data.message || 'Gagal menghapus perangkat.'}${detail} [HTTP ${res.status}]`);
+            }
             toast.success('Perangkat Dihapus', { description: data.message });
+            // Keluarkan dari pilihan dashboard agar tidak muncul sebagai "Device N" yang terputus
+            if (selectedDeviceIds?.includes(deviceToProcess.id)) {
+                setSelectedDeviceIds?.(selectedDeviceIds.filter(id => id !== deviceToProcess.id));
+            }
             handleSuccess();
         } catch (error: any) {
             console.error("Gagal menghapus perangkat:", error);

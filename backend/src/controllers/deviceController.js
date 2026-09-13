@@ -179,8 +179,37 @@ exports.updateDevice = async (req, res) => {
     }
 };
 
+// Data turunan perangkat. Tabel state kecil dihapus langsung; tabel log bisa berisi puluhan juta baris
+// (trafik dicatat per interface + per user PPPoE tiap menit, disimpan 3 bulan) sehingga dihapus bertahap.
+const DEVICE_STATE_TABLES = ['dashboard_snapshot', 'pppoe_user_status', 'pppoe_secrets', 'ip_pools'];
+const DEVICE_LOG_TABLES = ['downtime_events', 'resource_logs', 'pppoe_usage_logs', 'interface_traffic_logs'];
+const PURGE_BATCH_SIZE = 10000;
+
+async function purgeDeviceLogs(workspaceId, deviceId) {
+    const startedAt = Date.now();
+    for (const table of DEVICE_LOG_TABLES) {
+        let total = 0;
+        try {
+            for (;;) {
+                const [r] = await pool.query(
+                    `DELETE FROM ${table} WHERE workspace_id = ? AND device_id = ? LIMIT ${PURGE_BATCH_SIZE}`,
+                    [workspaceId, deviceId]
+                );
+                total += r.affectedRows;
+                if (r.affectedRows < PURGE_BATCH_SIZE) break;
+                // Beri jeda agar query monitor lain tidak tertahan lock
+                await new Promise(resolve => setTimeout(resolve, 100));
+            }
+        } catch (err) {
+            console.error(`[Device Controller] Gagal membersihkan ${table} untuk device ${deviceId}: ${err.message}`);
+        }
+        console.log(`[Device Controller] Device ${deviceId}: ${total} baris ${table} dihapus`);
+    }
+    console.log(`[Device Controller] Pembersihan log device ${deviceId} selesai dalam ${Math.round((Date.now() - startedAt) / 1000)} detik`);
+}
+
 exports.deleteDevice = async (req, res) => {
-    const { id } = req.params;
+    const deviceId = parseInt(req.params.id, 10);
     let workspaceId = req.user.workspace_id;
 
     // Dukungan override workspaceId untuk NOC
@@ -189,14 +218,45 @@ exports.deleteDevice = async (req, res) => {
     }
 
     try {
-        const [result] = await pool.query('DELETE FROM mikrotik_devices WHERE id = ? AND workspace_id = ?', [id, workspaceId]);
-        if (result.affectedRows === 0) return res.status(404).json({ message: 'Perangkat tidak ditemukan atau Anda tidak punya izin.' });
-        const [workspaces] = await pool.query('SELECT active_device_id FROM workspaces WHERE id = ?', [workspaceId]);
-        if (workspaces.length > 0 && workspaces[0].active_device_id === parseInt(id, 10)) {
-            await pool.query('UPDATE workspaces SET active_device_id = NULL WHERE id = ?', [workspaceId]);
+        const [devices] = await pool.query('SELECT id FROM mikrotik_devices WHERE id = ? AND workspace_id = ?', [deviceId, workspaceId]);
+        if (devices.length === 0) {
+            const [owner] = await pool.query('SELECT workspace_id FROM mikrotik_devices WHERE id = ?', [deviceId]);
+            console.warn(`[Device Controller] deleteDevice id=${deviceId} gagal: user ${req.user.id} (role=${req.user.role}, super_admin=${req.user.is_super_admin}) di workspace ${workspaceId}, perangkat milik workspace ${owner[0]?.workspace_id ?? 'TIDAK ADA'}`);
+            return res.status(404).json({ message: 'Perangkat tidak ditemukan atau Anda tidak punya izin.' });
         }
+
+        // Hentikan monitor dulu agar tidak ada log baru yang ditulis untuk perangkat ini
+        backgroundMonitor.stopDeviceMonitor(workspaceId, deviceId);
+        mikrotikStore.clear(workspaceId, deviceId);
+
+        for (const table of DEVICE_STATE_TABLES) {
+            await pool.query(`DELETE FROM ${table} WHERE workspace_id = ? AND device_id = ?`, [workspaceId, deviceId]);
+        }
+        await pool.query('UPDATE workspaces SET active_device_id = NULL WHERE id = ? AND active_device_id = ?', [workspaceId, deviceId]);
+
+        // Hapus baris perangkat tanpa ON DELETE CASCADE ke tabel log. Cascade jutaan baris dalam satu
+        // transaksi membuat request menggantung berlama-lama dan mengunci tabel log; log dibersihkan bertahap di bawah.
+        const conn = await pool.getConnection();
+        try {
+            await conn.query('SET foreign_key_checks = 0');
+            await conn.query('DELETE FROM mikrotik_devices WHERE id = ? AND workspace_id = ?', [deviceId, workspaceId]);
+        } finally {
+            try {
+                await conn.query('SET foreign_key_checks = 1');
+                conn.release();
+            } catch (resetError) {
+                // Jangan kembalikan koneksi dengan foreign_key_checks mati ke pool
+                conn.destroy();
+            }
+        }
+
         res.status(200).json({ message: 'Perangkat berhasil dihapus.' });
+
+        purgeDeviceLogs(workspaceId, deviceId).catch(err => {
+            console.error(`[Device Controller] Pembersihan log device ${deviceId} gagal: ${err.message}`);
+        });
     } catch (error) {
+        console.error(`[Device Controller] Error deleteDevice id=${deviceId} workspace=${workspaceId}:`, error);
         res.status(500).json({ message: 'Gagal menghapus perangkat.', error: error.message });
     }
 };

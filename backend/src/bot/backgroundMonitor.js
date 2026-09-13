@@ -571,7 +571,7 @@ async function startPhysicalMonitor(group, broadcastCallback) {
             // Kompensasi delay eksekusi: Pastikan script berjalan TEPAT setiap 3 detik, bukan 3 detik + waktu eksekusi runCycle
             const elapsed = Date.now() - cycleStart;
             const nextTimeout = Math.max(100, POLLING_INTERVAL_MS - elapsed);
-            state.timeoutId = setTimeout(() => state.runCycle(), nextTimeout);
+            if (!state.stopped) state.timeoutId = setTimeout(() => state.runCycle(), nextTimeout);
         }
     };
 
@@ -636,6 +636,9 @@ function stopDeviceMonitor(workspaceId, deviceId) {
         
         // Jika tidak ada instance lagi yang menggunakan router ini, matikan monitor physical-nya
         if (state.group.devices.length === 0) {
+            // Loop polling memakai setTimeout berantai, jadi hentikan timer + tandai agar siklus berjalan tidak menjadwal ulang
+            state.stopped = true;
+            if (state.timeoutId) clearTimeout(state.timeoutId);
             if (state.intervalId) clearInterval(state.intervalId);
             physicalMonitors.delete(physicalKey);
             console.log(`[Pemantauan] Menghentikan pemantauan FISIK untuk router ${physicalKey}`);

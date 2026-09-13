@@ -60,8 +60,19 @@ export const DeviceSelector: React.FC<DeviceSelectorProps> = ({
             ? `active-device-${user.workspace_id}` 
             : `dashboard-devices-${user.workspace_id}`;
           
-          const savedLocalDevices = localStorage.getItem(savedKey);
-          if (selectedDeviceIds.length === 0 && !savedLocalDevices && devicesData.length > 0) {
+          // Pilihan tersimpan dianggap tidak ada jika semua ID-nya sudah tidak ada di daftar perangkat
+          let hasValidSaved = false;
+          try {
+            const parsed = JSON.parse(localStorage.getItem(savedKey) || 'null');
+            const exists = (id: unknown) => devicesData.some((d: Device) => d.id === id);
+            if (Array.isArray(parsed)) {
+              // [] berarti user sengaja mengosongkan pilihan, jangan pilih ulang otomatis
+              hasValidSaved = parsed.length === 0 || parsed.some(exists);
+            } else if (parsed !== null) {
+              hasValidSaved = exists(parsed);
+            }
+          } catch { /* abaikan data tersimpan yang rusak */ }
+          if (selectedDeviceIds.length === 0 && !hasValidSaved && devicesData.length > 0) {
             if (onDeviceChange) {
               // Single-select mode: default ke device pertama saja
               onDevicesChange([devicesData[0].id]);
