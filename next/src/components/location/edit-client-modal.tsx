@@ -38,11 +38,34 @@ const EditClientModal = ({ isOpen, onClose, onSuccess, client, assets = [], nocW
   const odpDropdownRef = React.useRef<HTMLDivElement>(null);
   const apiUrl = process.env.NEXT_PUBLIC_API_BASE_URL;
 
-  // Device info
+  // Device & Secret Pointing info
+  const [devices, setDevices] = useState<any[]>([]);
+  const [selectedDeviceId, setSelectedDeviceId] = useState<number | null>(null);
   const [deviceName, setDeviceName] = useState<string | null>(null);
+  const [isChangingSecret, setIsChangingSecret] = useState(false);
+  const [selectedSecret, setSelectedSecret] = useState('');
+  const [secretSearchQuery, setSecretSearchQuery] = useState('');
+  const [isSecretDropdownOpen, setIsSecretDropdownOpen] = useState(false);
+  const secretDropdownRef = React.useRef<HTMLDivElement>(null);
+  const [availableSecrets, setAvailableSecrets] = useState<any[]>([]);
+  const [secretsLoading, setSecretsLoading] = useState(false);
 
   // Filter assets untuk hanya ODP
   const odpAssets = assets.filter(a => a.type === 'ODP');
+
+  const loadSecretsForDevice = (devId: number | null) => {
+    if (!client) return;
+    setSecretsLoading(true);
+    const targetWorkspaceId = nocWorkspaceId || "";
+    const devQuery = devId ? `&deviceId=${devId}` : '';
+    apiFetch(`${apiUrl}/api/clients/unlinked-secrets?currentClientId=${client.id}${devQuery}&workspaceId=${targetWorkspaceId}`)
+      .then(res => res.ok ? res.json() : [])
+      .then((data: any[]) => {
+        setAvailableSecrets(Array.isArray(data) ? data : []);
+      })
+      .catch(() => setAvailableSecrets([]))
+      .finally(() => setSecretsLoading(false));
+  };
 
   useEffect(() => {
     if (client && isOpen) {
@@ -57,19 +80,26 @@ const EditClientModal = ({ isOpen, onClose, onSuccess, client, assets = [], nocW
       setOdpSearchQuery(client.odp_name || '');
       setError('');
       setDeviceName(null);
+      setIsChangingSecret(false);
+      setSelectedSecret(client.pppoe_secret_name || '');
+      setSecretSearchQuery('');
+      setIsSecretDropdownOpen(false);
 
-      // Fetch device name jika client punya device_id
       const deviceId = (client as any).device_id;
-      if (deviceId) {
-        const targetWorkspaceId = nocWorkspaceId || "";
-        apiFetch(`${apiUrl}/api/devices?workspaceId=${targetWorkspaceId}`)
-          .then(res => res.ok ? res.json() : [])
-          .then((devices: any[]) => {
-            const device = devices.find((d: any) => d.id === deviceId);
-            setDeviceName(device ? `${device.name} (${device.host})` : `Device #${deviceId}`);
-          })
-          .catch(() => setDeviceName(`Device #${deviceId}`));
-      }
+      setSelectedDeviceId(deviceId || null);
+
+      const targetWorkspaceId = nocWorkspaceId || "";
+      apiFetch(`${apiUrl}/api/devices?workspaceId=${targetWorkspaceId}`)
+        .then(res => res.ok ? res.json() : [])
+        .then((devicesList: any[]) => {
+          const list = Array.isArray(devicesList) ? devicesList : [];
+          setDevices(list);
+          if (deviceId) {
+            const dev = list.find((d: any) => d.id === deviceId);
+            setDeviceName(dev ? `${dev.name} (${dev.host})` : `Device #${deviceId}`);
+          }
+        })
+        .catch(() => setDevices([]));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [client?.id, isOpen]);
@@ -79,6 +109,9 @@ const EditClientModal = ({ isOpen, onClose, onSuccess, client, assets = [], nocW
     const handleClickOutside = (event: MouseEvent) => {
       if (odpDropdownRef.current && !odpDropdownRef.current.contains(event.target as Node)) {
         setIsOdpDropdownOpen(false);
+      }
+      if (secretDropdownRef.current && !secretDropdownRef.current.contains(event.target as Node)) {
+        setIsSecretDropdownOpen(false);
       }
     };
     document.addEventListener('mousedown', handleClickOutside);
@@ -139,7 +172,10 @@ const EditClientModal = ({ isOpen, onClose, onSuccess, client, assets = [], nocW
     setError('');
 
     const formDataToSubmit = new FormData();
-    formDataToSubmit.append('pppoe_secret_name', client.pppoe_secret_name);
+    formDataToSubmit.append('pppoe_secret_name', selectedSecret || client.pppoe_secret_name);
+    if (selectedDeviceId) {
+      formDataToSubmit.append('device_id', selectedDeviceId.toString());
+    }
     if (clientName) formDataToSubmit.append('client_name', clientName);
     if (whatsappNumber) formDataToSubmit.append('whatsapp_number', whatsappNumber);
     formDataToSubmit.append('latitude', lat.toString());
@@ -238,17 +274,141 @@ const EditClientModal = ({ isOpen, onClose, onSuccess, client, assets = [], nocW
               </button>
             </header>
             <div className="p-6 space-y-4">
+              {/* PPPoE Secret with Pointing Ulang */}
               <div>
-                <label className="block text-sm font-medium mb-2">PPPoE Secret</label>
-                <Input
-                  value={client.pppoe_secret_name}
-                  disabled
-                  className="bg-secondary"
-                />
-                {deviceName && (
-                  <p className="text-xs text-muted-foreground mt-1 flex items-center gap-1">
-                    <Server size={11} /> MikroTik: <span className="font-medium">{deviceName}</span>
-                  </p>
+                {!isChangingSecret ? (
+                  <div>
+                    <div className="flex items-center justify-between mb-2">
+                      <label className="block text-sm font-medium">PPPoE Secret</label>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsChangingSecret(true);
+                          const initialDevId = selectedDeviceId || (devices[0]?.id ?? null);
+                          if (!selectedDeviceId && initialDevId) setSelectedDeviceId(initialDevId);
+                          loadSecretsForDevice(initialDevId);
+                        }}
+                        className="text-xs text-primary hover:underline font-medium cursor-pointer"
+                      >
+                        Ganti / Pointing Ulang
+                      </button>
+                    </div>
+                    <Input
+                      value={selectedSecret || client.pppoe_secret_name}
+                      disabled
+                      className="bg-secondary"
+                    />
+                    {deviceName && (
+                      <p className="text-xs text-muted-foreground mt-1 flex items-center gap-1">
+                        <Server size={11} /> MikroTik: <span className="font-medium">{deviceName}</span>
+                      </p>
+                    )}
+                  </div>
+                ) : (
+                  <div className="p-3 bg-secondary/30 rounded-xl border border-primary/20 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <label className="block text-xs font-semibold text-primary uppercase tracking-wider">
+                        Pointing Ulang Secret
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsChangingSecret(false);
+                          setSelectedSecret(client.pppoe_secret_name);
+                          setSecretSearchQuery('');
+                          setIsSecretDropdownOpen(false);
+                        }}
+                        className="text-xs text-muted-foreground hover:text-foreground cursor-pointer"
+                      >
+                        Batal
+                      </button>
+                    </div>
+
+                    {devices.length > 1 && (
+                      <div>
+                        <label className="block text-xs font-medium text-muted-foreground mb-1">Pilih Router MikroTik</label>
+                        <select
+                          value={selectedDeviceId ?? ''}
+                          onChange={e => {
+                            const devId = e.target.value ? parseInt(e.target.value) : null;
+                            setSelectedDeviceId(devId);
+                            loadSecretsForDevice(devId);
+                          }}
+                          className="w-full p-2 text-sm rounded-md bg-input border"
+                        >
+                          <option value="">-- Pilih MikroTik --</option>
+                          {devices.map(d => (
+                            <option key={d.id} value={d.id}>
+                              {d.name} ({d.host})
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
+
+                    <div>
+                      <label className="block text-xs font-medium text-muted-foreground mb-1">Cari / Pilih Secret Baru</label>
+                      {secretsLoading ? (
+                        <div className="flex items-center gap-2 p-2 text-muted-foreground text-sm">
+                          <Loader2 size={14} className="animate-spin" /> Memuat daftar secrets...
+                        </div>
+                      ) : (
+                        <div ref={secretDropdownRef} className="relative">
+                          <div className="relative">
+                            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground" size={15} />
+                            <input
+                              type="text"
+                              value={secretSearchQuery || selectedSecret}
+                              onChange={(e) => {
+                                setSecretSearchQuery(e.target.value);
+                                setSelectedSecret(e.target.value);
+                                setIsSecretDropdownOpen(true);
+                              }}
+                              onFocus={() => setIsSecretDropdownOpen(true)}
+                              placeholder="Ketik atau pilih secret..."
+                              className="w-full p-2 pl-9 pr-8 rounded-md bg-input border text-sm"
+                            />
+                            <ChevronDown
+                              className="absolute right-2.5 top-1/2 transform -translate-y-1/2 text-muted-foreground cursor-pointer"
+                              size={15}
+                              onClick={() => setIsSecretDropdownOpen(prev => !prev)}
+                            />
+                          </div>
+
+                          {isSecretDropdownOpen && (
+                            <div className="absolute z-50 w-full mt-1 bg-card border rounded-md shadow-lg max-h-48 overflow-y-auto">
+                              {availableSecrets.length === 0 ? (
+                                <div className="px-3 py-2 text-sm text-muted-foreground">Tidak ada secret tersedia di router</div>
+                              ) : (
+                                availableSecrets
+                                  .filter(s => (s.name || '').toLowerCase().includes((secretSearchQuery || '').toLowerCase()))
+                                  .map(secret => (
+                                    <div
+                                      key={secret.name}
+                                      className={`px-3 py-2 cursor-pointer hover:bg-secondary text-sm flex items-center justify-between ${selectedSecret === secret.name ? 'bg-secondary font-medium' : ''}`}
+                                      onClick={() => {
+                                        setSelectedSecret(secret.name);
+                                        setSecretSearchQuery(secret.name);
+                                        setIsSecretDropdownOpen(false);
+                                        if (secret.device_id) setSelectedDeviceId(secret.device_id);
+                                        if (secret.connected_odp_id) setOdpAssetId(secret.connected_odp_id.toString());
+                                      }}
+                                    >
+                                      <span>{secret.name}</span>
+                                      <span className="text-xs text-muted-foreground">{secret.profile || ''}</span>
+                                    </div>
+                                  ))
+                              )}
+                              {availableSecrets.length > 0 &&
+                                availableSecrets.filter(s => (s.name || '').toLowerCase().includes((secretSearchQuery || '').toLowerCase()).length === 0 && (
+                                  <div className="px-3 py-2 text-sm text-muted-foreground">Tidak ada hasil untuk &quot;{secretSearchQuery}&quot;</div>
+                                )}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  </div>
                 )}
               </div>
 

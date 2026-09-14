@@ -151,89 +151,61 @@ exports.getClients = async (req, res) => {
     }
 };
 
-// Check which clients are orphaned (PPPoE secret no longer exists on their respective device)
+// Check which clients are orphaned (PPPoE secret no longer exists on any active device in workspace)
 exports.orphanCheck = async (req, res) => {
     const { workspace_id } = req.user;
     try {
-        // Ambil semua client beserta device_id-nya
+        // 1. Ambil semua secret yang ada di workspace ini dari cache pppoe_secrets
+        const [allSecrets] = await pool.query(
+            'SELECT name, device_id FROM pppoe_secrets WHERE workspace_id = ?',
+            [workspace_id]
+        );
+
+        // Jika cache pppoe_secrets kosong (misal baru start/reconnect), jangan tandai false orphan
+        if (allSecrets.length === 0) {
+            return res.status(200).json({ orphanedIds: [] });
+        }
+
+        // Map lowercase trimmed secret name -> device_id
+        const secretDeviceMap = new Map();
+        allSecrets.forEach(s => {
+            const key = (s.name || '').trim().toLowerCase();
+            if (key && !secretDeviceMap.has(key)) {
+                secretDeviceMap.set(key, s.device_id);
+            }
+        });
+
+        // 2. Ambil semua client di workspace ini
         const [clients] = await pool.query(
             'SELECT id, pppoe_secret_name, device_id FROM clients WHERE workspace_id = ?',
             [workspace_id]
         );
 
-        if (clients.length === 0) {
-            return res.status(200).json({ orphanedIds: [] });
+        const orphanedIds = [];
+        const toHeal = [];
+
+        for (const client of clients) {
+            const clientSecretKey = (client.pppoe_secret_name || '').trim().toLowerCase();
+            const matchedDeviceId = secretDeviceMap.get(clientSecretKey);
+
+            if (matchedDeviceId !== undefined) {
+                // Secret ADA di salah satu router workspace ini!
+                // Jika device_id client berbeda dengan router tempat secret berada, jadwalkan heal
+                if (client.device_id !== matchedDeviceId) {
+                    toHeal.push({ id: client.id, device_id: matchedDeviceId });
+                }
+            } else {
+                // Secret benar-benar tidak ditemukan di router manapun
+                orphanedIds.push(client.id);
+            }
         }
 
-        // Kelompokkan client berdasarkan device_id
-        const byDevice = new Map(); // device_id (or null) -> [client, ...]
-        clients.forEach(client => {
-            const key = client.device_id || 'null';
-            if (!byDevice.has(key)) byDevice.set(key, []);
-            byDevice.get(key).push(client);
-        });
-
-        const orphanedIds = [];
-
-        // Cek setiap group device secara paralel
-        const checks = Array.from(byDevice.entries()).map(async ([key, deviceClients]) => {
-            if (key === 'null') {
-                // Client tanpa device_id: cek terhadap semua secrets di workspace
-                try {
-                    const [allSecrets] = await pool.query(
-                        'SELECT name FROM pppoe_secrets WHERE workspace_id = ?',
-                        [workspace_id]
-                    );
-                    if (allSecrets.length > 0) {
-                        const secretNames = new Set(allSecrets.map(s => s.name));
-                        deviceClients.forEach(client => {
-                            if (!secretNames.has(client.pppoe_secret_name)) {
-                                orphanedIds.push(client.id);
-                            }
-                        });
-                    }
-                } catch { /* silent */ }
-                return;
+        // Jalankan auto-heal device_id di background jika ada yang belum sinkron
+        if (toHeal.length > 0) {
+            for (const h of toHeal) {
+                await pool.query('UPDATE clients SET device_id = ? WHERE id = ?', [h.device_id, h.id]).catch(() => {});
             }
-
-            const deviceId = parseInt(key);
-            try {
-                // Baca dari database real-time cache (pppoe_secrets)
-                const [secrets] = await pool.query(
-                    'SELECT name FROM pppoe_secrets WHERE workspace_id = ? AND device_id = ?',
-                    [workspace_id, deviceId]
-                );
-
-                // Safety guard: jika kosong, periksa apakah secret ada di device lain di workspace ini
-                if (secrets.length === 0) {
-                    const [otherSecrets] = await pool.query(
-                        'SELECT name FROM pppoe_secrets WHERE workspace_id = ?',
-                        [workspace_id]
-                    );
-                    if (otherSecrets.length > 0) {
-                        const otherNames = new Set(otherSecrets.map(s => s.name));
-                        deviceClients.forEach(client => {
-                            if (!otherNames.has(client.pppoe_secret_name)) {
-                                orphanedIds.push(client.id);
-                            }
-                        });
-                    }
-                    return;
-                }
-
-                const secretNames = new Set(secrets.map(s => s.name));
-                deviceClients.forEach(client => {
-                    if (!secretNames.has(client.pppoe_secret_name)) {
-                        orphanedIds.push(client.id);
-                    }
-                });
-            } catch (err) {
-                // Jika device offline/error, skip — jangan anggap semua client orphan
-                console.warn(`[ORPHAN CHECK] Device ${deviceId} error (skipped):`, err.message);
-            }
-        });
-
-        await Promise.all(checks);
+        }
 
         res.status(200).json({ orphanedIds });
     } catch (error) {
@@ -245,12 +217,12 @@ exports.orphanCheck = async (req, res) => {
 // Get unlinked PPPoE secrets (secrets that are not yet clients)
 exports.getUnlinkedPppoeSecrets = async (req, res) => {
     let { workspace_id } = req.user;
-    
-    
     const deviceId = req.query.deviceId ? parseInt(req.query.deviceId) : null;
+    const currentClientId = req.query.currentClientId ? parseInt(req.query.currentClientId) : null;
+
     try {
         // Ambil secrets dari database (diisi oleh backgroundMonitor)
-        let query = 'SELECT name, profile, remote_address as `remote-address` FROM pppoe_secrets WHERE workspace_id = ? AND disabled = 0';
+        let query = 'SELECT name, profile, remote_address as `remote-address`, device_id FROM pppoe_secrets WHERE workspace_id = ? AND disabled = 0';
         let params = [workspace_id];
         
         if (deviceId) {
@@ -260,13 +232,16 @@ exports.getUnlinkedPppoeSecrets = async (req, res) => {
         
         const [allSecrets] = await pool.query(query, params);
 
-        // Get all existing clients
-        const [existingClients] = await pool.query(
-            'SELECT pppoe_secret_name FROM clients WHERE workspace_id = ?',
-            [workspace_id]
-        );
+        // Get all existing clients (kecuali client yang sedang diedit jika currentClientId disediakan)
+        let clientQuery = 'SELECT pppoe_secret_name FROM clients WHERE workspace_id = ?';
+        let clientParams = [workspace_id];
+        if (currentClientId) {
+            clientQuery += ' AND id != ?';
+            clientParams.push(currentClientId);
+        }
+        const [existingClients] = await pool.query(clientQuery, clientParams);
 
-        const existingClientNames = new Set(existingClients.map(c => c.pppoe_secret_name));
+        const existingClientNames = new Set(existingClients.map(c => (c.pppoe_secret_name || '').trim().toLowerCase()));
 
         // Get ODP connections untuk setiap PPPoE secret
         const [odpConnections] = await pool.query(
@@ -282,10 +257,9 @@ exports.getUnlinkedPppoeSecrets = async (req, res) => {
 
         // Filter out secrets that are already clients, but include odp_asset_id if connected
         const unlinkedSecrets = allSecrets
-            .filter(secret => !existingClientNames.has(secret.name))
+            .filter(secret => !existingClientNames.has((secret.name || '').trim().toLowerCase()))
             .map(secret => {
                 const secretData = { ...secret };
-                // Jika PPPoE secret sudah terhubung ke ODP, tambahkan informasi ODP
                 if (odpConnectionMap.has(secret.name)) {
                     secretData.connected_odp_id = odpConnectionMap.get(secret.name);
                 }
@@ -508,6 +482,38 @@ exports.updateClient = async (req, res) => {
             values.push(whatsapp_number);
         }
 
+        // Handle pppoe_secret_name change (re-pointing client to another secret)
+        const newSecretName = pppoe_secret_name ? pppoe_secret_name.trim() : null;
+        let targetDeviceId = req.body.device_id ? parseInt(req.body.device_id) : null;
+
+        if (newSecretName && newSecretName !== client.pppoe_secret_name) {
+            const [dup] = await pool.query(
+                'SELECT id FROM clients WHERE workspace_id = ? AND pppoe_secret_name = ? AND id != ?',
+                [workspace_id, newSecretName, id]
+            );
+            if (dup.length > 0) {
+                return res.status(409).json({ message: `Secret "${newSecretName}" sudah digunakan oleh client lain.` });
+            }
+
+            if (!targetDeviceId) {
+                const [secRows] = await pool.query(
+                    'SELECT device_id FROM pppoe_secrets WHERE workspace_id = ? AND name = ? LIMIT 1',
+                    [workspace_id, newSecretName]
+                );
+                if (secRows.length > 0) {
+                    targetDeviceId = secRows[0].device_id;
+                }
+            }
+
+            updates.push('pppoe_secret_name = ?');
+            values.push(newSecretName);
+        }
+
+        if (targetDeviceId && targetDeviceId !== client.device_id) {
+            updates.push('device_id = ?');
+            values.push(targetDeviceId);
+        }
+
         // Tentukan foto lama untuk dihapus; file baru dihapus setelah commit (bukan sebelum)
         let oldPhotoToDelete = null;
         if (req.file) {
@@ -534,12 +540,22 @@ exports.updateClient = async (req, res) => {
 
         // Rewiring ODP + update client dalam satu transaction agar tidak ada state setengah jalan
         await withTransaction(async (conn) => {
+            const activeSecretName = newSecretName || client.pppoe_secret_name;
+
+            // Jika secret berubah nama, update relasi lama di odp_user_connections
+            if (newSecretName && newSecretName !== client.pppoe_secret_name) {
+                await conn.query(
+                    'UPDATE odp_user_connections SET pppoe_secret_name = ? WHERE workspace_id = ? AND pppoe_secret_name = ?',
+                    [newSecretName, workspace_id, client.pppoe_secret_name]
+                );
+            }
+
             if (odp_asset_id !== undefined) {
                 if (odp_asset_id === null) {
                     // Unlink from ODP + reset kabel karena client tidak punya parent lagi
                     await conn.query(
                         'DELETE FROM odp_user_connections WHERE workspace_id = ? AND asset_id = ? AND pppoe_secret_name = ?',
-                        [workspace_id, oldOdpId, client.pppoe_secret_name]
+                        [workspace_id, oldOdpId, activeSecretName]
                     );
                     await conn.query(
                         'UPDATE clients SET connection_path = NULL WHERE id = ? AND workspace_id = ?',
@@ -550,7 +566,7 @@ exports.updateClient = async (req, res) => {
                     if (oldOdpId) {
                         await conn.query(
                             'DELETE FROM odp_user_connections WHERE workspace_id = ? AND asset_id = ? AND pppoe_secret_name = ?',
-                            [workspace_id, oldOdpId, client.pppoe_secret_name]
+                            [workspace_id, oldOdpId, activeSecretName]
                         );
                     }
 
@@ -565,13 +581,13 @@ exports.updateClient = async (req, res) => {
                     // Add to new ODP connection if not exists
                     const [existingConnection] = await conn.query(
                         'SELECT id FROM odp_user_connections WHERE workspace_id = ? AND asset_id = ? AND pppoe_secret_name = ?',
-                        [workspace_id, odp_asset_id, client.pppoe_secret_name]
+                        [workspace_id, odp_asset_id, activeSecretName]
                     );
 
                     if (existingConnection.length === 0) {
                         await conn.query(
                             'INSERT INTO odp_user_connections (workspace_id, asset_id, pppoe_secret_name) VALUES (?, ?, ?)',
-                            [workspace_id, odp_asset_id, client.pppoe_secret_name]
+                            [workspace_id, odp_asset_id, activeSecretName]
                         );
                     }
                 }

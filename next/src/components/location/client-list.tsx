@@ -58,7 +58,7 @@ const ClientList = ({ clients, loading, selectedClientId, onClientSelect, onClie
   }, [pppoeSecrets?.length]);
 
   const existingSecretsSet = React.useMemo(() => {
-    return new Set(pppoeSecrets?.map((s: any) => s.name) || []);
+    return new Set(pppoeSecrets?.map((s: any) => (s.name || '').trim().toLowerCase()) || []);
   }, [pppoeSecrets]);
 
   const filteredClients = React.useMemo(() => {
@@ -77,8 +77,10 @@ const ClientList = ({ clients, loading, selectedClientId, onClientSelect, onClie
 
     if (secretsReady) {
       result.sort((a, b) => {
-        const aIsOrphan = !existingSecretsSet.has(a.pppoe_secret_name);
-        const bIsOrphan = !existingSecretsSet.has(b.pppoe_secret_name);
+        const aName = (a.pppoe_secret_name || '').trim().toLowerCase();
+        const bName = (b.pppoe_secret_name || '').trim().toLowerCase();
+        const aIsOrphan = orphanedIds ? orphanedIds.has(a.id) : !existingSecretsSet.has(aName);
+        const bIsOrphan = orphanedIds ? orphanedIds.has(b.id) : !existingSecretsSet.has(bName);
         if (aIsOrphan && !bIsOrphan) return -1;
         if (!aIsOrphan && bIsOrphan) return 1;
         return a.pppoe_secret_name.localeCompare(b.pppoe_secret_name);
@@ -88,7 +90,7 @@ const ClientList = ({ clients, loading, selectedClientId, onClientSelect, onClie
     }
 
     return result;
-  }, [clients, searchQuery, secretsReady, existingSecretsSet]);
+  }, [clients, searchQuery, secretsReady, existingSecretsSet, orphanedIds]);
 
   const [isCollapsed, setIsCollapsed] = useState(true);
 
@@ -343,7 +345,7 @@ const ClientList = ({ clients, loading, selectedClientId, onClientSelect, onClie
                                 ORPHAN
                               </span>
                             )
-                            : secretsReady && !existingSecretsSet.has(client.pppoe_secret_name) &&
+                            : secretsReady && !existingSecretsSet.has((client.pppoe_secret_name || '').trim().toLowerCase()) &&
                               (!currentDeviceId || !(client as any).device_id || (client as any).device_id === currentDeviceId) && (
                               <span className="flex-shrink-0 px-1.5 py-0.5 rounded text-[10px] font-bold bg-destructive text-destructive-foreground">
                                 ORPHAN
