@@ -245,6 +245,10 @@ const EditClientModal = ({ isOpen, onClose, onSuccess, client, assets = [], nocW
     asset.name.toLowerCase().includes(odpSearchQuery.toLowerCase())
   );
 
+  const filteredSecrets = availableSecrets.filter(s =>
+    (s.name || '').toLowerCase().includes((secretSearchQuery || '').toLowerCase())
+  );
+
   const selectedOdp = odpAssets.find(a => a.id.toString() === odpAssetId);
 
   return (
@@ -379,30 +383,26 @@ const EditClientModal = ({ isOpen, onClose, onSuccess, client, assets = [], nocW
                             <div className="absolute z-50 w-full mt-1 bg-card border rounded-md shadow-lg max-h-48 overflow-y-auto">
                               {availableSecrets.length === 0 ? (
                                 <div className="px-3 py-2 text-sm text-muted-foreground">Tidak ada secret tersedia di router</div>
+                              ) : filteredSecrets.length === 0 ? (
+                                <div className="px-3 py-2 text-sm text-muted-foreground">Tidak ada hasil pencarian</div>
                               ) : (
-                                availableSecrets
-                                  .filter(s => (s.name || '').toLowerCase().includes((secretSearchQuery || '').toLowerCase()))
-                                  .map(secret => (
-                                    <div
-                                      key={secret.name}
-                                      className={`px-3 py-2 cursor-pointer hover:bg-secondary text-sm flex items-center justify-between ${selectedSecret === secret.name ? 'bg-secondary font-medium' : ''}`}
-                                      onClick={() => {
-                                        setSelectedSecret(secret.name);
-                                        setSecretSearchQuery(secret.name);
-                                        setIsSecretDropdownOpen(false);
-                                        if (secret.device_id) setSelectedDeviceId(secret.device_id);
-                                        if (secret.connected_odp_id) setOdpAssetId(secret.connected_odp_id.toString());
-                                      }}
-                                    >
-                                      <span>{secret.name}</span>
-                                      <span className="text-xs text-muted-foreground">{secret.profile || ''}</span>
-                                    </div>
-                                  ))
+                                filteredSecrets.map(secret => (
+                                  <div
+                                    key={secret.name}
+                                    className={`px-3 py-2 cursor-pointer hover:bg-secondary text-sm flex items-center justify-between ${selectedSecret === secret.name ? 'bg-secondary font-medium' : ''}`}
+                                    onClick={() => {
+                                      setSelectedSecret(secret.name);
+                                      setSecretSearchQuery(secret.name);
+                                      setIsSecretDropdownOpen(false);
+                                      if (secret.device_id) setSelectedDeviceId(secret.device_id);
+                                      if (secret.connected_odp_id) setOdpAssetId(secret.connected_odp_id.toString());
+                                    }}
+                                  >
+                                    <span>{secret.name}</span>
+                                    <span className="text-xs text-muted-foreground">{secret.profile || ''}</span>
+                                  </div>
+                                ))
                               )}
-                              {availableSecrets.length > 0 &&
-                                availableSecrets.filter(s => (s.name || '').toLowerCase().includes((secretSearchQuery || '').toLowerCase()).length === 0 && (
-                                  <div className="px-3 py-2 text-sm text-muted-foreground">Tidak ada hasil untuk &quot;{secretSearchQuery}&quot;</div>
-                                )}
                             </div>
                           )}
                         </div>
