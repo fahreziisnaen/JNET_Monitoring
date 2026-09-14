@@ -67,7 +67,6 @@ const LocationManager: React.FC<LocationManagerProps> = ({ isNocMode = false, no
   const nocWorkspaceIds = useMemo(() => nocWorkspaces.map(w => w.id), [nocWorkspaces]);
   usePageTitle(isNocMode ? '' : 'Peta Lokasi');
   const [activeFilter, setActiveFilter] = useState('all');
-  const [selectedWorkspaceForNocAdd, setSelectedWorkspaceForNocAdd] = useState<number | null>(null);
 
   const { pppoeSecrets, allPppoeSecrets, isConnected, selectedDeviceId: currentDeviceId } = useMikrotik() || { pppoeSecrets: [], allPppoeSecrets: [], isConnected: false, selectedDeviceId: null };
 
@@ -1353,7 +1352,7 @@ const LocationManager: React.FC<LocationManagerProps> = ({ isNocMode = false, no
         isOpen={isAddModalOpen}
         onClose={() => setIsAddModalOpen(false)}
         onSuccess={handleSuccess}
-        nocWorkspaceId={isNocMode ? (selectedWorkspaceForNocAdd || nocWorkspaceIds[0]) : undefined}
+        nocWorkspaceId={isNocMode ? (targetNocWorkspaceId || nocWorkspaceIds[0]) : undefined}
       />
 
       {selectedAsset && (
@@ -1397,7 +1396,7 @@ const LocationManager: React.FC<LocationManagerProps> = ({ isNocMode = false, no
         onClose={() => setIsAddClientModalOpen(false)}
         onSuccess={handleSuccess}
         assets={assets}
-        nocWorkspaceId={isNocMode ? (selectedWorkspaceForNocAdd || nocWorkspaceIds[0]) : undefined}
+        nocWorkspaceId={isNocMode ? (targetNocWorkspaceId || nocWorkspaceIds[0]) : undefined}
       />
 
       {selectedClient && (

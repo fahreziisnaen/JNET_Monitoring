@@ -44,9 +44,8 @@ const AddClientModal = ({ isOpen, onClose, onSuccess, assets = [], nocWorkspaceI
   const [allSecrets, setAllSecrets] = useState<PppoeSecret[]>([]);
   const [secretsLoading, setSecretsLoading] = useState(false);
   const [secretsInitialized, setSecretsInitialized] = useState(false);
+  const [secretsError, setSecretsError] = useState('');
 
-  const [existingClients, setExistingClients] = useState<string[]>([]);
-  const [odpConnections, setOdpConnections] = useState<Map<string, number>>(new Map());
   const [selectedSecret, setSelectedSecret] = useState('');
   const [clientName, setClientName] = useState('');
   const [whatsappNumber, setWhatsappNumber] = useState('');
@@ -64,13 +63,13 @@ const AddClientModal = ({ isOpen, onClose, onSuccess, assets = [], nocWorkspaceI
   const [isSecretDropdownOpen, setIsSecretDropdownOpen] = useState(false);
   const secretDropdownRef = React.useRef<HTMLDivElement>(null);
   const apiUrl = process.env.NEXT_PUBLIC_API_BASE_URL;
+  const targetWorkspaceId = nocWorkspaceId || user?.workspace_id;
 
   // Filter assets untuk hanya ODP
   const odpAssets = assets.filter(a => a.type === 'ODP');
 
   // Fetch devices saat modal dibuka
   useEffect(() => {
-    const targetWorkspaceId = nocWorkspaceId || user?.workspace_id;
     if (isOpen && targetWorkspaceId) {
       setDevicesLoading(true);
       apiFetch(`${apiUrl}/api/devices?workspaceId=${targetWorkspaceId}`)
@@ -85,7 +84,7 @@ const AddClientModal = ({ isOpen, onClose, onSuccess, assets = [], nocWorkspaceI
         .catch(() => setDevices([]))
         .finally(() => setDevicesLoading(false));
     }
-  }, [isOpen, user?.workspace_id, apiUrl]);
+  }, [isOpen, targetWorkspaceId, apiUrl]);
 
   // Reset form saat modal dibuka
   useEffect(() => {
@@ -98,56 +97,51 @@ const AddClientModal = ({ isOpen, onClose, onSuccess, assets = [], nocWorkspaceI
       setOdpAssetId('');
       setSelectedPhoto(null);
       setPhotoPreview(null);
-      setAllSecrets([]);
       // Reset device selection if more than 1 device
       // (single device auto-select handled in devices fetch effect)
-
-      const targetWorkspaceId = nocWorkspaceId || user?.workspace_id;
-      if (!targetWorkspaceId) return;
-      setLoading(true);
-      apiFetch(`${apiUrl}/api/clients?workspaceId=${targetWorkspaceId}`)
-        .then(res => {
-          if (!res.ok) throw new Error('Gagal memuat data client.');
-          return res.json();
-        })
-        .then(clients => {
-          const clientNames = clients.map((c: any) => c.pppoe_secret_name);
-          const connectionsMap = new Map<string, number>();
-          clients.forEach((client: any) => {
-            if (client.odp_asset_id && client.pppoe_secret_name) {
-              connectionsMap.set(client.pppoe_secret_name, client.odp_asset_id);
-            }
-          });
-          setExistingClients(clientNames);
-          setOdpConnections(connectionsMap);
-        })
-        .catch(() => setError("Gagal memuat data client."))
-        .finally(() => setLoading(false));
     }
-  }, [isOpen, apiUrl, user?.workspace_id]);
+  }, [isOpen, user?.workspace_id]);
 
-  // Fetch PPPoE secrets saat device dipilih
+  // Fetch PPPoE secrets yang belum jadi client setiap modal dibuka / device diganti.
+  // Penyaringan dilakukan di backend dalam satu request agar tidak ada race dengan daftar client
+  // dan pencocokan nama sama dengan collation DB (case-insensitive).
   useEffect(() => {
-    if (!selectedDeviceId) {
+    if (!isOpen || !selectedDeviceId) {
       setAllSecrets([]);
       setSelectedSecret('');
+      setSecretsLoading(false);
       setSecretsInitialized(false);
+      setSecretsError('');
       return;
     }
 
-    const targetWorkspaceId = nocWorkspaceId || user?.workspace_id;
+    let cancelled = false;
     setSecretsLoading(true);
     setSecretsInitialized(false);
+    setSecretsError('');
     setSelectedSecret('');
-    apiFetch(`${apiUrl}/api/pppoe/secrets?deviceId=${selectedDeviceId}&workspaceId=${targetWorkspaceId || ""}`)
-      .then(res => res.ok ? res.json() : { secrets: [] })
-      .then(data => {
-        const secrets = Array.isArray(data.secrets) ? data.secrets : (Array.isArray(data) ? data : []);
-        setAllSecrets(secrets);
+    setSecretSearchQuery('');
+    apiFetch(`${apiUrl}/api/clients/unlinked-pppoe-secrets?deviceId=${selectedDeviceId}&includeDisabled=1&workspaceId=${targetWorkspaceId || ""}`)
+      .then(res => {
+        if (!res.ok) throw new Error('Gagal memuat PPPoE secrets.');
+        return res.json();
       })
-      .catch(() => setAllSecrets([]))
-      .finally(() => { setSecretsLoading(false); setSecretsInitialized(true); });
-  }, [selectedDeviceId, apiUrl]);
+      .then(data => {
+        if (!cancelled) setAllSecrets(Array.isArray(data) ? data : []);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setAllSecrets([]);
+        setSecretsError('Gagal memuat PPPoE secrets. Tutup lalu buka kembali untuk mencoba lagi.');
+      })
+      .finally(() => {
+        if (cancelled) return;
+        setSecretsLoading(false);
+        setSecretsInitialized(true);
+      });
+
+    return () => { cancelled = true; };
+  }, [isOpen, selectedDeviceId, targetWorkspaceId, apiUrl]);
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -172,29 +166,30 @@ const AddClientModal = ({ isOpen, onClose, onSuccess, assets = [], nocWorkspaceI
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isOpen, onClose]);
 
-  // Filter unlinked secrets (belum jadi client)
+  // Secrets dari backend sudah disaring (belum jadi client); di sini hanya dirapikan & diurutkan
   const unlinkedSecrets = useMemo(() => {
     if (!selectedDeviceId || allSecrets.length === 0) return [];
     const secretsArray = Array.isArray(allSecrets) ? allSecrets : [];
-    const existingClientsSet = new Set(existingClients);
 
     return secretsArray
-      .filter((secret: any) => secret.name && !existingClientsSet.has(secret.name))
+      .filter((secret: any) => secret.name)
       .map((secret: any) => ({
         name: secret.name || '',
-        connected_odp_id: odpConnections.get(secret.name)
+        connected_odp_id: secret.connected_odp_id
       } as PppoeSecret))
       .sort((a, b) => a.name.toLowerCase().localeCompare(b.name.toLowerCase()));
-  }, [allSecrets, selectedDeviceId, existingClients, odpConnections]);
+  }, [allSecrets, selectedDeviceId]);
 
-  // Tampilkan error jika tidak ada secret setelah fetch selesai
+  // Tampilkan error jika gagal memuat, atau tidak ada secret setelah fetch selesai
   useEffect(() => {
-    if (unlinkedSecrets.length === 0 && !secretsLoading && selectedDeviceId && secretsInitialized) {
+    if (secretsError) {
+      setError(secretsError);
+    } else if (unlinkedSecrets.length === 0 && !secretsLoading && selectedDeviceId && secretsInitialized) {
       setError("Semua PPPoE secrets sudah menjadi client atau tidak ada secret di device ini.");
     } else {
       setError('');
     }
-  }, [unlinkedSecrets, secretsLoading, selectedDeviceId, secretsInitialized]);
+  }, [unlinkedSecrets, secretsLoading, selectedDeviceId, secretsInitialized, secretsError]);
 
   // Filter ODP assets based on search query
   const filteredOdpAssets = useMemo(() => {
@@ -250,7 +245,6 @@ const AddClientModal = ({ isOpen, onClose, onSuccess, assets = [], nocWorkspaceI
     if (odpAssetId) formDataToSubmit.append('odp_asset_id', odpAssetId);
     if (selectedPhoto) formDataToSubmit.append('photo', selectedPhoto);
 
-    const targetWorkspaceId = nocWorkspaceId || user?.workspace_id;
     try {
       const res = await apiFetch(`${apiUrl}/api/clients?workspaceId=${targetWorkspaceId || ""}`, {
         method: 'POST',

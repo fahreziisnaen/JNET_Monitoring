@@ -58,7 +58,7 @@ const EditClientModal = ({ isOpen, onClose, onSuccess, client, assets = [], nocW
     setSecretsLoading(true);
     const targetWorkspaceId = nocWorkspaceId || "";
     const devQuery = devId ? `&deviceId=${devId}` : '';
-    apiFetch(`${apiUrl}/api/clients/unlinked-secrets?currentClientId=${client.id}${devQuery}&workspaceId=${targetWorkspaceId}`)
+    apiFetch(`${apiUrl}/api/clients/unlinked-pppoe-secrets?currentClientId=${client.id}${devQuery}&includeDisabled=1&workspaceId=${targetWorkspaceId}`)
       .then(res => res.ok ? res.json() : [])
       .then((data: any[]) => {
         setAvailableSecrets(Array.isArray(data) ? data : []);

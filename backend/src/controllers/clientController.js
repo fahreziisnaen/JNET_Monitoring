@@ -219,17 +219,23 @@ exports.getUnlinkedPppoeSecrets = async (req, res) => {
     let { workspace_id } = req.user;
     const deviceId = req.query.deviceId ? parseInt(req.query.deviceId) : null;
     const currentClientId = req.query.currentClientId ? parseInt(req.query.currentClientId) : null;
+    // Default tetap sembunyikan secret disabled (dipakai picker billing); peta lokasi mengirim includeDisabled=1
+    const includeDisabled = req.query.includeDisabled === '1' || req.query.includeDisabled === 'true';
 
     try {
         // Ambil secrets dari database (diisi oleh backgroundMonitor)
-        let query = 'SELECT name, profile, remote_address as `remote-address`, device_id FROM pppoe_secrets WHERE workspace_id = ? AND disabled = 0';
+        let query = 'SELECT name, profile, remote_address as `remote-address`, device_id FROM pppoe_secrets WHERE workspace_id = ?';
         let params = [workspace_id];
-        
+
+        if (!includeDisabled) {
+            query += ' AND disabled = 0';
+        }
+
         if (deviceId) {
             query += ' AND device_id = ?';
             params.push(deviceId);
         }
-        
+
         const [allSecrets] = await pool.query(query, params);
 
         // Get all existing clients (kecuali client yang sedang diedit jika currentClientId disediakan)
@@ -241,7 +247,10 @@ exports.getUnlinkedPppoeSecrets = async (req, res) => {
         }
         const [existingClients] = await pool.query(clientQuery, clientParams);
 
-        const existingClientNames = new Set(existingClients.map(c => (c.pppoe_secret_name || '').trim().toLowerCase()));
+        // Samakan dengan collation MySQL (case-insensitive, abaikan spasi di ujung)
+        const normalizeName = (name) => (name || '').trim().toLowerCase();
+
+        const existingClientNames = new Set(existingClients.map(c => normalizeName(c.pppoe_secret_name)));
 
         // Get ODP connections untuk setiap PPPoE secret
         const [odpConnections] = await pool.query(
@@ -252,16 +261,17 @@ exports.getUnlinkedPppoeSecrets = async (req, res) => {
         // Create map: pppoe_secret_name -> asset_id
         const odpConnectionMap = new Map();
         odpConnections.forEach(conn => {
-            odpConnectionMap.set(conn.pppoe_secret_name, conn.asset_id);
+            odpConnectionMap.set(normalizeName(conn.pppoe_secret_name), conn.asset_id);
         });
 
         // Filter out secrets that are already clients, but include odp_asset_id if connected
         const unlinkedSecrets = allSecrets
-            .filter(secret => !existingClientNames.has((secret.name || '').trim().toLowerCase()))
+            .filter(secret => !existingClientNames.has(normalizeName(secret.name)))
             .map(secret => {
                 const secretData = { ...secret };
-                if (odpConnectionMap.has(secret.name)) {
-                    secretData.connected_odp_id = odpConnectionMap.get(secret.name);
+                const key = normalizeName(secret.name);
+                if (odpConnectionMap.has(key)) {
+                    secretData.connected_odp_id = odpConnectionMap.get(key);
                 }
                 return secretData;
             });
