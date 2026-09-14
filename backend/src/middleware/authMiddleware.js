@@ -1,6 +1,7 @@
 const jwt = require('jsonwebtoken');
 const pool = require('../config/database');
 const { isSuperAdmin } = require('../utils/authUtils');
+const { getWorkspaceAccess } = require('../utils/workspaceAccess');
 
 const protect = async (req, res, next) => {
     let token;
@@ -37,8 +38,9 @@ const protect = async (req, res, next) => {
                 decoded = jwt.verify(token, process.env.JWT_SECRET);
             } catch (jwtError) {
                 // Jika gagal verify JWT, cek apakah token tersebut adalah API Key di database
+                // SELECT * agar tetap jalan di database yang belum menjalankan migrasi kolom is_global
                 const [apiKeys] = await pool.query(
-                    'SELECT id, workspace_id, name FROM api_keys WHERE key_string = ?',
+                    'SELECT * FROM api_keys WHERE key_string = ?',
                     [token]
                 );
 
@@ -61,6 +63,11 @@ const protect = async (req, res, next) => {
                     // Jika bukan JWT valid dan bukan API key, kembalikan error JWT
                     throw jwtError;
                 }
+            }
+
+            // Token ber-audience (tantangan 2FA, pelanggan billing) bukan token login dashboard
+            if (!isApiKey && decoded.aud) {
+                return res.status(401).json({ message: 'Tidak terotorisasi, token tidak valid.' });
             }
 
             if (!isApiKey) {
@@ -138,6 +145,7 @@ const protect = async (req, res, next) => {
                 displayName: dbUser.display_name,
                 profile_picture_url: profilePictureUrl,
                 workspace_id: dbUser.workspace_id,
+                home_workspace_id: dbUser.workspace_id,
                 whatsapp_number: dbUser.whatsapp_number,
                 role: dbUser.role || 'user',
                 is_owner: dbUser.is_owner,
@@ -147,29 +155,29 @@ const protect = async (req, res, next) => {
                 jti: dbUser.jti
             };
 
-            // --- ROLE-BASED WORKSPACE OVERRIDE ---
-            // If the user is a superadmin or NOC, and explicitly passed a workspaceId,
-            // check if they are allowed to access it.
-            const targetWorkspaceId = (req.body && req.body.workspaceId) || (req.query && req.query.workspaceId);
-            if (targetWorkspaceId && targetWorkspaceId != req.user.workspace_id) {
-                if (req.user.is_super_admin || req.user.is_global_key) {
-                    // SuperAdmin dan Global API Key dapat akses workspace manapun
-                    req.user.workspace_id = parseInt(targetWorkspaceId, 10);
-                } else if (req.user.is_noc) {
-                    // NOC can only access workspaces where they have been granted permission
-                    const [perms] = await pool.query(
-                        'SELECT id FROM noc_permissions WHERE user_id = ? AND workspace_id = ?',
-                        [req.user.id, targetWorkspaceId]
-                    );
-                    if (perms.length > 0) {
-                        req.user.workspace_id = parseInt(targetWorkspaceId, 10);
-                        console.log(`[Auth Middleware] NOC user ${req.user.id} workspace override to ${targetWorkspaceId} SUCCESS`);
-                    } else {
-                        console.warn(`[Auth Middleware] NOC user ${req.user.id} attempted unauthorized access to workspace ${targetWorkspaceId}`);
-                        // Optionally: return 403 here? Or just ignore the override and stay in their default workspace?
-                        // For NOC, if they explicitly sent a workspaceId and don't have permission, 403 is safer.
-                        return res.status(403).json({ message: 'Akses ditolak. Anda tidak memiliki izin untuk workspace ini.' });
-                    }
+            // --- WORKSPACE OVERRIDE ---
+            // Satu-satunya tempat pindah workspace. Controller wajib memakai req.user.workspace_id,
+            // jangan membaca workspaceId dari query/body sendiri.
+            const rawTarget = req.body?.workspaceId ?? req.body?.workspace_id ?? req.query?.workspaceId ?? req.query?.workspace_id;
+            const targetWorkspaceId = parseInt(rawTarget, 10);
+            if (!Number.isNaN(targetWorkspaceId) && targetWorkspaceId !== req.user.workspace_id) {
+                const access = await getWorkspaceAccess({
+                    userId: req.user.id,
+                    isSuperAdmin: req.user.is_super_admin,
+                    isGlobalKey: req.user.is_global_key,
+                }, targetWorkspaceId);
+
+                if (!access) {
+                    console.error(`[Auth Middleware] User ${req.user.id} ditolak mengakses workspace ${targetWorkspaceId}`);
+                    return res.status(403).json({ message: 'Akses ditolak. Anda tidak memiliki izin untuk workspace ini.' });
+                }
+
+                req.user.workspace_id = targetWorkspaceId;
+                req.user.is_owner = false;
+                if (access === 'noc') {
+                    // Akses lewat izin NOC selalu setara NOC, walau role asli user adalah admin
+                    req.user.role = 'noc';
+                    req.user.is_noc = true;
                 }
             }
 

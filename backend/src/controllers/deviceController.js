@@ -4,25 +4,19 @@ const backgroundMonitor = require('../bot/backgroundMonitor');
 
 exports.listDevices = async (req, res) => {
     const user = req.user;
-    let workspaceId = user.workspace_id;
-    
-    // Dukungan override workspaceId untuk NOC / Admin (hanya satu workspace)
-    if (req.query.workspaceId && (user.role === 'admin' || user.role === 'noc')) {
-        workspaceId = parseInt(req.query.workspaceId);
-    }
+    const workspaceId = user.workspace_id;
 
     try {
         if (user.is_super_admin) {
-            // Jika Superadmin minta workspace spesifik, filter berdasarkan itu.
+            // Jika Superadmin minta workspace spesifik (sudah divalidasi middleware), filter berdasarkan itu.
             // Jika tidak, baru tampilkan SEMUA.
             if (req.query.workspaceId) {
-                const targetWsId = parseInt(req.query.workspaceId);
                 const [devices] = await pool.query(`
-                    SELECT d.id, d.name, d.host, d.user, d.port, d.workspace_id, w.name as workspace_name 
+                    SELECT d.id, d.name, d.host, d.user, d.port, d.workspace_id, w.name as workspace_name
                     FROM mikrotik_devices d
                     JOIN workspaces w ON d.workspace_id = w.id
                     WHERE d.workspace_id = ?
-                `, [targetWsId]);
+                `, [workspaceId]);
                 return res.status(200).json(devices);
             }
 
@@ -123,11 +117,6 @@ exports.addDevice = async (req, res) => {
 exports.updateDevice = async (req, res) => {
     const { id } = req.params;
     let workspaceId = req.user.workspace_id;
-    
-    // Dukungan override workspaceId untuk NOC
-    if (req.query.workspaceId && (req.user.role === 'admin' || req.user.role === 'noc')) {
-        workspaceId = parseInt(req.query.workspaceId);
-    }
 
     const { name, host, user, password, port } = req.body;
     if (!name || !host || !user || !port) return res.status(400).json({ message: 'Semua field wajib diisi.' });
@@ -211,11 +200,6 @@ async function purgeDeviceLogs(workspaceId, deviceId) {
 exports.deleteDevice = async (req, res) => {
     const deviceId = parseInt(req.params.id, 10);
     let workspaceId = req.user.workspace_id;
-
-    // Dukungan override workspaceId untuk NOC
-    if (req.query.workspaceId && (req.user.role === 'admin' || req.user.role === 'noc')) {
-        workspaceId = parseInt(req.query.workspaceId);
-    }
 
     try {
         const [devices] = await pool.query('SELECT id FROM mikrotik_devices WHERE id = ? AND workspace_id = ?', [deviceId, workspaceId]);
@@ -313,11 +297,6 @@ exports.getTrafficHistory = async (req, res) => {
     const { id } = req.params;
     const { interface: interfaceName, hours = 24 } = req.query;
     let workspaceId = req.user.workspace_id;
-
-    const isSuper = req.user.is_super_admin === 1 || req.user.is_super_admin === true;
-    if (req.query.workspaceId && (req.user.role === 'admin' || req.user.role === 'noc' || isSuper)) {
-        workspaceId = parseInt(req.query.workspaceId);
-    }
 
     if (!interfaceName) {
         return res.status(400).json({ message: 'Parameter interface wajib diisi.' });

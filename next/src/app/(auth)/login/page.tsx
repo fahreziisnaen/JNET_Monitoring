@@ -4,26 +4,22 @@ import React, { useState } from 'react';
 import Link from 'next/link';
 import { LogIn, User, KeyRound, Loader2 } from 'lucide-react';
 import { Button, buttonVariants } from '@/components/ui/button';
-import LoginOtpModal from '@/components/auth/login-otp-modal';
+import TwoFactorLoginModal from '@/components/auth/two-factor-login-modal';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/components/providers/auth-provider';
 
 const LoginPage = () => {
   const router = useRouter();
   const { login } = useAuth();
-  const [isOtpModalOpen, setIsOtpModalOpen] = useState(false);
-  const [loginPayload, setLoginPayload] = useState<{
-    userId: number | null;
-    whatsappNumber: string;
-    error: string;
-  }>({ userId: null, whatsappNumber: '', error: '' });
+  const [challengeToken, setChallengeToken] = useState<string | null>(null);
+  const [error, setError] = useState('');
 
   const [loading, setLoading] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setLoading(true);
-    setLoginPayload({ userId: null, whatsappNumber: '', error: '' });
+    setError('');
 
     const formData = new FormData(e.currentTarget);
     const data = Object.fromEntries(formData.entries());
@@ -39,29 +35,24 @@ const LoginPage = () => {
       const resData = await res.json();
       if (!res.ok) throw new Error(resData.message);
 
-      // Jika OTP dibypass oleh backend
-      if (resData.otpRequired === false) {
-        // Simpan token di localStorage sebagai fallback
-        if (resData.token && typeof window !== 'undefined') {
-          localStorage.setItem('auth_token', resData.token);
-        }
-
-        // Update auth state
-        login(resData.user);
-
-        // Redirect ke dashboard
-        router.push('/dashboard');
+      // Akun dengan 2FA: lanjut verifikasi kode Authenticator
+      if (resData.twoFactorRequired) {
+        setChallengeToken(resData.challengeToken);
         return;
       }
 
-      setLoginPayload({
-        userId: resData.userId,
-        whatsappNumber: resData.whatsappNumber,
-        error: ''
-      });
-      setIsOtpModalOpen(true);
+      // Simpan token di localStorage sebagai fallback
+      if (resData.token && typeof window !== 'undefined') {
+        localStorage.setItem('auth_token', resData.token);
+      }
+
+      // Update auth state
+      login(resData.user);
+
+      // Redirect ke dashboard
+      router.push('/dashboard');
     } catch (err: any) {
-      setLoginPayload({ userId: null, whatsappNumber: '', error: err.message });
+      setError(err.message);
     } finally {
       setLoading(false);
     }
@@ -100,9 +91,9 @@ const LoginPage = () => {
                 </Link>
               </div>
 
-              {loginPayload.error && (
+              {error && (
                 <div className="p-3 rounded-lg bg-destructive/10 border border-destructive/20 text-destructive text-sm text-center">
-                  {loginPayload.error}
+                  {error}
                 </div>
               )}
 
@@ -122,12 +113,11 @@ const LoginPage = () => {
         </div>
       </div>
 
-      {loginPayload.userId && (
-        <LoginOtpModal
-          isOpen={isOtpModalOpen}
-          onClose={() => setIsOtpModalOpen(false)}
-          userId={loginPayload.userId}
-          whatsappNumber={loginPayload.whatsappNumber}
+      {challengeToken && (
+        <TwoFactorLoginModal
+          isOpen={!!challengeToken}
+          onClose={() => setChallengeToken(null)}
+          challengeToken={challengeToken}
         />
       )}
     </>

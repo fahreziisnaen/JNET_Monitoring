@@ -7,7 +7,8 @@ const pool = require('../config/database');
 exports.getSnapshot = async (req, res) => {
     // Gunakan workspaceId dari query jika ada (untuk NOC/Superadmin), jika tidak gunakan default dari token
     const user = req.user;
-    let workspaceId = req.query.workspaceId ? parseInt(req.query.workspaceId) : user.workspace_id;
+    // workspace_id sudah divalidasi middleware protect (termasuk override ?workspaceId)
+    const workspaceId = user.workspace_id;
     let deviceId = req.query.deviceId ? parseInt(req.query.deviceId) : null;
 
     // Superadmin bypass: If no workspaceId provided, they might want ALL authorized snapshots

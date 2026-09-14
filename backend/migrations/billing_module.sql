@@ -147,6 +147,7 @@ CREATE TABLE IF NOT EXISTS `billing_invoices` (
   `due_date` DATE NOT NULL,
   `status` ENUM('unpaid','paid','overdue','void') NOT NULL DEFAULT 'unpaid',
   `paid_at` DATETIME DEFAULT NULL,
+  `isolir_notified_at` DATETIME DEFAULT NULL COMMENT 'Kapan pelanggan diberi tahu isolir (sekali per invoice)',
   `created_at` TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
   `updated_at` TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),

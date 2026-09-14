@@ -1,7 +1,10 @@
 const pool = require('../config/database');
 const fs = require('fs');
 const path = require('path');
-const { sendWhatsAppMessage, isWhatsAppConnected, getParticipatingGroups, getLatestQR } = require('../services/whatsappService');
+const { sendWhatsAppMessage, isWhatsAppConnected, getParticipatingGroups, getLatestQR, getWhatsAppStatus } = require('../services/whatsappService');
+const { createRateLimiter, retryMessage } = require('../utils/rateLimiter');
+
+const testMessageLimiter = createRateLimiter({ windowMs: 10 * 60 * 1000, max: 3 });
 const { generateSingleReport } = require('../bot/reportGenerator');
 
 // Hardcoded Super Admin IDs (Owner)
@@ -43,11 +46,15 @@ exports.toggleBotStatus = async (req, res) => {
 
 exports.getQRStatus = async (req, res) => {
     try {
-        const connected = isWhatsAppConnected();
-        const qr = getLatestQR();
+        const isSuper = SUPER_ADMIN_IDS.includes(req.user.id);
+        const { status, connected, outbox } = getWhatsAppStatus();
         res.status(200).json({
             connected,
-            qr: qr // String QR mentah dari Baileys
+            status,
+            // QR hanya untuk Super Admin: siapa pun yang memindai QR menjadi nomor bot server
+            qr: isSuper ? getLatestQR() : null,
+            canScan: isSuper,
+            outbox: isSuper ? outbox : undefined,
         });
     } catch (error) {
         res.status(500).json({ message: 'Gagal mengecek status QR.' });
@@ -88,7 +95,11 @@ exports.requestResetOtp = async (req, res) => {
             [userId, otp, expiresAt]
         );
 
-        await sendWhatsAppMessage(waNumber, `⚠️ *Peringatan Keamanan JNET*\n\nSeseorang mencoba me-reset sesi WhatsApp Anda. Jika ini Anda, gunakan kode OTP berikut:\n\n*${otp}*\n\nKode ini berlaku 5 menit.`);
+        await sendWhatsAppMessage(
+            waNumber,
+            `⚠️ *Peringatan Keamanan JNET*\n\nSeseorang mencoba me-reset sesi WhatsApp Anda. Jika ini Anda, gunakan kode OTP berikut:\n\n*${otp}*\n\nKode ini berlaku 5 menit.`,
+            { category: 'otp', waitForResult: true }
+        );
 
         res.status(200).json({
             otpRequired: true,
@@ -200,14 +211,28 @@ exports.testMessage = async (req, res) => {
         return res.status(400).json({ message: 'WhatsApp ID (JID) diperlukan.' });
     }
 
+    const isSuper = SUPER_ADMIN_IDS.includes(req.user.id);
+    // Pesan ke nomor perorangan yang bukan kontak paling berisiko memicu ban; hanya Super Admin
+    if (!isSuper && !String(jid).endsWith('@g.us')) {
+        return res.status(403).json({ message: 'Pesan tes hanya bisa dikirim ke grup WhatsApp.' });
+    }
+    const limit = testMessageLimiter.check(`user:${req.user.id}`);
+    if (!limit.allowed) {
+        return res.status(429).json({ message: retryMessage(limit.retryAfterMs) });
+    }
+
     try {
         if (!isWhatsAppConnected()) {
             return res.status(400).json({ message: 'WhatsApp belum terhubung. Silakan hubungkan terlebih dahulu.' });
         }
 
+        testMessageLimiter.hit(`user:${req.user.id}`);
         const message = `🚀 *Tes Koneksi WhatsApp Gateway JNET*\n\nLayanan ini sekarang siap mengirimkan notifikasi ke group ini.\nTerima kasih!`;
 
-        await sendWhatsAppMessage(jid, message);
+        const sent = await sendWhatsAppMessage(jid, message, { waitForResult: true, timeoutMs: 60 * 1000 });
+        if (!sent) {
+            return res.status(503).json({ message: 'Pesan tes belum terkirim (antrean sibuk atau tujuan tidak valid). Coba lagi beberapa menit lagi.' });
+        }
 
         res.status(200).json({ message: 'Pesan tes berhasil dikirim!' });
     } catch (error) {

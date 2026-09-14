@@ -1,175 +1,161 @@
 const pool = require('../config/database');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
-const { sendWhatsAppMessage, isWhatsAppConnected } = require('../services/whatsappService');
 const crypto = require('crypto');
 const { isSuperAdmin } = require('../utils/authUtils');
+const { createRateLimiter, retryMessage } = require('../utils/rateLimiter');
+const twoFactorService = require('../services/twoFactorService');
 
-const generateOtp = () => Math.floor(100000 + Math.random() * 900000).toString();
+const TWO_FACTOR_AUDIENCE = 'jnet-2fa';
+const FIFTEEN_MINUTES = 15 * 60 * 1000;
 
-exports.requestLoginOtp = async (req, res) => {
+// Batas percobaan gagal; hitungan di-reset setelah berhasil
+const loginUserLimiter = createRateLimiter({ windowMs: FIFTEEN_MINUTES, max: 10 });
+const loginIpLimiter = createRateLimiter({ windowMs: FIFTEEN_MINUTES, max: 50 });
+const twoFactorLimiter = createRateLimiter({ windowMs: FIFTEEN_MINUTES, max: 5 });
+const resetPasswordLimiter = createRateLimiter({ windowMs: FIFTEEN_MINUTES, max: 5 });
+
+// Hash bcrypt dummy agar waktu respons sama untuk username yang tidak ada
+const DUMMY_PASSWORD_HASH = bcrypt.hashSync(crypto.randomBytes(16).toString('hex'), 10);
+
+function clientIp(req) {
+    const forwarded = req.headers['x-forwarded-for'];
+    const rawIp = forwarded ? forwarded.split(',')[0].trim() : (req.ip || 'Unknown');
+    const ip = rawIp.includes('::ffff:') ? rawIp.split('::ffff:')[1] : rawIp;
+    return ip === '::1' ? '127.0.0.1' : ip;
+}
+
+function blocked(res, ...checks) {
+    const hit = checks.find(c => !c.allowed);
+    if (!hit) return false;
+    res.status(429).json({ message: retryMessage(hit.retryAfterMs) });
+    return true;
+}
+
+/** Membuat sesi login, memasang cookie, dan mengirim respons login sukses. */
+async function issueSession(req, res, user, extra = {}) {
+    const userAgent = req.headers['user-agent'] || 'Unknown';
+    const ip = clientIp(req);
+
+    // Hanya hapus session dari perangkat yang PERSIS sama (IP DAN User-Agent cocok)
+    await pool.query(
+        'DELETE FROM user_sessions WHERE user_id = ? AND user_agent = ? AND ip_address = ?',
+        [user.id, userAgent, ip]
+    ).catch(err => console.error('[Auth] Gagal membersihkan sesi lama:', err.message));
+
+    const tokenId = crypto.randomBytes(16).toString('hex');
+    await pool.query(
+        'INSERT INTO user_sessions (user_id, token_id, user_agent, ip_address) VALUES (?, ?, ?, ?)',
+        [user.id, tokenId, userAgent, ip]
+    );
+
+    const token = jwt.sign(
+        { id: user.id, username: user.username, workspace_id: user.workspace_id, jti: tokenId },
+        process.env.JWT_SECRET,
+        { expiresIn: '7d' }
+    );
+
+    res.cookie('token', token, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        maxAge: 7 * 24 * 60 * 60 * 1000,
+        sameSite: 'lax',
+        path: '/',
+    });
+
+    return res.status(200).json({
+        message: 'Login berhasil!',
+        otpRequired: false,
+        twoFactorRequired: false,
+        user: {
+            id: user.id,
+            displayName: user.display_name,
+            profile_picture_url: user.profile_picture_url || '/public/uploads/avatars/default.jpg',
+            is_super_admin: isSuperAdmin(user.id),
+        },
+        token,
+        ...extra,
+    });
+}
+
+exports.login = async (req, res) => {
     const { username, password } = req.body;
     if (!username || !password) return res.status(400).json({ message: 'Username dan password wajib diisi.' });
 
+    const userKey = String(username).toLowerCase();
+    const ipKey = clientIp(req);
+    if (blocked(res, loginUserLimiter.check(userKey), loginIpLimiter.check(ipKey))) return;
+
     try {
         const [users] = await pool.query('SELECT * FROM users WHERE username = ?', [username]);
-        if (users.length === 0) return res.status(401).json({ message: 'Username atau password salah.' });
-
         const user = users[0];
-        const isMatch = await bcrypt.compare(password, user.password_hash);
-        if (!isMatch) return res.status(401).json({ message: 'Username atau password salah.' });
+        const isMatch = await bcrypt.compare(password, user ? user.password_hash : DUMMY_PASSWORD_HASH);
 
-        if (!user.whatsapp_number) return res.status(403).json({ message: 'Akun ini tidak memiliki nomor WhatsApp terdaftar untuk OTP.' });
+        if (!user || !isMatch) {
+            loginUserLimiter.hit(userKey);
+            loginIpLimiter.hit(ipKey);
+            return res.status(401).json({ message: 'Username atau password salah.' });
+        }
 
-        const otp = generateOtp();
-        const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
-
-        // --- SMART BYPASS LOGIC ---
-        const authPath = require('path').join(process.cwd(), 'whatsapp_auth_info');
-        const hasSession = require('fs').existsSync(require('path').join(authPath, 'creds.json'));
-        const isActive = isWhatsAppConnected();
-
-        // Jika WA tidak aktif/error atau belum terdaftar (belum ada creds.json)
-        // Maka bypass OTP dan langsung berikan token login
-        if (!isActive || !hasSession) {
-            console.log(`[Auth Bypass] Melakukan bypass OTP untuk user ${user.id} (WA Inactive/Unregistered)`);
-
-            const tokenId = crypto.randomBytes(16).toString('hex');
-            const payload = { id: user.id, username: user.username, workspace_id: user.workspace_id, jti: tokenId };
-            // Gunakan X-Forwarded-For untuk mendapatkan IP asli klien (bukan IP proxy Cloudflare)
-            const forwarded = req.headers['x-forwarded-for'];
-            let rawIp = forwarded ? forwarded.split(',')[0].trim() : req.ip;
-            let normalizedIp = rawIp.includes('::ffff:') ? rawIp.split('::ffff:')[1] : rawIp;
-            if (normalizedIp === '::1') normalizedIp = '127.0.0.1';
-            const userAgent = req.headers['user-agent'] || 'Unknown';
-
-            try {
-                // Hanya hapus session dari perangkat yang PERSIS sama (IP DAN User-Agent cocok)
-                const [delResult] = await pool.query(
-                    'DELETE FROM user_sessions WHERE user_id = ? AND user_agent = ? AND ip_address = ?',
-                    [user.id, userAgent, normalizedIp]
-                );
-                if (delResult.affectedRows > 0) {
-                    console.log(`[Auth Bypass Cleanup] Removed ${delResult.affectedRows} existing sessions for user ${user.id}.`);
-                }
-            } catch (delError) {
-                console.error("[Auth Bypass Cleanup] Error during session cleanup:", delError);
-            }
-
-            await pool.query('INSERT INTO user_sessions (user_id, token_id, user_agent, ip_address) VALUES (?, ?, ?, ?)', [user.id, tokenId, userAgent, normalizedIp]);
-
-            const token = jwt.sign(payload, process.env.JWT_SECRET || 'fallback_secret', { expiresIn: '7d' });
-
-            const cookieOptions = {
-                httpOnly: true,
-                secure: process.env.NODE_ENV === 'production',
-                maxAge: 7 * 24 * 60 * 60 * 1000,
-                sameSite: 'lax',
-                path: '/',
-            };
-            res.cookie('token', token, cookieOptions);
-
-            const profilePictureUrl = user.profile_picture_url || '/public/uploads/avatars/default.jpg';
+        if (user.totp_enabled) {
+            // Password benar; login belum selesai sampai kode Authenticator diverifikasi
+            const challengeToken = jwt.sign(
+                { id: user.id, purpose: 'login' },
+                process.env.JWT_SECRET,
+                { audience: TWO_FACTOR_AUDIENCE, expiresIn: '5m' }
+            );
             return res.status(200).json({
-                message: 'Login berhasil (OTP Bypass)!',
-                otpRequired: false,
-                user: {
-                    id: user.id,
-                    displayName: user.display_name,
-                    profile_picture_url: profilePictureUrl,
-                    is_super_admin: isSuperAdmin(user.id)
-                },
-                token: token
+                message: 'Masukkan kode dari aplikasi Authenticator.',
+                twoFactorRequired: true,
+                challengeToken,
             });
         }
-        // --- END SMART BYPASS ---
 
-        await pool.query(
-            `INSERT INTO login_otps (user_id, otp_code, expires_at) VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE otp_code=VALUES(otp_code), expires_at=VALUES(expires_at)`,
-            [user.id, otp, expiresAt]
-        );
-
-        await sendWhatsAppMessage(user.whatsapp_number, `Kode verifikasi JNET Monitoring Anda adalah: *${otp}*. Jangan berikan kode ini kepada siapapun.`);
-        res.status(200).json({
-            message: 'OTP telah dikirim.',
-            otpRequired: true,
-            userId: user.id,
-            whatsappNumber: user.whatsapp_number
-        });
-
+        loginUserLimiter.reset(userKey);
+        return await issueSession(req, res, user);
     } catch (error) {
-        console.error("REQUEST LOGIN OTP ERROR:", error);
+        console.error('LOGIN ERROR:', error);
         res.status(500).json({ message: 'Gagal memproses login. Silakan hubungi admin jika terulang.' });
     }
 };
 
-exports.verifyLoginOtp = async (req, res) => {
-    const { userId, otp } = req.body;
-    if (!userId || !otp) return res.status(400).json({ message: 'User ID dan OTP wajib diisi.' });
+exports.verifyLoginTwoFactor = async (req, res) => {
+    const { challengeToken, code } = req.body;
+    if (!challengeToken || !code) return res.status(400).json({ message: 'Kode 2FA wajib diisi.' });
+
+    let decoded;
+    try {
+        decoded = jwt.verify(challengeToken, process.env.JWT_SECRET, { audience: TWO_FACTOR_AUDIENCE });
+    } catch {
+        return res.status(401).json({ message: 'Sesi login kedaluwarsa. Silakan masukkan password lagi.' });
+    }
+
+    const limiterKey = `user:${decoded.id}`;
+    if (blocked(res, twoFactorLimiter.check(limiterKey))) return;
 
     try {
-        const [otps] = await pool.query('SELECT * FROM login_otps WHERE user_id = ? AND otp_code = ? AND expires_at > NOW()', [userId, otp]);
-        if (otps.length === 0) return res.status(400).json({ message: 'OTP salah atau sudah kedaluwarsa.' });
-
-        const [users] = await pool.query('SELECT * FROM users WHERE id = ?', [userId]);
-        const user = users[0];
-
-        // Gunakan X-Forwarded-For untuk IP asli di belakang Cloudflare
-        const forwarded = req.headers['x-forwarded-for'];
-        let rawIp = forwarded ? forwarded.split(',')[0].trim() : req.ip;
-        let normalizedIp = rawIp.includes('::ffff:') ? rawIp.split('::ffff:')[1] : rawIp;
-        if (normalizedIp === '::1') normalizedIp = '127.0.0.1';
-        const userAgent = req.headers['user-agent'] || 'Unknown';
-
-        try {
-            // Hanya hapus session dari perangkat yang PERSIS sama (IP DAN User-Agent cocok)
-            const [delResult] = await pool.query(
-                'DELETE FROM user_sessions WHERE user_id = ? AND user_agent = ? AND ip_address = ?',
-                [user.id, userAgent, normalizedIp]
-            );
-            if (delResult.affectedRows > 0) {
-                console.log(`[Auth Cleanup] Removed ${delResult.affectedRows} existing sessions for user ${user.id}.`);
-            }
-        } catch (delError) {
-            console.error("[Auth Cleanup] Error during session cleanup:", delError);
+        const method = await twoFactorService.verifyCode(decoded.id, code);
+        if (!method) {
+            twoFactorLimiter.hit(limiterKey);
+            return res.status(401).json({ message: 'Kode 2FA salah atau sudah dipakai.' });
         }
 
-        await pool.query('DELETE FROM login_otps WHERE user_id = ?', [userId]);
+        const [users] = await pool.query('SELECT * FROM users WHERE id = ?', [decoded.id]);
+        if (users.length === 0) return res.status(401).json({ message: 'User tidak ditemukan.' });
 
-        const tokenId = crypto.randomBytes(16).toString('hex');
-        const payload = { id: user.id, username: user.username, workspace_id: user.workspace_id, jti: tokenId };
-        const token = jwt.sign(payload, process.env.JWT_SECRET || 'fallback_secret', { expiresIn: '7d' });
+        twoFactorLimiter.reset(limiterKey);
+        loginUserLimiter.reset(String(users[0].username).toLowerCase());
 
-        console.log(`[Auth Debug] Creating new session for user ${user.id}. Token ID (jti): ${tokenId}. IP: ${normalizedIp}, UA: ${userAgent}`);
-
-        const [insertResult] = await pool.query('INSERT INTO user_sessions (user_id, token_id, user_agent, ip_address) VALUES (?, ?, ?, ?)', [user.id, tokenId, userAgent, normalizedIp]);
-
-        console.log(`[Auth Debug] Session inserted successfully with DB ID: ${insertResult.insertId}`);
-
-        const cookieOptions = {
-            httpOnly: true,
-            secure: process.env.NODE_ENV === 'production',
-            maxAge: 7 * 24 * 60 * 60 * 1000,
-            sameSite: 'lax',
-            path: '/',
-        };
-        res.cookie('token', token, cookieOptions);
-
-        const profilePictureUrl = user.profile_picture_url || '/public/uploads/avatars/default.jpg';
-        res.status(200).json({
-            message: 'Login berhasil!',
-            user: {
-                id: user.id,
-                displayName: user.display_name,
-                profile_picture_url: profilePictureUrl,
-                is_super_admin: isSuperAdmin(user.id)
-            },
-            token: token // Return token untuk fallback
-        });
-
+        const extra = {};
+        if (method === 'recovery') {
+            const { recoveryCodesRemaining } = await twoFactorService.getStatus(decoded.id);
+            extra.usedRecoveryCode = true;
+            extra.recoveryCodesRemaining = recoveryCodesRemaining;
+        }
+        return await issueSession(req, res, users[0], extra);
     } catch (error) {
-        console.error("VERIFY LOGIN OTP ERROR:", error);
-        res.status(500).json({ message: 'Verifikasi OTP gagal.' });
+        console.error('VERIFY 2FA ERROR:', error);
+        res.status(500).json({ message: 'Verifikasi 2FA gagal.' });
     }
 };
 
@@ -212,73 +198,43 @@ exports.getMe = (req, res) => {
     });
 };
 
-exports.requestPasswordReset = async (req, res) => {
-    const { username } = req.body;
-    if (!username) return res.status(400).json({ message: 'Username wajib diisi.' });
-
-    try {
-        const [users] = await pool.query('SELECT * FROM users WHERE username = ?', [username]);
-        if (users.length === 0) return res.status(404).json({ message: 'Username tidak ditemukan.' });
-
-        const user = users[0];
-        if (!user.whatsapp_number) return res.status(400).json({ message: 'Akun ini tidak memiliki nomor WhatsApp terdaftar.' });
-
-        const otp = generateOtp();
-        const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
-
-        // --- SMART CHECK LOGIC ---
-        const authPath = require('path').join(process.cwd(), 'whatsapp_auth_info');
-        const hasSession = require('fs').existsSync(require('path').join(authPath, 'creds.json'));
-        const isActive = isWhatsAppConnected();
-
-        if (!isActive || !hasSession) {
-            return res.status(400).json({
-                message: 'Fitur lupa password sedang tidak tersedia karena WhatsApp Bot tidak aktif. Silakan hubungi admin untuk bantuan reset password manual.'
-            });
-        }
-        // --- END SMART CHECK ---
-
-        await pool.query(
-            `INSERT INTO login_otps (user_id, otp_code, expires_at) VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE otp_code=VALUES(otp_code), expires_at=VALUES(expires_at)`,
-            [user.id, otp, expiresAt]
-        );
-
-        await sendWhatsAppMessage(user.whatsapp_number, `Kode verifikasi lupa password JNET Monitoring Anda adalah: *${otp}*. Gunakan kode ini untuk mereset password Anda.`);
-
-        res.status(200).json({
-            message: 'OTP berhasil dikirim ke WhatsApp Anda.',
-            username: user.username
-        });
-
-    } catch (error) {
-        console.error("REQUEST PASSWORD RESET ERROR:", error);
-        res.status(500).json({ message: 'Gagal memproses lupa password.' });
-    }
-};
-
+// Lupa password: buktikan kepemilikan akun dengan kode Authenticator atau kode cadangan.
+// Akun tanpa 2FA direset oleh Super Admin (scripts/reset-password.js).
 exports.resetPassword = async (req, res) => {
-    const { username, otp, newPassword } = req.body;
-    if (!username || !otp || !newPassword) {
-        return res.status(400).json({ message: 'Username, OTP, dan password baru wajib diisi.' });
+    const { username, code, newPassword } = req.body;
+    if (!username || !code || !newPassword) {
+        return res.status(400).json({ message: 'Username, kode 2FA, dan password baru wajib diisi.' });
+    }
+    if (String(newPassword).length < 6) {
+        return res.status(400).json({ message: 'Password baru minimal 6 karakter.' });
     }
 
+    const userKey = `reset:${String(username).toLowerCase()}`;
+    const ipKey = `reset-ip:${clientIp(req)}`;
+    if (blocked(res, resetPasswordLimiter.check(userKey), loginIpLimiter.check(ipKey))) return;
+
+    const genericError = 'Username atau kode 2FA salah, atau akun belum mengaktifkan 2FA. Akun tanpa 2FA hanya bisa direset oleh Super Admin.';
+
     try {
-        const [users] = await pool.query('SELECT id FROM users WHERE username = ?', [username]);
-        if (users.length === 0) return res.status(404).json({ message: 'Username tidak ditemukan.' });
+        const [users] = await pool.query('SELECT id, totp_enabled FROM users WHERE username = ?', [username]);
+        const user = users[0];
+        const method = user && user.totp_enabled ? await twoFactorService.verifyCode(user.id, code) : null;
 
-        const userId = users[0].id;
+        if (!method) {
+            resetPasswordLimiter.hit(userKey);
+            loginIpLimiter.hit(ipKey);
+            return res.status(400).json({ message: genericError });
+        }
 
-        const [otps] = await pool.query('SELECT * FROM login_otps WHERE user_id = ? AND otp_code = ? AND expires_at > NOW()', [userId, otp]);
-        if (otps.length === 0) return res.status(400).json({ message: 'OTP salah atau sudah kedaluwarsa.' });
-
-        const salt = await bcrypt.genSalt(10);
-        const hashedPassword = await bcrypt.hash(newPassword, salt);
-
-        await pool.query('UPDATE users SET password_hash = ? WHERE id = ?', [hashedPassword, userId]);
-        await pool.query('DELETE FROM login_otps WHERE user_id = ?', [userId]);
+        const hashedPassword = await bcrypt.hash(newPassword, 10);
+        await pool.query('UPDATE users SET password_hash = ? WHERE id = ?', [hashedPassword, user.id]);
+        // Cabut semua sesi: siapa pun yang memegang sesi lama harus login ulang
+        await pool.query('DELETE FROM user_sessions WHERE user_id = ?', [user.id]);
+        resetPasswordLimiter.reset(userKey);
+        // Kode 2FA yang sah sudah dibuktikan, jadi kuncian percobaan login 2FA ikut dibuka
+        twoFactorLimiter.reset(`user:${user.id}`);
 
         res.status(200).json({ message: 'Password berhasil diperbarui. Silakan login kembali.' });
-
     } catch (error) {
         console.error("RESET PASSWORD ERROR:", error);
         res.status(500).json({ message: 'Gagal mereset password.' });

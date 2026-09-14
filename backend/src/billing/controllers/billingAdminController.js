@@ -70,14 +70,9 @@ function tanggalID(d) {
     return `${day} ${MONTHS_ID[m]} ${y}`;
 }
 
+// Override ?workspaceId / workspace_id sudah divalidasi middleware protect
 function resolveWorkspaceId(req) {
-    let workspaceId = req.user.workspace_id;
-    const isSuper = req.user.is_super_admin === 1 || req.user.is_super_admin === true;
-    const override = req.query.workspaceId || req.body.workspace_id;
-    if (override && (req.user.role === 'admin' || req.user.role === 'noc' || isSuper)) {
-        const parsed = parseInt(override);
-        if (!Number.isNaN(parsed)) workspaceId = parsed;
-    }
+    const workspaceId = req.user.workspace_id;
     return (workspaceId == null || Number.isNaN(workspaceId)) ? null : workspaceId;
 }
 
@@ -1015,13 +1010,14 @@ exports.sendInvoiceWa = async (req, res) => {
         const waConnected = isWhatsAppConnected();
         let waSent = false;
         if (waConnected) {
-            waSent = await sendWhatsAppMessage(target, message);
+            // Masuk antrean anti-ban; dikirim bertahap dengan jeda, tidak ditunggu di request ini
+            waSent = await sendWhatsAppMessage(target, message, { category: 'billing' });
         }
 
         let waMessage;
-        if (waSent) waMessage = 'Link pembayaran terkirim via WhatsApp.';
+        if (waSent) waMessage = 'Tagihan masuk antrean WhatsApp dan terkirim bertahap dalam beberapa menit.';
         else if (!waConnected) waMessage = 'Link dibuat, tapi WhatsApp bot belum terhubung. Salin link manual.';
-        else waMessage = 'Link dibuat, tapi gagal mengirim WA ke nomor pelanggan (nomor bot bisa kena flag, atau nomor pelanggan tidak valid). Salin link manual.';
+        else waMessage = 'Link dibuat, tapi antrean WhatsApp menolak pesan (bot logout/diblokir atau antrean penuh). Salin link manual.';
 
         return res.status(200).json({
             message: waMessage,

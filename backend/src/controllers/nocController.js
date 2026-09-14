@@ -1,5 +1,13 @@
 const pool = require('../config/database');
 const mikrotikStore = require('../utils/mikrotikStore');
+const { getAccessibleWorkspaceIds } = require('../utils/workspaceAccess');
+
+// Buang workspace yang tidak boleh diakses user (bukan miliknya dan tanpa izin NOC)
+async function filterAccessibleWorkspaceIds(user, workspaceIds) {
+    const requested = workspaceIds.map(id => parseInt(id, 10)).filter(id => !Number.isNaN(id));
+    const accessible = await getAccessibleWorkspaceIds(user);
+    return accessible === null ? requested : requested.filter(id => accessible.includes(id));
+}
 
 // Mendapatkan data map teragregasi (Asset dan Client) dari beberapa workspace
 exports.getAggregatedMapData = async (req, res) => {
@@ -11,7 +19,7 @@ exports.getAggregatedMapData = async (req, res) => {
         }
 
         // Pastikan hanya angka untuk menghindari SQL injection, meskipun parameterized query sudah aman
-        const validWorkspaceIds = workspaceIds.filter(id => !isNaN(parseInt(id, 10)));
+        const validWorkspaceIds = await filterAccessibleWorkspaceIds(req.user, workspaceIds);
 
         if (validWorkspaceIds.length === 0) {
             return res.status(400).json({ message: 'Valid workspaceIds array is required' });
@@ -166,7 +174,7 @@ exports.getAggregatedSecrets = async (req, res) => {
             return res.status(400).json({ message: 'workspaceIds array is required' });
         }
 
-        const validWorkspaceIds = workspaceIds.filter(id => !isNaN(parseInt(id, 10)));
+        const validWorkspaceIds = await filterAccessibleWorkspaceIds(req.user, workspaceIds);
 
         if (validWorkspaceIds.length === 0) {
             return res.status(400).json({ message: 'Valid workspaceIds array is required' });
@@ -250,8 +258,8 @@ exports.getMyWorkspaces = async (req, res) => {
 // Mendapatkan daftar user yang memiliki akses NOC ke suatu workspace (untuk Management UI)
 exports.getNocUsers = async (req, res) => {
     try {
-        const { workspaceId } = req.query;
-        if (!workspaceId) return res.status(400).json({ message: 'workspaceId is required' });
+        // Selalu workspace aktif yang sudah divalidasi middleware, bukan nilai mentah dari query
+        const workspaceId = req.user.workspace_id;
 
         const [users] = await pool.query(`
             SELECT u.id, u.username, u.display_name, u.whatsapp_number, np.created_at
@@ -270,7 +278,8 @@ exports.getNocUsers = async (req, res) => {
 // Memberikan akses NOC ke user tertentu untuk suatu workspace
 exports.grantNocAccess = async (req, res) => {
     try {
-        const { username, workspaceId } = req.body;
+        const { username } = req.body;
+        const workspaceId = req.user.workspace_id;
         if (!username || !workspaceId) return res.status(400).json({ message: 'username and workspaceId are required' });
 
         // Cari user berdasarkan username
@@ -302,7 +311,8 @@ exports.grantNocAccess = async (req, res) => {
 // Mencabut akses NOC
 exports.revokeNocAccess = async (req, res) => {
     try {
-        const { userId, workspaceId } = req.body;
+        const { userId } = req.body;
+        const workspaceId = req.user.workspace_id;
         if (!userId || !workspaceId) return res.status(400).json({ message: 'userId and workspaceId are required' });
 
         await pool.query(

@@ -41,6 +41,8 @@ const pool = require('./src/config/database');
 
 const { addConnection, removeConnection, getConnection } = require('./src/services/connectionManager');
 const { getOrCreateConnection } = require('./src/utils/apiConnection');
+const { getWorkspaceAccess } = require('./src/utils/workspaceAccess');
+const { isSuperAdmin } = require('./src/utils/authUtils');
 
 const authRoutes = require('./src/routes/authRoutes');
 const userRoutes = require('./src/routes/userRoutes');
@@ -387,7 +389,7 @@ wss.on('connection', (ws, req) => {
             let decoded = null;
 
             // Parse URL untuk mendapatkan query parameters
-            console.log('[WebSocket] URL Permintaan:', req.url);
+            console.log('[WebSocket] URL Permintaan:', req.url.split('?')[0]);
             console.log('[WebSocket] Header permintaan:', {
                 cookie: req.headers.cookie ? 'Ada' : 'Tidak ada',
                 authorization: req.headers.authorization ? 'Ada' : 'Tidak ada',
@@ -399,11 +401,12 @@ wss.on('connection', (ws, req) => {
                 const queryString = req.url.split('?')[1];
                 urlParams = new URLSearchParams(queryString);
             }
-            console.log('[WebSocket] Parameter query:', Object.fromEntries(urlParams));
+            const { token: _omitToken, ...loggableParams } = Object.fromEntries(urlParams);
+            console.log('[WebSocket] Parameter query:', loggableParams);
 
             // Prioritas 1: Cek token di query parameter (untuk WebSocket yang tidak bisa kirim cookie dengan mudah)
             const tokenParam = urlParams.get('token');
-            console.log('[WebSocket] Token dari query param:', tokenParam ? `Ada (${tokenParam.substring(0, 20)}...)` : 'Tidak ada');
+            console.log('[WebSocket] Token dari query param:', tokenParam ? 'Ada' : 'Tidak ada');
             if (tokenParam) {
                 try {
                     decoded = jwt.verify(tokenParam, process.env.JWT_SECRET);
@@ -450,9 +453,6 @@ wss.on('connection', (ws, req) => {
                     connectionTimeout = null;
                 }
                 console.warn('[WebSocket] Tidak ada token ditemukan, menutup koneksi');
-                console.warn('[WebSocket] URL:', req.url);
-                console.warn('[WebSocket] Cookies:', req.headers.cookie);
-                console.warn('[WebSocket] Authorization:', req.headers.authorization);
                 if (!checkIfClosed()) {
                     try {
                         ws.close(1008, 'Unauthorized: No token provided');
@@ -460,6 +460,19 @@ wss.on('connection', (ws, req) => {
                         // Ignore jika sudah closed
                     }
                 }
+                return;
+            }
+
+            // Sama seperti middleware protect: tolak token ber-audience (2FA/billing) dan sesi yang sudah dicabut
+            const [activeSessions] = decoded.aud || !decoded.jti
+                ? [[]]
+                : await pool.query('SELECT id FROM user_sessions WHERE token_id = ? AND user_id = ?', [decoded.jti, decoded.id]);
+            if (activeSessions.length === 0) {
+                if (connectionTimeout) {
+                    clearTimeout(connectionTimeout);
+                    connectionTimeout = null;
+                }
+                if (!checkIfClosed()) ws.close(1008, 'Unauthorized: Session revoked');
                 return;
             }
 
@@ -487,31 +500,19 @@ wss.on('connection', (ws, req) => {
             // Cek lagi apakah sudah di-close
             if (checkIfClosed()) return;
 
-            // Dukungan override workspaceId untuk NOC / Admin / Superadmin
-            let targetWorkspaceId = urlParams.get('workspaceId') ? parseInt(urlParams.get('workspaceId')) : userDb.workspace_id;
-            
-            // Verifikasi izin jika mencoba mengakses workspace lain
+            // Override workspaceId memakai aturan yang sama dengan middleware protect
+            const requestedWorkspaceId = parseInt(urlParams.get('workspaceId'), 10);
+            const targetWorkspaceId = Number.isNaN(requestedWorkspaceId) ? userDb.workspace_id : requestedWorkspaceId;
+
             if (targetWorkspaceId !== userDb.workspace_id) {
-                const { isSuperAdmin } = require('./src/utils/authUtils');
-                const isSuper = isSuperAdmin(decoded.id);
-                
-                if (isSuper) {
-                    // Superadmin bebas
-                } else if (userDb.role === 'noc') {
-                    // NOC butuh izin
-                    const [perms] = await pool.query(
-                        'SELECT id FROM noc_permissions WHERE user_id = ? AND workspace_id = ?',
-                        [decoded.id, targetWorkspaceId]
-                    );
-                    if (perms.length === 0) {
-                        console.warn(`[WebSocket] NOC ${decoded.id} mencoba akses unauthorized workspace ${targetWorkspaceId}`);
-                        if (!checkIfClosed()) ws.close(1008, 'Forbidden: No permission');
-                        return;
-                    }
-                } else {
-                    // Role lain (user biasa) tidak boleh override
-                    console.warn(`[WebSocket] User ${decoded.id} mencoba override workspace tanpa izin.`);
-                    if (!checkIfClosed()) ws.close(1008, 'Forbidden: Unauthorized override');
+                const access = await getWorkspaceAccess({
+                    userId: decoded.id,
+                    isSuperAdmin: isSuperAdmin(decoded.id),
+                    isGlobalKey: false,
+                }, targetWorkspaceId);
+                if (!access) {
+                    console.error(`[WebSocket] User ${decoded.id} ditolak mengakses workspace ${targetWorkspaceId}`);
+                    if (!checkIfClosed()) ws.close(1008, 'Forbidden: No permission');
                     return;
                 }
             }
@@ -543,6 +544,21 @@ wss.on('connection', (ws, req) => {
                         // Ignore jika sudah closed
                     }
                 }
+                return;
+            }
+
+            // Pastikan perangkat benar-benar milik workspace yang sudah divalidasi
+            const [ownedDevices] = await pool.query(
+                'SELECT id FROM mikrotik_devices WHERE id = ? AND workspace_id = ?',
+                [finalDeviceId, ws.workspaceId]
+            );
+            if (ownedDevices.length === 0) {
+                if (connectionTimeout) {
+                    clearTimeout(connectionTimeout);
+                    connectionTimeout = null;
+                }
+                console.error(`[WebSocket] Perangkat ${finalDeviceId} bukan milik workspace ${ws.workspaceId}`);
+                if (!checkIfClosed()) ws.close(1008, 'Forbidden: Device not in workspace');
                 return;
             }
 

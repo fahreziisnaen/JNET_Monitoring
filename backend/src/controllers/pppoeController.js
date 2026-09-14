@@ -38,12 +38,6 @@ exports.getSummary = async (req, res) => {
     const startTime = Date.now();
     try {
         let workspaceId = req.user.workspace_id;
-        
-        // Support override for NOC / Admin / Superadmin
-        const isSuper = req.user.is_super_admin === 1 || req.user.is_super_admin === true;
-        if (req.query.workspaceId && (req.user.role === 'admin' || req.user.role === 'noc' || isSuper)) {
-            workspaceId = parseInt(req.query.workspaceId);
-        }
 
         const deviceId = req.query.deviceId ? parseInt(req.query.deviceId) : null;
 
@@ -74,12 +68,6 @@ exports.getSecrets = async (req, res) => {
     const startTime = Date.now();
     try {
         let workspaceId = req.user.workspace_id;
-        
-        // Support override for NOC / Admin / Superadmin
-        const isSuper = req.user.is_super_admin === 1 || req.user.is_super_admin === true;
-        if (req.query.workspaceId && (req.user.role === 'admin' || req.user.role === 'noc' || isSuper)) {
-            workspaceId = parseInt(req.query.workspaceId);
-        }
 
         const deviceId = req.query.deviceId ? parseInt(req.query.deviceId) : null;
         const disabled = req.query.disabled;
@@ -146,10 +134,6 @@ exports.getSecrets = async (req, res) => {
 exports.getNextIp = async (req, res) => {
     const { profile } = req.query;
     let workspace_id = req.user.workspace_id;
-    const isSuper = req.user.is_super_admin === 1 || req.user.is_super_admin === true;
-    if (req.query.workspaceId && (req.user.role === 'admin' || req.user.role === 'noc' || isSuper)) {
-        workspace_id = parseInt(req.query.workspaceId);
-    }
     var activeUsedIpsSet = new Set();
 
     if (!profile) {
@@ -242,12 +226,6 @@ exports.getNextIp = async (req, res) => {
 
 exports.addSecret = async (req, res) => {
     let workspaceId = req.user.workspace_id;
-
-    // Support override for NOC / Superadmin
-    const isSuper = req.user.is_super_admin === 1 || req.user.is_super_admin === true;
-    if (req.query.workspaceId && (req.user.role === 'admin' || req.user.role === 'noc' || isSuper)) {
-        workspaceId = parseInt(req.query.workspaceId);
-    }
 
     const { name, password, profile, service = 'pppoe', localAddress, remoteAddress } = req.body;
     if (!name || !password || !profile) {
@@ -349,8 +327,7 @@ exports.addSecret = async (req, res) => {
 
 exports.getProfiles = async (req, res) => {
     try {
-        // Dukung workspaceId override dari query param untuk pemanggilan cross-workspace (dari halaman NOC)
-        const targetWorkspaceId = req.query.workspaceId ? parseInt(req.query.workspaceId) : req.user.workspace_id;
+        const targetWorkspaceId = req.user.workspace_id;
         // Ambil deviceId dari query param agar profile diambil dari device yang benar
         const deviceId = req.query.deviceId ? parseInt(req.query.deviceId) : null;
 
@@ -400,11 +377,6 @@ exports.setSecretStatus = async (req, res) => {
     let workspaceId = req.user.workspace_id;
     const deviceId = req.query.deviceId ? parseInt(req.query.deviceId) : null;
 
-    // Support override for NOC / Superadmin
-    const isSuper = req.user.is_super_admin === 1 || req.user.is_super_admin === true;
-    if (req.query.workspaceId && (req.user.role === 'admin' || req.user.role === 'noc' || isSuper)) {
-        workspaceId = parseInt(req.query.workspaceId);
-    }
 
     try {
         const realId = await resolveSecretId(workspaceId, id, deviceId);
@@ -439,11 +411,6 @@ exports.kickActiveUser = async (req, res) => {
     let workspaceId = req.user.workspace_id;
     const deviceId = req.query.deviceId ? parseInt(req.query.deviceId) : null;
 
-    // Support override for NOC / Superadmin
-    const isSuper = req.user.is_super_admin === 1 || req.user.is_super_admin === true;
-    if (req.query.workspaceId && (req.user.role === 'admin' || req.user.role === 'noc' || isSuper)) {
-        workspaceId = parseInt(req.query.workspaceId);
-    }
 
     try {
         await runCommandForWorkspace(workspaceId, '/ppp/active/remove', [`=.id=${id}`], deviceId);
@@ -460,12 +427,6 @@ exports.kickActiveUser = async (req, res) => {
 exports.getSlaDetails = async (req, res) => {
     const { name } = req.params;
     let workspaceId = req.user.workspace_id;
-
-    // Support override for NOC / Superadmin
-    const isSuper = req.user.is_super_admin === 1 || req.user.is_super_admin === true;
-    if (req.query.workspaceId && (req.user.role === 'admin' || req.user.role === 'noc' || isSuper)) {
-        workspaceId = parseInt(req.query.workspaceId);
-    }
 
     try {
         const thirtyDaysAgo = new Date();
@@ -525,11 +486,6 @@ exports.updateSecret = async (req, res) => {
     let workspace_id = req.user.workspace_id;
     const deviceId = req.query.deviceId || bodyDeviceId || null;
 
-    // Support override for NOC / Superadmin
-    const isSuper = req.user.is_super_admin === 1 || req.user.is_super_admin === true;
-    if (req.query.workspaceId && (req.user.role === 'admin' || req.user.role === 'noc' || isSuper)) {
-        workspace_id = parseInt(req.query.workspaceId);
-    }
     if (!profile) {
         return res.status(400).json({ message: 'Profil wajib diisi.' });
     }
@@ -599,12 +555,6 @@ exports.updateSecret = async (req, res) => {
 exports.deleteSecret = async (req, res) => {
     const { id } = req.params;
     let workspace_id = req.user.workspace_id;
-    
-    // Support override for NOC / Superadmin
-    const isSuper = req.user.is_super_admin === 1 || req.user.is_super_admin === true;
-    if (req.query.workspaceId && (req.user.role === 'admin' || req.user.role === 'noc' || isSuper)) {
-        workspace_id = parseInt(req.query.workspaceId);
-    }
 
     const deviceId = req.query.deviceId ? parseInt(req.query.deviceId) : null;
     
@@ -740,12 +690,6 @@ exports.getUsageHistory = async (req, res) => {
     const { name } = req.params;
     let workspaceId = req.user.workspace_id;
 
-    // Support override for NOC / Superadmin
-    const isSuper = req.user.is_super_admin === 1 || req.user.is_super_admin === true;
-    if (req.query.workspaceId && (req.user.role === 'admin' || req.user.role === 'noc' || isSuper)) {
-        workspaceId = parseInt(req.query.workspaceId);
-    }
-
     // Perbaiki logika perhitungan:
     // - daily: hanya data hari ini (usage_date = CURDATE())
     // - weekly: data 7 hari terakhir termasuk hari ini (usage_date >= DATE_SUB(CURDATE(), INTERVAL 6 DAY))
@@ -778,11 +722,6 @@ exports.isolateSecret = async (req, res) => {
     let workspaceId = req.user.workspace_id;
     const deviceId = req.query.deviceId ? parseInt(req.query.deviceId) : null;
 
-    // Support override for NOC / Superadmin
-    const isSuper = req.user.is_super_admin === 1 || req.user.is_super_admin === true;
-    if (req.query.workspaceId && (req.user.role === 'admin' || req.user.role === 'noc' || isSuper)) {
-        workspaceId = parseInt(req.query.workspaceId);
-    }
 
     console.log(`[Isolate Secret] Request for: ${id}, workspace: ${workspaceId}, device: ${deviceId}`);
 
@@ -860,11 +799,6 @@ exports.unisolateSecret = async (req, res) => {
     let workspaceId = req.user.workspace_id;
     const deviceId = req.query.deviceId ? parseInt(req.query.deviceId) : null;
 
-    // Support override for NOC / Superadmin
-    const isSuper = req.user.is_super_admin === 1 || req.user.is_super_admin === true;
-    if (req.query.workspaceId && (req.user.role === 'admin' || req.user.role === 'noc' || isSuper)) {
-        workspaceId = parseInt(req.query.workspaceId);
-    }
 
     console.log(`[Unisolate Secret] Request for: ${id}, workspace: ${workspaceId}, device: ${deviceId}`);
 
@@ -939,12 +873,6 @@ exports.getTrafficHistory = async (req, res) => {
     const { username, deviceId } = req.params;
     let workspaceId = req.user.workspace_id;
 
-    // Support override for NOC / Superadmin
-    const isSuper = req.user.is_super_admin === 1 || req.user.is_super_admin === true;
-    if (req.query.workspaceId && (req.user.role === 'admin' || req.user.role === 'noc' || isSuper)) {
-        workspaceId = parseInt(req.query.workspaceId);
-    }
-
     try {
         // Nama interface PPPoE default mikroTik adalah <pppoe-{username}>
         const interfaceName = `<pppoe-${username}>`;
@@ -976,12 +904,6 @@ exports.getTrafficHistory = async (req, res) => {
 exports.getLiveTraffic = async (req, res) => {
     const { username, deviceId } = req.params;
     let workspaceId = req.user.workspace_id;
-
-    // Support override for NOC / Superadmin
-    const isSuper = req.user.is_super_admin === 1 || req.user.is_super_admin === true;
-    if (req.query.workspaceId && (req.user.role === 'admin' || req.user.role === 'noc' || isSuper)) {
-        workspaceId = parseInt(req.query.workspaceId);
-    }
 
     try {
         const interfaceName = `<pppoe-${username}>`;

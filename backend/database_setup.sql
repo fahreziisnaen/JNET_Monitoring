@@ -46,6 +46,7 @@ DROP TABLE IF EXISTS `pending_registrations`;
 DROP TABLE IF EXISTS `login_otps`;
 DROP TABLE IF EXISTS `user_sessions`;
 DROP TABLE IF EXISTS `mikrotik_devices`;
+DROP TABLE IF EXISTS `user_recovery_codes`;
 DROP TABLE IF EXISTS `users`;
 DROP TABLE IF EXISTS `workspaces`;
 DROP TABLE IF EXISTS `api_keys`;
@@ -105,12 +106,26 @@ CREATE TABLE `users` (
   `whatsapp_number` varchar(20) DEFAULT NULL,
   `profile_picture_url` varchar(255) DEFAULT NULL,
   `role` enum('admin','user','noc') DEFAULT 'admin',
+  `totp_secret` varchar(255) DEFAULT NULL COMMENT 'Secret TOTP terenkripsi AES-256-GCM',
+  `totp_enabled` tinyint(1) NOT NULL DEFAULT 0,
+  `totp_last_step` bigint DEFAULT NULL COMMENT 'Langkah TOTP terakhir yang dipakai (anti replay)',
   `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
   UNIQUE KEY `username` (`username`),
   UNIQUE KEY `whatsapp_number` (`whatsapp_number`),
   KEY `idx_workspace_id` (`workspace_id`),
   CONSTRAINT `fk_users_workspace` FOREIGN KEY (`workspace_id`) REFERENCES `workspaces` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE `user_recovery_codes` (
+  `id` int NOT NULL AUTO_INCREMENT,
+  `user_id` int NOT NULL,
+  `code_hash` char(64) NOT NULL,
+  `used_at` datetime DEFAULT NULL,
+  `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_recovery_codes_user` (`user_id`),
+  CONSTRAINT `fk_recovery_codes_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE `mikrotik_devices` (

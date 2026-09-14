@@ -3,14 +3,31 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
 const { sendWhatsAppMessage, isWhatsAppConnected } = require('../services/whatsappService');
+const { createRateLimiter, retryMessage } = require('../utils/rateLimiter');
 
-const generateOtp = () => Math.floor(100000 + Math.random() * 900000).toString();
+const generateOtp = () => crypto.randomInt(100000, 1000000).toString();
+
+// OTP registrasi bisa diminta siapa saja ke nomor apa saja; tanpa batas ini nomor bot mudah di-ban
+const otpPerNumberLimiter = createRateLimiter({ windowMs: 60 * 60 * 1000, max: 3 });
+const otpPerIpLimiter = createRateLimiter({ windowMs: 60 * 60 * 1000, max: 10 });
+const verifyLimiter = createRateLimiter({ windowMs: 15 * 60 * 1000, max: 5 });
+
+function clientIp(req) {
+    return String(req.headers['x-forwarded-for'] || req.ip || '').split(',')[0].trim();
+}
 
 exports.requestRegisterOtp = async (req, res) => {
     const { username, displayName, password, whatsappNumber } = req.body;
     if (!username || !displayName || !password || !whatsappNumber) {
         return res.status(400).json({ message: 'Semua field harus diisi.' });
     }
+
+    const numberLimit = otpPerNumberLimiter.check(String(whatsappNumber));
+    const ipLimit = otpPerIpLimiter.check(clientIp(req));
+    if (!numberLimit.allowed || !ipLimit.allowed) {
+        return res.status(429).json({ message: retryMessage(Math.max(numberLimit.retryAfterMs, ipLimit.retryAfterMs)) });
+    }
+    otpPerIpLimiter.hit(clientIp(req));
 
     try {
         const [existingUser] = await pool.query('SELECT id FROM users WHERE username = ? OR whatsapp_number = ?', [username, whatsappNumber]);
@@ -63,7 +80,15 @@ exports.requestRegisterOtp = async (req, res) => {
             [whatsappNumber, username, displayName, hashedPassword, otp, expiresAt]
         );
 
-        await sendWhatsAppMessage(whatsappNumber, `Halo ${displayName}! Kode verifikasi JNET Monitoring Anda adalah: *${otp}*. Kode ini berlaku selama 10 menit.`);
+        otpPerNumberLimiter.hit(String(whatsappNumber));
+        const sent = await sendWhatsAppMessage(
+            whatsappNumber,
+            `Halo ${displayName}! Kode verifikasi JNET Monitoring Anda adalah: *${otp}*. Kode ini berlaku selama 10 menit.`,
+            { category: 'otp', waitForResult: true }
+        );
+        if (!sent) {
+            return res.status(503).json({ message: 'Gagal mengirim OTP via WhatsApp. Pastikan nomor aktif di WhatsApp, lalu coba lagi nanti.' });
+        }
 
         res.status(200).json({
             message: 'OTP telah dikirim ke nomor WhatsApp Anda.',
@@ -82,11 +107,19 @@ exports.verifyAndRegister = async (req, res) => {
         return res.status(400).json({ message: 'Nomor WhatsApp dan OTP wajib diisi.' });
     }
 
+    const verifyKey = String(whatsappNumber);
+    const verifyLimit = verifyLimiter.check(verifyKey);
+    if (!verifyLimit.allowed) {
+        return res.status(429).json({ message: retryMessage(verifyLimit.retryAfterMs) });
+    }
+
     try {
         const [pending] = await pool.query('SELECT * FROM pending_registrations WHERE whatsapp_number = ? AND otp_code = ? AND expires_at > NOW()', [whatsappNumber, otp]);
         if (pending.length === 0) {
+            verifyLimiter.hit(verifyKey);
             return res.status(400).json({ message: 'OTP salah atau sudah kedaluwarsa.' });
         }
+        verifyLimiter.reset(verifyKey);
 
         const userData = pending[0];
         const avatarUrl = '/public/uploads/avatars/default.jpg';

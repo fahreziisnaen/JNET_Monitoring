@@ -3,8 +3,18 @@ const pool = require('../../config/database');
 const { signCustomerToken } = require('../middleware/customerAuthMiddleware');
 const { sendWhatsAppMessage, isWhatsAppConnected } = require('../../services/whatsappService');
 const { normalizeWa } = require('../utils/phone');
+const { createRateLimiter, retryMessage } = require('../../utils/rateLimiter');
 
 const OTP_TTL_MINUTES = 10;
+
+// Nomor bot WhatsApp mudah di-ban bila dipakai mengirim OTP massal ke nomor asing
+const otpPerNumberLimiter = createRateLimiter({ windowMs: 60 * 60 * 1000, max: 3 });
+const otpPerIpLimiter = createRateLimiter({ windowMs: 60 * 60 * 1000, max: 10 });
+const otpVerifyLimiter = createRateLimiter({ windowMs: 15 * 60 * 1000, max: 5 });
+
+function clientIp(req) {
+    return String(req.headers['x-forwarded-for'] || req.socket?.remoteAddress || '').split(',')[0].trim();
+}
 
 function genOtp() {
     return String(crypto.randomInt(0, 1000000)).padStart(6, '0');
@@ -16,6 +26,14 @@ exports.requestOtp = async (req, res) => {
         if (!wa || wa.length < 9) {
             return res.status(400).json({ message: 'Nomor WhatsApp tidak valid.' });
         }
+
+        const ip = clientIp(req);
+        const numberLimit = otpPerNumberLimiter.check(wa);
+        const ipLimit = otpPerIpLimiter.check(ip);
+        if (!numberLimit.allowed || !ipLimit.allowed) {
+            return res.status(429).json({ message: retryMessage(Math.max(numberLimit.retryAfterMs, ipLimit.retryAfterMs)) });
+        }
+        otpPerIpLimiter.hit(ip);
 
         const [customers] = await pool.query(
             'SELECT id, status FROM billing_customers WHERE whatsapp_number = ? LIMIT 1',
@@ -32,6 +50,7 @@ exports.requestOtp = async (req, res) => {
             return res.status(503).json({ message: 'Layanan WhatsApp sedang tidak tersedia. Coba lagi nanti.' });
         }
 
+        otpPerNumberLimiter.hit(wa);
         const otp = genOtp();
         const expiresAt = new Date(Date.now() + OTP_TTL_MINUTES * 60 * 1000);
 
@@ -43,7 +62,8 @@ exports.requestOtp = async (req, res) => {
 
         const sent = await sendWhatsAppMessage(
             wa,
-            `Kode OTP login billing Anda: *${otp}*\nBerlaku ${OTP_TTL_MINUTES} menit. Jangan bagikan ke siapa pun.`
+            `Kode OTP login billing Anda: *${otp}*\nBerlaku ${OTP_TTL_MINUTES} menit. Jangan bagikan ke siapa pun.`,
+            { category: 'otp', waitForResult: true }
         );
         if (!sent) {
             return res.status(503).json({ message: 'Gagal mengirim OTP via WhatsApp. Coba lagi nanti.' });
@@ -64,11 +84,17 @@ exports.verifyOtp = async (req, res) => {
             return res.status(400).json({ message: 'Nomor WhatsApp dan OTP wajib diisi.' });
         }
 
+        const verifyLimit = otpVerifyLimiter.check(wa);
+        if (!verifyLimit.allowed) {
+            return res.status(429).json({ message: retryMessage(verifyLimit.retryAfterMs) });
+        }
+
         const [rows] = await pool.query(
             'SELECT id, otp_code, expires_at FROM billing_customer_otps WHERE whatsapp_number = ? ORDER BY id DESC LIMIT 1',
             [wa]
         );
         if (rows.length === 0 || rows[0].otp_code !== otp) {
+            otpVerifyLimiter.hit(wa);
             return res.status(401).json({ message: 'OTP salah.' });
         }
         if (new Date(rows[0].expires_at) < new Date()) {
@@ -85,6 +111,7 @@ exports.verifyOtp = async (req, res) => {
         const customer = customers[0];
 
         await pool.query('DELETE FROM billing_customer_otps WHERE whatsapp_number = ?', [wa]);
+        otpVerifyLimiter.reset(wa);
 
         const tokenId = crypto.randomUUID();
         const userAgent = (req.headers['user-agent'] || '').substring(0, 255);

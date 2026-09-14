@@ -28,6 +28,11 @@ const WhatsappBotCard = () => {
 
     const [isConnected, setIsConnected] = useState(false);
     const [qrString, setQrString] = useState<string | null>(null);
+    const [waStatus, setWaStatus] = useState<string>('connecting');
+    const [canScan, setCanScan] = useState(false);
+    const [outbox, setOutbox] = useState<{ queued: number; sentLastHour: number; sentToday: number; limits: { hourly: number; daily: number } } | null>(null);
+    // Status di mana bot berhenti reconnect otomatis dan butuh reset sesi + nomor sehat
+    const isWaDead = ['logged_out', 'banned', 'replaced'].includes(waStatus);
     const [pollingQr, setPollingQr] = useState(false);
 
     // Global Management States (Super Admin Only)
@@ -142,6 +147,9 @@ const WhatsappBotCard = () => {
                 const data = await res.json();
                 setIsConnected(data.connected);
                 setQrString(data.qr);
+                setWaStatus(data.status || (data.connected ? 'open' : 'connecting'));
+                setCanScan(!!data.canScan);
+                setOutbox(data.outbox || null);
             }
         } catch (error) {
             console.error("Gagal ambil status QR:", error);
@@ -329,8 +337,30 @@ const WhatsappBotCard = () => {
                     <p className="text-sm text-primary font-medium">WhatsApp Gateway aktif otomatis untuk mengirimkan OTP dan notifikasi downtime/reconnect ke nomor atau grup yang Anda tentukan di bawah.</p>
                 </div>
 
-                {/* QR Section */}
-                {!isConnected && (
+                {isWaDead && (
+                    <div className="p-4 rounded-xl border border-destructive/30 bg-destructive/5 text-sm space-y-1">
+                        <p className="font-semibold text-destructive">
+                            {waStatus === 'banned' && 'Nomor bot diblokir WhatsApp.'}
+                            {waStatus === 'logged_out' && 'Sesi WhatsApp bot sudah logout.'}
+                            {waStatus === 'replaced' && 'Sesi WhatsApp bot diambil alih perangkat lain.'}
+                        </p>
+                        <p className="text-muted-foreground">
+                            Bot berhenti menyambung ulang otomatis agar tidak memperparah blokir.
+                            {canScan
+                                ? ' Reset sesi di bawah, lalu pindai QR dengan nomor yang sehat (sebaiknya nomor lama yang sudah aktif dipakai chat biasa).'
+                                : ' Hubungi Super Admin untuk menghubungkan ulang.'}
+                        </p>
+                    </div>
+                )}
+
+                {!isConnected && !isWaDead && !canScan && (
+                    <div className="p-4 rounded-xl border bg-secondary/50 text-sm text-muted-foreground">
+                        WhatsApp bot belum terhubung. Hanya Super Admin yang dapat menghubungkan nomor bot.
+                    </div>
+                )}
+
+                {/* QR Section (hanya Super Admin: siapa pun yang memindai menjadi nomor bot server) */}
+                {!isConnected && !isWaDead && canScan && (
                     <div className="pt-6 border-t flex flex-col items-center gap-4 animate-in fade-in zoom-in-95 duration-500">
                         <div className="text-center">
                             <h3 className="text-lg font-bold flex items-center justify-center gap-2">
@@ -371,10 +401,16 @@ const WhatsappBotCard = () => {
                         <div className="flex items-center gap-3">
                             <div className={`w-3 h-3 rounded-full ${isConnected ? 'bg-green-500 shadow-[0_0_10px_rgba(34,197,94,0.5)]' : 'bg-yellow-500 animate-pulse'}`} />
                             <span className="text-sm font-semibold tracking-wide uppercase">
-                                Status Koneksi: {isConnected ? 'Terhubung (Ready)' : 'Menunggu Koneksi...'}
+                                Status Koneksi: {isConnected ? 'Terhubung (Ready)' : isWaDead ? 'Terputus (butuh reset sesi)' : 'Menunggu Koneksi...'}
                             </span>
                         </div>
                     </div>
+                    {outbox && (
+                        <p className="text-xs text-muted-foreground">
+                            Antrean pesan: {outbox.queued} menunggu · terkirim {outbox.sentLastHour}/{outbox.limits.hourly} per jam · {outbox.sentToday}/{outbox.limits.daily} per hari.
+                            Pesan dikirim bertahap dengan jeda acak untuk menghindari blokir.
+                        </p>
+                    )}
                 </div>
 
                 {isSuperAdmin && allWorkspaces.length > 0 && (

@@ -28,7 +28,7 @@ async function runOverdueAndIsolir() {
     );
 
     const [candidates] = await pool.query(
-        `SELECT i.id AS invoice_id, i.workspace_id, i.due_date,
+        `SELECT i.id AS invoice_id, i.workspace_id, i.due_date, i.isolir_notified_at,
                 c.id AS customer_id, c.pppoe_secret_name, c.device_id, c.whatsapp_number, c.name,
                 s.grace_days, s.auto_isolir_enabled, s.isolir_profile
          FROM billing_invoices i
@@ -39,7 +39,15 @@ async function runOverdueAndIsolir() {
            AND DATE_ADD(i.due_date, INTERVAL s.grace_days DAY) < CURDATE()`
     );
 
+    // Satu pelanggan bisa punya beberapa invoice overdue: isolir & beri tahu sekali per pelanggan
+    const byCustomer = new Map();
     for (const cand of candidates) {
+        if (!byCustomer.has(cand.customer_id)) byCustomer.set(cand.customer_id, []);
+        byCustomer.get(cand.customer_id).push(cand);
+    }
+
+    for (const invoices of byCustomer.values()) {
+        const cand = invoices[0];
         if (!cand.pppoe_secret_name) continue;
         try {
             const r = await isolirService.isolateCustomer({
@@ -50,11 +58,17 @@ async function runOverdueAndIsolir() {
             });
             console.log(`[Billing][Scheduler] Auto-isolir ${cand.pppoe_secret_name}: ${r.message}`);
 
-            if (cand.whatsapp_number && isWhatsAppConnected()) {
-                await sendWhatsAppMessage(
+            // Notifikasi hanya sekali per invoice; dulu terkirim setiap hari dan memicu ban nomor bot
+            const unnotified = invoices.filter(i => !i.isolir_notified_at).map(i => i.invoice_id);
+            if (r.ok && cand.whatsapp_number && unnotified.length > 0) {
+                const queued = await sendWhatsAppMessage(
                     cand.whatsapp_number,
-                    `Mohon maaf ${cand.name || ''}, layanan internet Anda dinonaktifkan sementara karena tagihan belum dibayar. Silakan lakukan pembayaran untuk mengaktifkan kembali.`
+                    `Mohon maaf ${cand.name || ''}, layanan internet Anda dinonaktifkan sementara karena tagihan belum dibayar. Silakan lakukan pembayaran untuk mengaktifkan kembali.`,
+                    { category: 'billing' }
                 );
+                if (queued) {
+                    await pool.query('UPDATE billing_invoices SET isolir_notified_at = NOW() WHERE id IN (?)', [unnotified]);
+                }
             }
         } catch (e) {
             console.error(`[Billing][Scheduler] Auto-isolir gagal ${cand.pppoe_secret_name}:`, e.message);

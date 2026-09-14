@@ -5,6 +5,7 @@ import { ChevronDown, ChevronUp } from 'lucide-react';
 import { motion, AnimatePresence } from '@/components/motion';
 import ProfileCard from '@/components/settings/profile-card';
 import SecurityCard from '@/components/settings/security-card';
+import TwoFactorCard from '@/components/settings/two-factor-card';
 import DangerZoneCard from '@/components/settings/danger-zone-card';
 import DeviceManagementCard from '@/components/settings/device-management-card';
 import ActiveSessionsCard from '@/components/settings/active-sessions-card';
@@ -98,6 +99,7 @@ const SettingsPage = () => {
       >
         <ProfileCard />
         <SecurityCard />
+        <TwoFactorCard />
       </CollapsibleSection>
 
       <CollapsibleSection 

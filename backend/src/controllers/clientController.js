@@ -36,11 +36,6 @@ function parseRateToBps(rateStr) {
 exports.getClients = async (req, res) => {
     let { workspace_id } = req.user;
     
-    // Support override for NOC / Admin / Superadmin
-    const isSuper = req.user.is_super_admin === 1 || req.user.is_super_admin === true;
-    if (req.query.workspaceId && (req.user.role === 'admin' || req.user.role === 'noc' || isSuper)) {
-        workspace_id = parseInt(req.query.workspaceId);
-    }
     try {
         // Ambil clients dengan status aktif dari pppoe_user_status dan owner ODP
         const [clients] = await pool.query(
@@ -187,10 +182,6 @@ exports.orphanCheck = async (req, res) => {
 exports.getUnlinkedPppoeSecrets = async (req, res) => {
     let { workspace_id } = req.user;
     
-    // Support override for NOC
-    if (req.query.workspaceId && (req.user.role === 'admin' || req.user.role === 'noc')) {
-        workspace_id = parseInt(req.query.workspaceId);
-    }
     
     const deviceId = req.query.deviceId ? parseInt(req.query.deviceId) : null;
     try {
@@ -248,10 +239,6 @@ exports.getUnlinkedPppoeSecrets = async (req, res) => {
 exports.createClient = async (req, res) => {
     let { workspace_id } = req.user;
 
-    // Support override for NOC
-    if (req.query.workspaceId && (req.user.role === 'admin' || req.user.role === 'noc')) {
-        workspace_id = parseInt(req.query.workspaceId);
-    }
 
     const { pppoe_secret_name, client_name, whatsapp_number, latitude, longitude, odp_asset_id, connection_path, device_id, ktp_number } = req.body;
     const photo_url = req.file ? `/public/uploads/clients/${req.file.filename}` : null;
@@ -373,10 +360,6 @@ exports.updateClient = async (req, res) => {
     const { id } = req.params;
     let { workspace_id } = req.user;
 
-    // Support override for NOC
-    if (req.query.workspaceId && (req.user.role === 'admin' || req.user.role === 'noc')) {
-        workspace_id = parseInt(req.query.workspaceId);
-    }
     
     const { latitude, longitude, connection_path, pppoe_secret_name, client_name, whatsapp_number } = req.body;
     let { odp_asset_id } = req.body;
@@ -574,10 +557,6 @@ exports.deleteClient = async (req, res) => {
     const { id } = req.params;
     let { workspace_id } = req.user;
 
-    // Support override for NOC
-    if (req.query.workspaceId && (req.user.role === 'admin' || req.user.role === 'noc')) {
-        workspace_id = parseInt(req.query.workspaceId);
-    }
 
     try {
         // Get client info before deletion
@@ -630,10 +609,6 @@ exports.getClient = async (req, res) => {
     const { id } = req.params;
     let { workspace_id } = req.user;
 
-    // Support override for NOC
-    if (req.query.workspaceId && (req.user.role === 'admin' || req.user.role === 'noc')) {
-        workspace_id = parseInt(req.query.workspaceId);
-    }
     
     const deviceId = req.query.deviceId ? parseInt(req.query.deviceId) : null;
 

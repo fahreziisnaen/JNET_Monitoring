@@ -62,7 +62,7 @@ export default function InvoicesTab({ workspaceId }: { workspaceId?: number | nu
     try {
       const r = await billingApi.sendInvoiceWa(iv.id);
       if (r.wa_sent) {
-        toast.success('Tagihan terkirim via WhatsApp', { description: iv.invoice_number });
+        toast.success(r.message, { description: iv.invoice_number });
       } else {
         toast.warning(r.message, { description: 'Salin link: ' + r.checkout_url });
       }
