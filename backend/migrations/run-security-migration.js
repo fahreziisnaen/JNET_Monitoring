@@ -81,8 +81,17 @@ const steps = [
 ];
 
 async function main() {
+    // --dry-run: hanya tampilkan apa yang akan diubah, tanpa menyentuh database
+    const dryRun = process.argv.includes('--dry-run');
+    const [[{ db }]] = await pool.query('SELECT DATABASE() AS db');
+    console.log(`Database: ${db}${dryRun ? ' (DRY RUN, tidak ada perubahan)' : ''}`);
+
     for (const step of steps) {
         if (await step.needed()) {
+            if (dryRun) {
+                console.log(`→  ${step.name}: akan ditambahkan`);
+                continue;
+            }
             await step.run();
             console.log(`✅ ${step.name}: ditambahkan`);
         } else {

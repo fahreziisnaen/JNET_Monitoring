@@ -403,6 +403,12 @@ async function startPhysicalMonitor(group, broadcastCallback) {
                         // maka hapus juga dari database agar sinkron.
                         const allFetchedNames = enriched.map(s => s.name);
                         if (allFetchedNames.length > 0) {
+                            // Auto-heal: Pastikan clients.device_id ter-update ke device_id saat ini untuk secret yang ada di router ini
+                            await pool.query(
+                                'UPDATE clients SET device_id = ? WHERE workspace_id = ? AND pppoe_secret_name IN (?) AND (device_id IS NULL OR device_id != ?)',
+                                [inst.id, inst.workspace_id, allFetchedNames, inst.id]
+                            ).catch(() => {});
+
                             // 1. Hapus dari pppoe_secrets
                             await pool.query(
                                 'DELETE FROM pppoe_secrets WHERE workspace_id = ? AND device_id = ? AND name NOT IN (?)',
@@ -416,10 +422,12 @@ async function startPhysicalMonitor(group, broadcastCallback) {
                                 [inst.workspace_id, inst.id, allFetchedNames]
                             ).catch(e => console.error(`[Pruning] Gagal hapus clients: ${e.message}`));
 
-                            // 3. Hapus dari odp_user_connections
+                            // 3. Hapus dari odp_user_connections HANYA untuk secret yang terkait dengan device ini
                             await pool.query(
-                                'DELETE FROM odp_user_connections WHERE workspace_id = ? AND pppoe_secret_name NOT IN (?)',
-                                [inst.workspace_id, allFetchedNames]
+                                `DELETE ouc FROM odp_user_connections ouc
+                                 JOIN clients c ON ouc.workspace_id = c.workspace_id AND ouc.pppoe_secret_name = c.pppoe_secret_name
+                                 WHERE ouc.workspace_id = ? AND c.device_id = ? AND ouc.pppoe_secret_name NOT IN (?)`,
+                                [inst.workspace_id, inst.id, allFetchedNames]
                             ).catch(e => console.error(`[Pruning] Gagal hapus odp_user_connections: ${e.message}`));
                         }
 

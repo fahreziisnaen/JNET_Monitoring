@@ -278,31 +278,37 @@ const LocationManager: React.FC<LocationManagerProps> = ({ isNocMode = false, no
   const realTimeClientsBySecrets = useMemo(() => {
     // NOC mode: use activeSecrets from NOC endpoint
     if (isNocMode) {
-      if (!activeSecrets || activeSecrets.length === 0) return clients.filter(c => !c.isOffline);
+      if (!activeSecrets || activeSecrets.length === 0) return clients;
       const secretMap = new Map(activeSecrets.map((s: any) => [s.name, s]));
       return clients.map(client => {
         const secret = secretMap.get(client.pppoe_secret_name) as any;
         return { ...client, isActive: secret ? secret.isActive : (client as any).isActive ?? false };
-      }).filter(c => !c.isOffline);
+      });
     }
 
-    // Normal mode: real-time WS only applies for the currently selected device.
-    // Clients from other devices use isActive from the database (pppoe_user_status).
+    // Normal mode:
+    // Match secrets from activeSecrets (live WebSocket data for current device)
     const secretMap = new Map(
       (activeSecrets || []).map((s: any) => [s.name, s])
     );
 
     return clients.map(client => {
       const clientDeviceId = (client as any).device_id;
-      // If client belongs to current device, use live WS data (or false if WS offline)
+      // Jika secret ditemukan di activeSecrets (device aktif saat ini memiliki secret ini), gunakan live status
+      const secret = secretMap.get(client.pppoe_secret_name) as any;
+      if (secret) {
+        return { ...client, isActive: secret.isActive ?? false };
+      }
+
+      // If client explicitly belongs to current device but device is offline
       if (clientDeviceId && currentDeviceId && clientDeviceId === currentDeviceId) {
         if (!isConnected) return { ...client, isActive: false };
-        const secret = secretMap.get(client.pppoe_secret_name) as any;
-        return { ...client, isActive: secret ? secret.isActive : false };
+        return { ...client, isActive: false };
       }
-      // For other devices: use pre-computed isActive from DB (already per-device accurate)
+
+      // For other devices or fallback: use pre-computed isActive from DB
       return { ...client, isActive: (client as any).isActive ?? false };
-    }).filter(c => !c.isOffline);
+    });
   }, [clients, activeSecrets, isConnected, isNocMode, currentDeviceId]);
 
   // Derive real-time asset status (specifically for ODPs based on their connected clients)

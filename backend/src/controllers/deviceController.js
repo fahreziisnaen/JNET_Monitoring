@@ -217,6 +217,8 @@ exports.deleteDevice = async (req, res) => {
             await pool.query(`DELETE FROM ${table} WHERE workspace_id = ? AND device_id = ?`, [workspaceId, deviceId]);
         }
         await pool.query('UPDATE workspaces SET active_device_id = NULL WHERE id = ? AND active_device_id = ?', [workspaceId, deviceId]);
+        // Lepaskan referensi device_id pada tabel clients agar tidak menunjuk ke device yang sudah dihapus
+        await pool.query('UPDATE clients SET device_id = NULL WHERE workspace_id = ? AND device_id = ?', [workspaceId, deviceId]);
 
         // Hapus baris perangkat tanpa ON DELETE CASCADE ke tabel log. Cascade jutaan baris dalam satu
         // transaksi membuat request menggantung berlama-lama dan mengunci tabel log; log dibersihkan bertahap di bawah.

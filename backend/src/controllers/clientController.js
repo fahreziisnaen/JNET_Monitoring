@@ -37,17 +37,53 @@ exports.getClients = async (req, res) => {
     let { workspace_id } = req.user;
     
     try {
-        // Ambil clients dengan status aktif dari pppoe_user_status dan owner ODP
+        // Auto-heal device_id: jika ada client dengan device_id usang/NULL atau berbeda dari pppoe_secrets saat ini
+        try {
+            // 1. Sinkronkan clients.device_id dengan device_id dari pppoe_secrets yang ada di workspace ini
+            await pool.query(
+                `UPDATE clients c
+                 JOIN pppoe_secrets ps ON c.workspace_id = ps.workspace_id AND c.pppoe_secret_name = ps.name
+                 SET c.device_id = ps.device_id
+                 WHERE c.workspace_id = ? AND (c.device_id IS NULL OR c.device_id != ps.device_id)`,
+                [workspace_id]
+            );
+
+            // 2. Jika device_id pada client menunjuk ke device yang sudah tidak ada di mikrotik_devices
+            const [availableDevices] = await pool.query(
+                'SELECT id FROM mikrotik_devices WHERE workspace_id = ?',
+                [workspace_id]
+            );
+
+            if (availableDevices.length === 1) {
+                // Jika hanya ada 1 device di workspace, kaitkan client ke device tersebut
+                await pool.query(
+                    `UPDATE clients SET device_id = ? WHERE workspace_id = ? AND (device_id IS NULL OR device_id != ?)`,
+                    [availableDevices[0].id, workspace_id, availableDevices[0].id]
+                );
+            } else if (availableDevices.length > 1) {
+                // Jika ada beberapa device, bersihkan device_id yang sudah tidak valid
+                const validIds = availableDevices.map(d => d.id);
+                await pool.query(
+                    `UPDATE clients SET device_id = NULL WHERE workspace_id = ? AND device_id NOT IN (?)`,
+                    [workspace_id, validIds]
+                );
+            }
+        } catch (healErr) {
+            console.warn('[getClients] Auto-heal device_id warning:', healErr.message);
+        }
+
+        // Ambil clients dengan status aktif dari pppoe_secrets / pppoe_user_status dan owner ODP
         const [clients] = await pool.query(
             `SELECT c.id, c.workspace_id, c.pppoe_secret_name, c.client_name, c.whatsapp_number, c.latitude, c.longitude, 
                     c.odp_asset_id, c.connection_path, c.photo_url, c.created_at, c.updated_at,
                     c.device_id as stored_device_id,
                     na.name as odp_name,
                     na.owner_name as odp_owner_name,
-                    COALESCE(pus.device_id, c.device_id) as device_id,
-                    COALESCE(pus.is_active, FALSE) as isActive
+                    COALESCE(ps.device_id, pus.device_id, c.device_id) as device_id,
+                    COALESCE(ps.is_active, pus.is_active, FALSE) as isActive
              FROM clients c
              LEFT JOIN network_assets na ON c.odp_asset_id = na.id
+             LEFT JOIN pppoe_secrets ps ON c.workspace_id = ps.workspace_id AND c.pppoe_secret_name = ps.name
              LEFT JOIN pppoe_user_status pus ON c.pppoe_secret_name = pus.pppoe_user 
                  AND pus.workspace_id = c.workspace_id
                  AND (c.device_id IS NULL OR pus.device_id = c.device_id)
@@ -93,6 +129,7 @@ exports.getClients = async (req, res) => {
             const [clients] = await pool.query(
                 `SELECT c.id, c.workspace_id, c.pppoe_secret_name, c.client_name, c.whatsapp_number, c.latitude, c.longitude, 
                         c.odp_asset_id, c.photo_url, c.created_at, c.updated_at,
+                        c.device_id,
                         na.name as odp_name,
                         FALSE as isActive
                  FROM clients c
@@ -140,8 +177,24 @@ exports.orphanCheck = async (req, res) => {
 
         // Cek setiap group device secara paralel
         const checks = Array.from(byDevice.entries()).map(async ([key, deviceClients]) => {
-            // Client lama tanpa device_id — tidak bisa dicek dengan akurat, skip
-            if (key === 'null') return;
+            if (key === 'null') {
+                // Client tanpa device_id: cek terhadap semua secrets di workspace
+                try {
+                    const [allSecrets] = await pool.query(
+                        'SELECT name FROM pppoe_secrets WHERE workspace_id = ?',
+                        [workspace_id]
+                    );
+                    if (allSecrets.length > 0) {
+                        const secretNames = new Set(allSecrets.map(s => s.name));
+                        deviceClients.forEach(client => {
+                            if (!secretNames.has(client.pppoe_secret_name)) {
+                                orphanedIds.push(client.id);
+                            }
+                        });
+                    }
+                } catch { /* silent */ }
+                return;
+            }
 
             const deviceId = parseInt(key);
             try {
@@ -151,9 +204,20 @@ exports.orphanCheck = async (req, res) => {
                     [workspace_id, deviceId]
                 );
 
-                // Safety guard: jika kosong, skip (device belum ready / belum di-sync)
+                // Safety guard: jika kosong, periksa apakah secret ada di device lain di workspace ini
                 if (secrets.length === 0) {
-                    console.warn(`[ORPHAN CHECK] Device ${deviceId} secrets kosong (skip)`);
+                    const [otherSecrets] = await pool.query(
+                        'SELECT name FROM pppoe_secrets WHERE workspace_id = ?',
+                        [workspace_id]
+                    );
+                    if (otherSecrets.length > 0) {
+                        const otherNames = new Set(otherSecrets.map(s => s.name));
+                        deviceClients.forEach(client => {
+                            if (!otherNames.has(client.pppoe_secret_name)) {
+                                orphanedIds.push(client.id);
+                            }
+                        });
+                    }
                     return;
                 }
 

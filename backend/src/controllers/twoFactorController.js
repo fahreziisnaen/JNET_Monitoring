@@ -22,6 +22,14 @@ function rateLimited(req, res) {
     return true;
 }
 
+// Kolom/tabel 2FA belum ada di database: beri tahu cara memperbaikinya, bukan error generik
+function sendServerError(res, error, fallbackMessage) {
+    if (error.code === 'ER_BAD_FIELD_ERROR' || error.code === 'ER_NO_SUCH_TABLE') {
+        return res.status(503).json({ message: 'Fitur 2FA belum siap: migrasi database belum dijalankan. Admin server perlu menjalankan \"node migrations/run-security-migration.js\" di folder backend.' });
+    }
+    return res.status(500).json({ message: fallbackMessage });
+}
+
 async function passwordMatches(userId, password) {
     if (!password) return false;
     const [users] = await pool.query('SELECT password_hash FROM users WHERE id = ?', [userId]);
@@ -34,7 +42,7 @@ exports.getStatus = async (req, res) => {
         res.json(await twoFactorService.getStatus(req.user.id));
     } catch (error) {
         console.error('[2FA] getStatus error:', error);
-        res.status(500).json({ message: 'Gagal mengambil status 2FA.' });
+        sendServerError(res, error, 'Gagal mengambil status 2FA.');
     }
 };
 
@@ -50,7 +58,7 @@ exports.beginSetup = async (req, res) => {
         res.json(setup);
     } catch (error) {
         console.error('[2FA] beginSetup error:', error);
-        res.status(500).json({ message: 'Gagal memulai pemasangan 2FA.' });
+        sendServerError(res, error, 'Gagal memulai pemasangan 2FA.');
     }
 };
 
@@ -66,7 +74,7 @@ exports.enable = async (req, res) => {
         res.json({ message: '2FA berhasil diaktifkan.', recoveryCodes });
     } catch (error) {
         console.error('[2FA] enable error:', error);
-        res.status(500).json({ message: 'Gagal mengaktifkan 2FA.' });
+        sendServerError(res, error, 'Gagal mengaktifkan 2FA.');
     }
 };
 
@@ -84,7 +92,7 @@ exports.disable = async (req, res) => {
         res.json({ message: '2FA berhasil dinonaktifkan.' });
     } catch (error) {
         console.error('[2FA] disable error:', error);
-        res.status(500).json({ message: 'Gagal menonaktifkan 2FA.' });
+        sendServerError(res, error, 'Gagal menonaktifkan 2FA.');
     }
 };
 
@@ -101,6 +109,6 @@ exports.regenerateRecoveryCodes = async (req, res) => {
         res.json({ message: 'Kode cadangan baru dibuat. Kode lama tidak berlaku lagi.', recoveryCodes });
     } catch (error) {
         console.error('[2FA] regenerateRecoveryCodes error:', error);
-        res.status(500).json({ message: 'Gagal membuat kode cadangan baru.' });
+        sendServerError(res, error, 'Gagal membuat kode cadangan baru.');
     }
 };

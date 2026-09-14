@@ -22,13 +22,18 @@ const TwoFactorCard = () => {
     const [recoveryCodes, setRecoveryCodes] = useState<string[]>([]);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
+    const [loadError, setLoadError] = useState('');
 
     const fetchStatus = useCallback(async () => {
+        setLoadError('');
         try {
             const res = await apiFetch(`${apiUrl}/api/user/2fa`);
-            if (res.ok) setStatus(await res.json());
-        } catch (err) {
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) throw new Error(data.message || 'Gagal memuat status 2FA.');
+            setStatus(data);
+        } catch (err: any) {
             console.error('Gagal memuat status 2FA:', err);
+            setLoadError(err.message || 'Gagal memuat status 2FA.');
         }
     }, [apiUrl]);
 
@@ -142,7 +147,14 @@ const TwoFactorCard = () => {
                 </p>
             </CardHeader>
             <CardContent className="space-y-4">
-                {!status ? (
+                {!status && loadError ? (
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                        <p className="text-sm text-destructive">{loadError}</p>
+                        <Button type="button" variant="outline" onClick={fetchStatus} className="shrink-0">
+                            <RefreshCw size={14} className="mr-2" />Coba Lagi
+                        </Button>
+                    </div>
+                ) : !status ? (
                     <div className="flex justify-center p-4"><Loader2 className="animate-spin" /></div>
                 ) : step === 'codes' ? (
                     <div className="space-y-4">
